@@ -1,0 +1,380 @@
+/* eshine-os project site stylesheet.
+ * Layout and typography based on kernel.org's "Fifty shades of Tux" theme
+ * (MIT, Benoît Monin), recolored to the eshine-os coral / light identity.
+ */
+
+/* ---------- Design tokens ---------- */
+:root {
+    --accent-ink: #b3453a;     /* readable accent for links on light bg */
+    --accent: #d9705f;         /* decorative coral (highlight box, logo) */
+    --accent-light: #e08a73;   /* coral light (gradient top, rays) */
+    --accent-deep: #b05444;    /* coral deep (inset shadow) */
+    --accent-visited: #a06a58; /* muted visited link */
+    --nav: #b39223;            /* warm gold ("light") for nav + link hover */
+    --nav-dark: #4c3d00;       /* nav hover */
+    --bg: #F0EDE3;
+    --card: #FFFFFF;
+    --ink: #33290A;
+    --ink-head: #2C1D00;
+    --muted: #827A5E;
+    --placeholder: #b9b3a3;
+    --border-hi: #DDDACF;
+    --border-mid: #CCC8B8;
+    --border-lo: #BBB59F;
+    --zebra: #F7F6F1;
+    --shadow: #CCC8B8;
+    --title-shadow: #F8F4EE;
+}
+
+/* ---------- Fonts (self-hosted, mirroring kernel.org) ---------- */
+@font-face {
+    font-family: 'oswald';
+    src: url('assets/fonts/oswald-regular-webfont.v2.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'oxygen';
+    src: url('assets/fonts/oxygen-regular-webfont.v2.woff2') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* ---------- Base ---------- */
+html {
+    box-sizing: border-box;
+}
+*, *:before, *:after {
+    box-sizing: inherit;
+}
+
+body {
+    margin: 0;
+    font-family: oxygen, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: oswald, helvetica, sans-serif;
+    font-weight: normal;
+}
+
+a {
+    color: var(--accent-ink);
+    text-decoration: none;
+    transition: color 0.25s;
+}
+
+a:visited {
+    color: var(--accent-visited);
+    text-decoration: none;
+}
+
+a:hover,
+a:active {
+    color: var(--nav);
+    text-decoration: none;
+}
+
+/* ---------- Header banner ---------- */
+#banner {
+    text-align: center;
+    background: var(--card);
+    margin: 0 auto;
+    padding: 1em;
+    width: 50em;
+    max-width: 100%;
+    border: thin solid;
+    border-color: var(--border-hi) var(--border-mid) var(--border-lo);
+    box-shadow: 0 0.1em 0.3em var(--shadow);
+    border-bottom-right-radius: 0.5em;
+    border-bottom-left-radius: 0.5em;
+}
+
+#logo {
+    width: 6.5em;
+    height: 7.5em;
+    float: right;
+}
+
+#logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+#banner h1 {
+    margin: 28px 0 12px 0.05em;
+    text-shadow: 3px 3px 0 var(--title-shadow);
+    font-size: 3em;
+}
+
+#banner h1 > a {
+    color: var(--ink-head);
+    transition: none;
+}
+
+#banner .tagline {
+    margin: 0 0 47px 0;
+    color: var(--muted);
+}
+
+#banner ul {
+    padding: 0;
+    margin: 0;
+    font-size: 1.1em;
+    font-weight: bold;
+    list-style: none;
+}
+
+#banner li {
+    display: inline;
+    padding: 0 1em;
+}
+
+#banner li > a {
+    color: var(--nav);
+    white-space: nowrap;
+    font-size: 90%;
+}
+
+#banner li > a:hover,
+#banner li > a:active {
+    color: var(--nav-dark);
+}
+
+/* ---------- Featured / content cards ---------- */
+#featured,
+#content {
+    background: var(--card);
+    margin: 1.5em auto;
+    padding: 1.85em 1em;
+    width: 50em;
+    max-width: 100%;
+    border: thin solid;
+    border-color: var(--border-hi) var(--border-mid) var(--border-lo);
+    box-shadow: 0 0.1em 0.3em var(--shadow);
+    border-radius: 0.5em;
+}
+
+/* Sources table (left, mirrors kernel.org #protocols) */
+#sources {
+    float: left;
+    width: 25em;
+    max-width: 100%;
+    margin: 1.3em 0 4em 2em;
+}
+
+#sources th {
+    text-align: left;
+}
+
+#sources th,
+#sources td {
+    padding: 0.15em 0.75em 0.15em 0;
+}
+
+/* Latest release box (right, coral) */
+#latest {
+    float: right;
+    background: linear-gradient(135deg, var(--accent-light) 0%, var(--accent) 100%);
+    box-shadow: -0.1em -0.3em 0.5em var(--accent-deep) inset;
+    color: var(--card);
+    border-radius: 0.5em;
+    margin: 1em 2.2em 4em 0;
+}
+
+#latest td {
+    text-align: right;
+    vertical-align: top;
+}
+
+#latest_label {
+    font-size: 1.25em;
+    padding: 0.75em 1.25em 0.3em 0;
+}
+
+#latest_link {
+    font-size: 2em;
+    font-weight: bold;
+    padding: 0.35em 1.25em 0.75em 0.5em;
+}
+
+#latest_link > a {
+    color: var(--card);
+    display: block;
+    text-align: right;
+}
+
+/* Releases table */
+#releases {
+    clear: both;
+    width: 100%;
+    margin-bottom: 0.25em;
+}
+
+#releases tr:nth-child(2n+1) {
+    background-color: var(--zebra);
+}
+
+#releases td {
+    padding: 0.3em 0.5em;
+}
+
+.ph {
+    color: var(--placeholder);
+}
+
+.note {
+    color: var(--muted);
+    font-size: 90%;
+    margin: 1em 0 0 0;
+}
+
+/* ---------- Extras ---------- */
+#extras {
+    display: flex;
+    align-items: stretch;
+    gap: 2em;
+    margin: 1.5em auto;
+    width: 50em;
+    max-width: 100%;
+}
+
+#extras > div {
+    background: var(--card);
+    border: thin solid;
+    border-color: var(--border-hi) var(--border-mid) var(--border-lo);
+    box-shadow: 0 0.1em 0.3em var(--shadow);
+    border-radius: 0.5em;
+    min-height: 8.5em;
+}
+
+#extras > .blogroll {
+    flex: 0 0 36em;
+    max-width: 100%;
+    padding: 0.5em 1em 0 1em;
+}
+
+#extras > .blogroll li {
+    width: 33%;
+    float: left;
+}
+
+#extras > .social {
+    flex: 0 0 12em;
+    max-width: 100%;
+    padding: 0.5em 1em 0 1em;
+}
+
+#extras h2 {
+    margin: 0.5em 0 1em 0;
+}
+
+#extras ul {
+    list-style: none;
+    padding: 0;
+}
+
+/* ---------- Footer ---------- */
+#contentinfo {
+    clear: both;
+    text-align: center;
+    color: var(--muted);
+    margin: 2em auto;
+    padding-top: 1em;
+    width: 53em;
+    max-width: 100%;
+}
+
+#about {
+    font-size: 85%;
+}
+
+#contentinfo .vcard {
+    font-style: normal;
+    margin: 0.5em 0;
+}
+
+#copyright {
+    margin-top: 1.5em;
+    font-size: 85%;
+}
+
+/* ---------- Mobile ---------- */
+@media screen and (max-width: 848px) {
+    #banner {
+        width: auto;
+        margin: 0 0.5em;
+        padding: 0.75em;
+    }
+
+    #logo {
+        float: none;
+        width: 4em;
+        height: 4.5em;
+        margin: 0 auto;
+    }
+
+    #banner h1 {
+        font-size: 2em;
+        margin: 0.5em 0 0.5em 0;
+    }
+
+    #banner .tagline {
+        margin: 0 0 1.25em 0;
+    }
+
+    #banner li {
+        display: inline-block;
+        padding: 0.25em 0.6em;
+    }
+
+    #featured,
+    #content {
+        width: auto;
+        margin: 1em 0.5em;
+        padding: 1em 0.75em;
+    }
+
+    #sources {
+        float: none;
+        width: auto;
+        margin: 0.5em 0 1.5em 0;
+    }
+
+    #latest {
+        float: none;
+        margin: 0.5em 0 1.5em 0;
+        display: table;
+        width: auto;
+    }
+
+    #extras {
+        flex-direction: column;
+        gap: 1em;
+        width: auto;
+        margin: 1em 0.5em;
+    }
+
+    #extras > div {
+        flex: none;
+        width: auto;
+        height: auto;
+        margin-bottom: 1em;
+    }
+
+    #extras > .blogroll li {
+        width: 100%;
+        float: none;
+    }
+
+    #contentinfo {
+        width: auto;
+        margin: 2em 0.5em;
+    }
+}

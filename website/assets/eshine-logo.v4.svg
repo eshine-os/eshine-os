@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 140" role="img" aria-label="eshine-os">
+  <defs>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff4e6"/>
+      <stop offset="60%" stop-color="#f7c9a6"/>
+      <stop offset="100%" stop-color="#d9705f"/>
+    </radialGradient>
+    <path id="ray" d="M60 30 L51 46 Q60 42 69 46 Z"/>
+  </defs>
+  <path d="M60 8 L106 26 L106 68 C106 94 86 112 60 128 C34 112 14 94 14 68 L14 26 Z" fill="#fbe9e2" stroke="#d9705f" stroke-width="4" stroke-linejoin="round"/>
+  <g fill="#e08a73">
+    <use href="#ray"/>
+    <use href="#ray" transform="rotate(45 60 58)"/>
+    <use href="#ray" transform="rotate(90 60 58)"/>
+    <use href="#ray" transform="rotate(135 60 58)"/>
+    <use href="#ray" transform="rotate(180 60 58)"/>
+    <use href="#ray" transform="rotate(225 60 58)"/>
+    <use href="#ray" transform="rotate(270 60 58)"/>
+    <use href="#ray" transform="rotate(315 60 58)"/>
+  </g>
+  <circle cx="60" cy="58" r="17" fill="url(#core)"/>
+  <circle cx="60" cy="58" r="17" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="2"/>
+</svg>
