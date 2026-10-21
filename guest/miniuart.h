@@ -9,7 +9,9 @@
 #define UART0_BASE 0x09000000UL
 
 #define UART_DR   0x00u
-#define UART_FR   0x14u
+#define UART_FR   0x18u                 /* PL011 FR=0x18;0x14 未实现,读恒 0
+                                          * → 曾致 RX 无门控热自旋,与 QEMU
+                                          *   chardev 推流赛跑,偶发字节重复/丢失 */
 #define FR_RXFE   (1u << 4)
 #define FR_TXFF   (1u << 5)
 
