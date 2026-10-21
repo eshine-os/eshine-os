@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (c) 2026 Julian Chu -->
 # eshine-os
 
 > 底层之光，守护生命。
@@ -38,6 +40,23 @@ Build a high-reliability, high-safety operating-system foundation for the AI era
 
 🚧 Open-sourcing in progress — repositories will be published under this organization as they become ready.
 
+- `v0.0.1` — EL2 skeleton under development（Week-1）
+- 目标架构 / Target architecture: Type-1 hypervisor + management RTOS VM + Linux guest VM
+
+## 快速开始 / Quick start
+
+    make            # build eshine.elf (cross: aarch64-linux-gnu-gcc)
+    make run        # boot on QEMU virt, interactive shell
+    make verify     # true-green gate (banner + prompt + token echo)
+
+依赖 / deps: `aarch64-linux-gnu-gcc`, `qemu-system-aarch64` (>= 6.0), `python3`
+
+## 文档 / Docs
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — 架构与 VM 状态机
+- [docs/specs/](docs/specs/) — 设计文档
+- [docs/devlog/](docs/devlog/) — 开发日志（双语）
+
 ## License
 
-To be announced.
+Apache-2.0（见 / See [LICENSE](LICENSE)）。每个源文件带 SPDX 标记。
