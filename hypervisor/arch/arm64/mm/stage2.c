@@ -14,8 +14,10 @@ static u64 s2_l2_ram[512]  __attribute__((aligned(4096)));
 
 /* 表描述符: valid|table + next table addr[51:12] */
 #define DSC_TABLE(a)      (((u64)(a) & ~0xFFFULL) | 0x3UL)
-/* 页/块描述符: addr | MemAttr[5:2] | S2AP[8:7]=RW | valid */
-#define DSC_MAP(a, attr)  (((u64)(a) & ~0xFFFULL) | ((attr) << 2) | (0x3UL << 7) | 0x1UL)
+/* 页/块描述符(DDI 0487 stage-2): addr | MemAttr[5:2] | S2AP[7:6]=RW
+ *   | AF(bit10)=1 — AF 必置位,否则首访即 access-flag fault(门禁实测)
+ *   | SH[9:8]=0 */
+#define DSC_MAP(a, attr)  (((u64)(a) & ~0xFFFULL) | ((attr) << 2) | (0x3UL << 6) | (0x1UL << 10) | 0x1UL)
 /* L3 页描述符 bit1=1 */
 #define DSC_PAGE(a, attr) (DSC_MAP((a), (attr)) | 0x2UL)
 /* XN[1:0] (bits 54:53): EL0/EL1 均不可执行 */

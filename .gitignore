@@ -3,6 +3,7 @@
 # Build artifacts
 *.o
 *.elf
+*.bin
 eshine.elf
 # Editor swap files
 *.swp
