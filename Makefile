@@ -15,7 +15,8 @@ CFLAGS  := -ffreestanding -fno-builtin -fno-pie -fno-pic \
 ASFLAGS := -mgeneral-regs-only -march=armv8-a
 LDFLAGS := -nostdlib -Wl,--build-id=none -T linker.ld
 
-CSRCS := $(wildcard hypervisor/kernel/*.c) $(wildcard hypervisor/drivers/*.c)
+CSRCS := $(wildcard hypervisor/kernel/*.c) $(wildcard hypervisor/drivers/*.c) \
+         $(wildcard hypervisor/arch/arm64/mm/*.c)
 ASRCS := $(wildcard hypervisor/arch/arm64/*.S)
 OBJS  := $(CSRCS:.c=.o) $(ASRCS:.S=.o)
 

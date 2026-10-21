@@ -3,6 +3,7 @@
 #include "kernel/include/console.h"
 #include "kernel/include/shell.h"
 #include "kernel/include/types.h"
+#include "arch/arm64/include/mm.h"
 #include "kernel/include/util.h"
 #include "kernel/include/version.h"
 #include "kernel/include/vm.h"
@@ -14,7 +15,7 @@ static char linebuf[SHELL_BUF_MAX];
 
 static void cmd_help(void)
 {
-    console_puts("commands: help version echo <text> state\n");
+    console_puts("commands: help version echo <text> state s2dump run_guest\n");
 }
 
 static void cmd_version(void)
@@ -59,6 +60,8 @@ static void dispatch(char *line)
         cmd_echo(args);
     } else if (strncmp(line, "state", 64) == 0) {
         cmd_state();
+    } else if (strncmp(line, "s2dump", 64) == 0) {
+        stage2_dump();
     } else if (*line) {
         console_puts("unknown command: ");
         console_puts(line);
