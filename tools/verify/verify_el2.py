@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Julian Chu
-"""eshine-os true-green gate (week-1 core + stage2 first-guest B 相).
+"""eshine-os true-green gate (week-1 core + first-guest C 相).
 
 Boots eshine.elf on QEMU virt (direct EL2), waits for the banner and
 the shell prompt, sends `echo ESHINEOK<pid>`, and asserts the token
@@ -10,10 +10,12 @@ actual command output. Static markers do not count; this mirrors the
 login-dance + token-echo standard used by the previous eshine-os
 reference repo (baseline alignment, spec section 5).
 
-B 相 (27.04 第一站) adds the guest round-trip: `run_guest` must show
-the guest banner printed from EL1 through the non-identity stage-2
-map via HVC, come back to EL2 with VM_DEAD, and the host shell must
-still pass the token double-echo afterwards (host integrity).
+C 相 (27.04 第一站) covers the full guest round-trip: `run_guest`
+shows the HVC banner printed from EL1 through the non-identity
+stage-2 map, then the guest's own shell takes the UART over the
+stage-2 device page (no hypercall), must double-echo its own token,
+and `exit` HVCs back to EL2 with VM_DEAD. A final host token
+double-echo proves the host shell survived the round trip.
 """
 import os
 import socket
@@ -87,9 +89,9 @@ def main():
         buf = b""
         try:
             buf = read_until(s, buf, ("eshine-os " + VER).encode(), time.time() + 30)
-            print("  [1/6] banner ok (" + VER + ")")
+            print("  [1/8] banner ok (" + VER + ")")
             buf = read_until(s, buf, b"eshine> ", time.time() + 10)
-            print("  [2/6] shell prompt ok")
+            print("  [2/8] shell prompt ok")
             prompt_pos = len(buf)          # 只在提示符之后的字节里找下一段
             token = "ESHINEOK%d" % os.getpid()
             s.sendall(("echo " + token + "\n").encode())
@@ -100,15 +102,30 @@ def main():
                     % (buf.count(token.encode()), buf.decode(errors="replace"))
                 )
                 return 1
-            print("  [3/6] token double-echo ok (host shell alive)")
+            print("  [3/8] host token double-echo ok")
 
-            # ---- B 相:guest 往返(stage-2 + HVC + ERET 回宿主) ----
+            # ---- C 相:guest 往返 + guest 侧 UART 交互 ----
             round_pos = len(buf)
             s.sendall(b"run_guest\n")
             buf = read_until(s, buf, b"eshine-guest @EL1", time.time() + 15, start=round_pos)
-            print("  [4/6] guest banner from EL1 (stage-2 + HVC console)")
+            print("  [4/8] guest HVC banner from EL1 (stage-2 + hypercall)")
+            buf = read_until(s, buf, b"eshine-guest UART @IPA 0x09000000", time.time() + 10, start=round_pos)
+            print("  [5/8] guest direct-UART banner (stage-2 device page)")
+            buf = read_until(s, buf, b"guest> ", time.time() + 10, start=round_pos)
+            guest_pos = len(buf)
+            gtoken = "GOK%d" % os.getpid()
+            s.sendall(("echo " + gtoken + "\n").encode())
+            buf = read_until(s, buf, b"guest> ", time.time() + 10, start=guest_pos)
+            if buf[guest_pos:].count(gtoken.encode()) < 2:
+                print(
+                    "FAIL: guest token seen %d time(s), expected >= 2\noutput:\n%s"
+                    % (buf[guest_pos:].count(gtoken.encode()), buf.decode(errors="replace"))
+                )
+                return 1
+            print("  [6/8] guest token double-echo ok (guest shell alive)")
+            s.sendall(b"exit\n")
             buf = read_until(s, buf, b"run_guest: VM_DEAD, back at EL2", time.time() + 10, start=round_pos)
-            print("  [5/6] VM_DEAD: guest HVC-exit back to EL2")
+            print("  [7/8] VM_DEAD: guest HVC-exit back to EL2")
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=round_pos)
 
             # 宿主完整性:guest 往返后 shell 仍须双回显
@@ -122,7 +139,7 @@ def main():
                     % (buf[prompt_pos:].count(token2.encode()), buf.decode(errors="replace"))
                 )
                 return 1
-            print("  [6/6] host shell intact after guest round-trip")
+            print("  [8/8] host shell intact after guest round-trip")
             print("RESULT PASS")
             return 0
         finally:
