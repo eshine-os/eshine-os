@@ -5,6 +5,7 @@
 #include "kernel/include/types.h"
 #include "kernel/include/util.h"
 #include "kernel/include/version.h"
+#include "kernel/include/vm.h"
 #include "drivers/include/pl011.h"
 
 #define SHELL_BUF_MAX 64
@@ -29,7 +30,7 @@ static void cmd_echo(const char *args)
 
 static void cmd_state(void)
 {
-    console_puts("state machine demo lands in the next commit\n");
+    vm_state_demo();
 }
 
 static void dispatch(char *line)
