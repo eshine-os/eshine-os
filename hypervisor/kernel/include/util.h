@@ -8,5 +8,6 @@
 void *memset(void *dst, int c, u64 n);
 void *memcpy(void *dst, const void *src, u64 n);
 int strncmp(const char *a, const char *b, u64 n);
+void util_putdec(u32 v);
 
 #endif /* ESHINE_UTIL_H */

@@ -21,9 +21,9 @@ void vcpu_init(void)
     __asm__ volatile("msr spsel, #0");
 }
 
-void vcpu_run(struct vcpu *v)
+void vcpu_run(struct vcpu *v, u64 vttbr)
 {
-    u64 sctlr, vttbr;
+    u64 sctlr;
 
     cur_vcpu = v;
 
@@ -33,7 +33,6 @@ void vcpu_run(struct vcpu *v)
     __asm__ volatile("msr sctlr_el1, %0" :: "r"(sctlr));
 
     __asm__ volatile("msr vtcr_el2, %0" :: "r"(VTCR_VALUE));
-    vttbr = (u64)stage2_pgd();              /* EL2 无 MMU ⇒ 指针即物理地址, VMID=0 */
     __asm__ volatile("msr vttbr_el2, %0" :: "r"(vttbr));
     __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_GUEST));
     __asm__ volatile("msr sp_el1, %0"   :: "r"(v->entry_sp));

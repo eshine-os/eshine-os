@@ -14,7 +14,7 @@ struct vcpu {
 };
 
 void vcpu_init(void);                /* boot:安装 SP_EL2 异常栈 */
-void vcpu_run(struct vcpu *v);       /* 正常返回 == guest 已 exit */
+void vcpu_run(struct vcpu *v, u64 vttbr);  /* 正常返回 == guest 已 exit */
 void vcpu_exit(void) __attribute__((noreturn));
 
 /* vcpu_entry.S */

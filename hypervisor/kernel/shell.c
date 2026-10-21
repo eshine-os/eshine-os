@@ -40,9 +40,12 @@ static void cmd_state(void)
 
 static void cmd_run_guest(void)
 {
-    struct eshine_vm vm = { .state = VM_INIT };
+    /* 实体内嵌 vm_space 后 eshine_vm ~20KB > 宿主栈 16KB,必须静态 */
+    static struct eshine_vm vm;
     struct vcpu v;
 
+    if (vm.state == VM_DEAD)
+        vm_transition(&vm, VM_INIT);       /* 槽位复用,防二次 run panic */
     v.entry_pc = 0x40000000UL;             /* guest IPA(物理在 0x50000000) */
     v.entry_sp  = 0x40200000UL;            /* 安全初值,guest 自会重设 */
     v.spsr      = 0x3C5UL;                 /* EL1h(0x5) + DAIF 全掩(0xF<<6) */
@@ -50,7 +53,7 @@ static void cmd_run_guest(void)
     vm_transition(&vm, VM_CREATED);
     console_puts("run_guest: entering EL1 via stage-2 (non-identity map)\n");
     vm_transition(&vm, VM_RUNNING);
-    vcpu_run(&v);                          /* 正常返回 == guest 已 HVC exit */
+    vcpu_run(&v, (u64)stage2_pgd());       /* 过渡:旧静态表|VMID0;Task 4 切 vm 层 */
     vm_transition(&vm, VM_TEARDOWN);
     vm_transition(&vm, VM_DEAD);
     console_puts("run_guest: VM_DEAD, back at EL2\n");
