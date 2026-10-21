@@ -92,3 +92,56 @@ void stage2_dump(void)
     dump_table("l3_uart", s2_l3_uart);
     dump_table("l2_ram",  s2_l2_ram);
 }
+
+#define BLK_2M  0x200000UL
+#define PG_4K   0x1000UL
+
+/* ---- 27.04 第二站:per-VM 构建器 ----
+ * RAM 走 l2_ram 2MB block,设备页走 l2_dev→l3_dev 4KB page(强制 XN)。
+ * 配置违规(越界/不对齐/表越界)返回 -1,不 panic —— 调用方可礼貌拒绝。 */
+int stage2_build(struct vm_space *sp, u64 vmid,
+                 const struct mem_region *mem, u32 n_mem,
+                 const struct vm_device *dev, u32 n_dev)
+{
+    u32 i, b;
+
+    for (i = 0; i < 4; i++)
+        sp->pgd[i] = 0;
+    for (i = 0; i < 512; i++) {
+        sp->l2_dev[i] = 0;
+        sp->l2_ram[i] = 0;
+        sp->l3_dev[i] = 0;
+    }
+    sp->pgd[0] = DSC_TABLE(sp->l2_dev);
+    sp->pgd[1] = DSC_TABLE(sp->l2_ram);
+
+    for (i = 0; i < n_mem; i++) {
+        const struct mem_region *r = &mem[i];
+        u64 base = (r->ipa - 0x40000000UL) >> 21;
+
+        if (r->size == 0 || (r->size & (BLK_2M - 1)) ||
+            (r->ipa & (BLK_2M - 1)) || (r->pa & (BLK_2M - 1)))
+            return -1;
+        if (r->ipa < 0x40000000UL || r->ipa + r->size > 0x80000000UL)
+            return -1;                       /* RAM 段必须在 IPA 1-2GB 内 */
+        if (base + r->size / BLK_2M > 512)
+            return -1;
+        for (b = 0; b < r->size / BLK_2M; b++)
+            sp->l2_ram[base + b] = DSC_MAP(r->pa + (u64)b * BLK_2M, r->attr);
+    }
+
+    for (i = 0; i < n_dev; i++) {
+        const struct vm_device *d = &dev[i];
+        u64 l2i = d->ipa >> 21;
+
+        if (d->size != PG_4K || (d->ipa & (PG_4K - 1)) || (d->pa & (PG_4K - 1)))
+            return -1;
+        if (d->ipa >= 0x40000000UL)
+            return -1;                       /* 设备段必须在 IPA 0-1GB 内 */
+        sp->l2_dev[l2i] = DSC_TABLE(sp->l3_dev);
+        sp->l3_dev[(d->ipa >> 12) & 0x1FF] = DSC_PAGE(d->pa, d->attr) | DSC_XN;
+    }
+
+    sp->vttbr = (u64)sp->pgd | ((vmid & 0xFFUL) << 48);
+    return 0;
+}
