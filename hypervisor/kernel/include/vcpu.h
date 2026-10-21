@@ -13,6 +13,7 @@ struct vcpu {
     struct { u64 sp, lr; } host_ctx; /* ERET 前的 EL2 帧,exit 超调用恢复 */
 };
 
+void vcpu_init(void);                /* boot:安装 SP_EL2 异常栈 */
 void vcpu_run(struct vcpu *v);       /* 正常返回 == guest 已 exit */
 void vcpu_exit(void) __attribute__((noreturn));
 

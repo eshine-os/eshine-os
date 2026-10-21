@@ -3,11 +3,13 @@
 #include "arch/arm64/include/mm.h"
 #include "kernel/include/console.h"
 #include "kernel/include/shell.h"
+#include "kernel/include/vcpu.h"
 #include "kernel/include/version.h"
 
 void main(void)
 {
     console_init();
+    vcpu_init();                       /* SP_EL2 异常栈,越早越稳 */
     stage2_init();
     console_puts("\n" ESHINE_BANNER "\n");
     shell_run();

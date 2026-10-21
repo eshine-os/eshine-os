@@ -15,8 +15,12 @@ vcpu_eret_enter:
 
 .global vcpu_return_host
 
-/* noreturn — x0=v;恢复 host sp/lr 并 ret 回 vcpu_run 调用点 */
+/* noreturn — x0=v;恢复 host sp/lr 并 ret 回 vcpu_run 调用点。
+ * 异常进入 EL2 时硬件强制 SPSel=1(栈=SP_EL2),而宿主 C 世界住在
+ * SPSel=0/SP_EL0 bank——先切回 bank 0 再写 sp,才真正还回宿主栈
+ * (guest 自身用 SP_EL1,与本 bank 无关)。 */
 vcpu_return_host:
     ldp     x16, x17, [x0, #24]
+    msr     spsel, #0
     mov     sp, x16
     ret     x17

@@ -25,7 +25,10 @@ _start:
     msr     vbar_el2, x0
     isb
 
-    /* 设栈 */
+    /* 归一 SP bank:QEMU 直启 EL2 复位 SPSel=1(栈写进了 SP_EL2)。
+     * 规范:宿主 C 世界跑 SP_EL0(SPSel=0);SP_EL2 专用作异常进入栈
+     * (硬件:异常入 EL2 强制 SPSel=1),boot 后由 vcpu_init() 装载。 */
+    msr     spsel, #0
     ldr     x0, =__stack_top
     mov     sp, x0
 
