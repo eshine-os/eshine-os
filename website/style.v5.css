@@ -194,20 +194,29 @@ a:active {
 }
 
 #latest_label {
-    font-size: 1.25em;
-    padding: 0.75em 1.25em 0.3em 0;
+    font-size: 1em;
+    padding: 0.6em 1.25em 0.15em 0;
 }
 
 #latest_link {
-    font-size: 2em;
+    font-size: 1.35em;
     font-weight: bold;
-    padding: 0.35em 1.25em 0.75em 0.5em;
+    padding: 0.1em 1.25em 0.55em 0.5em;
+    white-space: nowrap;
 }
 
 #latest_link > a {
     color: var(--card);
     display: block;
     text-align: right;
+}
+
+.release-date {
+    display: block;
+    font-size: 0.55em;
+    font-weight: normal;
+    opacity: 0.85;
+    padding-top: 0.15em;
 }
 
 /* Releases table */
