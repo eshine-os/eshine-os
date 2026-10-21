@@ -3,6 +3,23 @@
 #include "hvc.h"
 #include "miniuart.h"
 
+/* 同源双镜像:-DGUEST_ID=0/1,身份仅差 banner 与提示符(spec §5) */
+#ifndef GUEST_ID
+#define GUEST_ID 0
+#endif
+
+#if GUEST_ID == 0
+#define BANNER_HVC  "eshine-guest VM0 @EL1 via stage-2 (HVC console)\n"
+#define BANNER_UART "eshine-guest VM0 UART @IPA 0x09000000 (stage-2 device page)\n"
+#define PROMPT      "vm0> "
+#elif GUEST_ID == 1
+#define BANNER_HVC  "eshine-guest VM1 @EL1 via stage-2 (HVC console)\n"
+#define BANNER_UART "eshine-guest VM1 UART @IPA 0x09000000 (stage-2 device page)\n"
+#define PROMPT      "vm1> "
+#else
+#error "GUEST_ID must be 0 or 1"
+#endif
+
 #define GBUF_MAX 128
 
 static char linebuf[GBUF_MAX];
@@ -35,15 +52,15 @@ static int starts(const char *s, const char *pfx)
  * 行编辑交互(echo/exit)。exit 经 HVC #1 退回 EL2。 */
 void guest_main(void)
 {
-    const char *msg = "eshine-guest @EL1 via stage-2 (HVC console)\n";
+    const char *msg = BANNER_HVC;
     const char *p;
     unsigned int idx = 0;
 
     for (p = msg; *p; p++)
         hvc_putc(*p);
 
-    puts_uart("eshine-guest UART @IPA 0x09000000 (stage-2 device page)\n");
-    puts_uart("guest> ");
+    puts_uart(BANNER_UART);
+    puts_uart(PROMPT);
 
     for (;;) {
         char c = uart_getc();
@@ -60,7 +77,7 @@ void guest_main(void)
                 puts_uart("guest: try echo <text> | exit\n");
             }
             idx = 0;
-            puts_uart("guest> ");
+            puts_uart(PROMPT);
         } else if ((c == 0x7f || c == '\b') && idx > 0) {
             idx--;
             puts_uart("\b \b");

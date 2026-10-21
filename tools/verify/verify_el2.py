@@ -25,7 +25,8 @@ import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ELF = os.path.join(REPO, "eshine.elf")
-GUESTBIN = os.path.join(REPO, "guest.bin")
+GUEST1 = os.path.join(REPO, "guest1.bin")
+GUEST2 = os.path.join(REPO, "guest2.bin")
 SOCK = "/tmp/eshine-el2-verify.sock"
 # VERSION 文件 = 唯一事实源,判据随版本自动同步(docs/VERSIONING.md)
 VER = open(os.path.join(REPO, "VERSION")).read().strip()
@@ -54,9 +55,10 @@ def main():
     if not os.path.exists(ELF):
         print("FAIL: %s not built (run make first)" % ELF)
         return 1
-    if not os.path.exists(GUESTBIN):
-        print("FAIL: %s not built (run make first)" % GUESTBIN)
-        return 1
+    for img in (GUEST1, GUEST2):
+        if not os.path.exists(img):
+            print("FAIL: %s not built (run make first)" % img)
+            return 1
     if os.path.exists(SOCK):
         os.unlink(SOCK)
 
@@ -67,7 +69,8 @@ def main():
             "-cpu", "cortex-a57", "-m", "512",
             "-display", "none", "-monitor", "none",
             "-kernel", ELF,
-            "-device", "loader,file=%s,addr=0x50000000,force-raw=on" % GUESTBIN,
+            "-device", "loader,file=%s,addr=0x50000000,force-raw=on" % GUEST1,
+            "-device", "loader,file=%s,addr=0x51000000,force-raw=on" % GUEST2,
             "-chardev", "socket,id=ser0,path=%s,server=on,wait=on" % SOCK,
             "-serial", "chardev:ser0",
         ],
@@ -107,15 +110,15 @@ def main():
             # ---- C 相:guest 往返 + guest 侧 UART 交互 ----
             round_pos = len(buf)
             s.sendall(b"run_guest\n")
-            buf = read_until(s, buf, b"eshine-guest @EL1", time.time() + 15, start=round_pos)
+            buf = read_until(s, buf, b"eshine-guest VM0 @EL1", time.time() + 15, start=round_pos)
             print("  [4/8] guest HVC banner from EL1 (stage-2 + hypercall)")
-            buf = read_until(s, buf, b"eshine-guest UART @IPA 0x09000000", time.time() + 10, start=round_pos)
+            buf = read_until(s, buf, b"eshine-guest VM0 UART @IPA 0x09000000", time.time() + 10, start=round_pos)
             print("  [5/8] guest direct-UART banner (stage-2 device page)")
-            buf = read_until(s, buf, b"guest> ", time.time() + 10, start=round_pos)
+            buf = read_until(s, buf, b"vm0> ", time.time() + 10, start=round_pos)
             guest_pos = len(buf)
             gtoken = "GOK%d" % os.getpid()
             s.sendall(("echo " + gtoken + "\n").encode())
-            buf = read_until(s, buf, b"guest> ", time.time() + 10, start=guest_pos)
+            buf = read_until(s, buf, b"vm0> ", time.time() + 10, start=guest_pos)
             if buf[guest_pos:].count(gtoken.encode()) < 2:
                 print(
                     "FAIL: guest token seen %d time(s), expected >= 2\noutput:\n%s"

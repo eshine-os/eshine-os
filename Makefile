@@ -22,10 +22,10 @@ OBJS  := $(CSRCS:.c=.o) $(ASRCS:.S=.o)
 
 TARGET := eshine.elf
 
-# guest:独立构建,链接 IPA 0x40000000(见 guest/linker.ld)
-GOBJS := guest/start.o guest/main.o
+# guest:独立构建,同源双身份(-DGUEST_ID=0/1),链接 IPA 0x40000000(见 guest/linker.ld)
+GOBJS := guest/start.o guest/main0.o guest/main1.o
 
-all: $(TARGET) guest.bin
+all: $(TARGET) guest1.bin guest2.bin
 
 $(TARGET): $(OBJS) linker.ld
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
@@ -42,17 +42,26 @@ $(OBJS): VERSION
 run: $(TARGET)
 	./scripts/run_qemu.sh
 
-verify: $(TARGET) guest.bin
+verify: $(TARGET) guest1.bin guest2.bin
 	python3 tools/verify/verify_el2.py
 
-guest.elf: $(GOBJS) guest/linker.ld
-	$(CC) $(CFLAGS) -nostdlib -Wl,--build-id=none -T guest/linker.ld -o $@ $(GOBJS)
+guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h
+	$(CC) $(CFLAGS) -DGUEST_ID=0 -c -o $@ $<
+guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h
+	$(CC) $(CFLAGS) -DGUEST_ID=1 -c -o $@ $<
 
-guest.bin: guest.elf
+guest1.elf: guest/start.o guest/main0.o guest/linker.ld
+	$(CC) $(CFLAGS) -nostdlib -Wl,--build-id=none -T guest/linker.ld -o $@ guest/start.o guest/main0.o
+guest2.elf: guest/start.o guest/main1.o guest/linker.ld
+	$(CC) $(CFLAGS) -nostdlib -Wl,--build-id=none -T guest/linker.ld -o $@ guest/start.o guest/main1.o
+
+guest1.bin: guest1.elf
+	$(CROSS)objcopy -O binary $< $@
+guest2.bin: guest2.elf
 	$(CROSS)objcopy -O binary $< $@
 
 clean:
-	rm -f $(OBJS) $(TARGET) $(OBJS:.o=.d) $(GOBJS) guest/*.d guest.elf guest.bin
+	rm -f $(OBJS) $(TARGET) $(OBJS:.o=.d) $(GOBJS) guest/*.d guest1.elf guest2.elf guest1.bin guest2.bin
 
 .PHONY: all run verify clean
 
