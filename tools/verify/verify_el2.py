@@ -92,57 +92,106 @@ def main():
         buf = b""
         try:
             buf = read_until(s, buf, ("eshine-os " + VER).encode(), time.time() + 30)
-            print("  [1/8] banner ok (" + VER + ")")
+            print("  [1/14] banner ok (" + VER + ")")
             buf = read_until(s, buf, b"eshine> ", time.time() + 10)
-            print("  [2/8] shell prompt ok")
+            print("  [2/14] shell prompt ok")
             prompt_pos = len(buf)          # 只在提示符之后的字节里找下一段
             token = "ESHINEOK%d" % os.getpid()
             s.sendall(("echo " + token + "\n").encode())
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=prompt_pos)
             if buf[prompt_pos:].count(token.encode()) < 2:
                 print(
-                    "FAIL: token seen %d time(s), expected >= 2 (typed-echo + output)\noutput:\n%s"
-                    % (buf.count(token.encode()), buf.decode(errors="replace"))
+                    "FAIL: host token seen %d time(s), expected >= 2\noutput:\n%s"
+                    % (buf[prompt_pos:].count(token.encode()), buf.decode(errors="replace"))
                 )
                 return 1
-            print("  [3/8] host token double-echo ok")
+            print("  [3/14] host token double-echo ok")
 
-            # ---- C 相:guest 往返 + guest 侧 UART 交互 ----
-            round_pos = len(buf)
-            s.sendall(b"run_guest\n")
-            buf = read_until(s, buf, b"eshine-guest VM0 @EL1", time.time() + 15, start=round_pos)
-            print("  [4/8] guest HVC banner from EL1 (stage-2 + hypercall)")
-            buf = read_until(s, buf, b"eshine-guest VM0 UART @IPA 0x09000000", time.time() + 10, start=round_pos)
-            print("  [5/8] guest direct-UART banner (stage-2 device page)")
-            buf = read_until(s, buf, b"vm0> ", time.time() + 10, start=round_pos)
-            guest_pos = len(buf)
-            gtoken = "GOK%d" % os.getpid()
-            s.sendall(("echo " + gtoken + "\n").encode())
-            buf = read_until(s, buf, b"vm0> ", time.time() + 10, start=guest_pos)
-            if buf[guest_pos:].count(gtoken.encode()) < 2:
-                print(
-                    "FAIL: guest token seen %d time(s), expected >= 2\noutput:\n%s"
-                    % (buf[guest_pos:].count(gtoken.encode()), buf.decode(errors="replace"))
-                )
+            def vm_round(tag, gtok, create):
+                """(可选 vmcreate) + vmrun + guest token + exit -> VM_DEAD
+                每个 read_until 都以发送时刻的 buf 长度为下界,拒绝陈旧匹配。"""
+                nonlocal buf
+
+                p = len(buf)
+                if create:
+                    s.sendall(("vmcreate " + tag + "\n").encode())
+                    buf = read_until(s, buf, ("vm" + tag + ": CREATED").encode(),
+                                     time.time() + 10, start=p)
+                p = len(buf)
+                s.sendall(("vmrun " + tag + "\n").encode())
+                buf = read_until(s, buf,
+                                 ("eshine-guest VM" + tag + " @EL1").encode(),
+                                 time.time() + 15, start=p)
+                print("  guest VM" + tag + " banner (stage-2 + HVC)")
+                buf = read_until(s, buf,
+                                 ("eshine-guest VM" + tag + " UART").encode(),
+                                 time.time() + 10, start=p)
+                buf = read_until(s, buf, ("vm" + tag + "> ").encode(),
+                                 time.time() + 10, start=p)
+                p = len(buf)
+                s.sendall(("echo " + gtok + "\n").encode())
+                buf = read_until(s, buf, ("vm" + tag + "> ").encode(),
+                                 time.time() + 10, start=p)
+                if buf[p:].count(gtok.encode()) < 2:
+                    print("FAIL: VM%s token seen %d time(s)\noutput:\n%s"
+                          % (tag, buf[p:].count(gtok.encode()),
+                             buf.decode(errors="replace")))
+                    return False
+                print("  guest VM" + tag + " token double-echo ok")
+                p = len(buf)
+                s.sendall(b"exit\n")
+                buf = read_until(s, buf, ("vm" + tag + ": VM_DEAD").encode(),
+                                 time.time() + 10, start=p)
+                # VM_DEAD 之后的宿主 prompt 可能还在路上 — 立即吃掉,
+                # 否则下一条命令的 read_until 会撞上这个陈旧 prompt
+                buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=p)
+                return True
+
+            pos = len(buf)
+            s.sendall(b"vmls\n")
+            buf = read_until(s, buf, b"[0] VM_INIT", time.time() + 10, start=pos)
+            buf = read_until(s, buf, b"[1] VM_INIT", time.time() + 10, start=pos)
+            print("  [4/14] vmls: empty table (INIT, INIT)")
+
+            pos = len(buf)
+            s.sendall(b"vmcreate 0\n")
+            buf = read_until(s, buf, b"vm0: CREATED", time.time() + 10, start=pos)
+            pos = len(buf)
+            s.sendall(b"vmls\n")
+            buf = read_until(s, buf, b"[0] VM_CREATED", time.time() + 10, start=pos)
+            print("  [5/14] vmcreate 0 -> CREATED")
+
+            if not vm_round("0", "GOK%d" % os.getpid(), create=False):
                 return 1
-            print("  [6/8] guest token double-echo ok (guest shell alive)")
-            s.sendall(b"exit\n")
-            buf = read_until(s, buf, b"run_guest: VM_DEAD, back at EL2", time.time() + 10, start=round_pos)
-            print("  [7/8] VM_DEAD: guest HVC-exit back to EL2")
-            buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=round_pos)
+            print("  [6-8/14] VM0 round-trip ok (create/run/token/VM_DEAD)")
 
-            # 宿主完整性:guest 往返后 shell 仍须双回显
+            if not vm_round("1", "GOKR%d" % os.getpid(), create=True):
+                return 1
+            print("  [9-11/14] VM1 round-trip ok (same IPA, different PA)")
+
+            pos = len(buf)
+            s.sendall(b"vmls\n")
+            buf = read_until(s, buf, b"[0] VM_DEAD", time.time() + 10, start=pos)
+            buf = read_until(s, buf, b"[1] VM_DEAD", time.time() + 10, start=pos)
+            buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=pos)
+            print("  [12/14] vmls: full lifecycle DEAD")
+
             prompt_pos = len(buf)
             token2 = "ESHINEOK%d" % (os.getpid() + 1)
             s.sendall(("echo " + token2 + "\n").encode())
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=prompt_pos)
             if buf[prompt_pos:].count(token2.encode()) < 2:
                 print(
-                    "FAIL: post-guest token seen %d time(s), expected >= 2 (host corrupted?)\noutput:\n%s"
+                    "FAIL: post-VM host token seen %d time(s), expected >= 2 (host corrupted?)\noutput:\n%s"
                     % (buf[prompt_pos:].count(token2.encode()), buf.decode(errors="replace"))
                 )
                 return 1
-            print("  [8/8] host shell intact after guest round-trip")
+            print("  [13/14] host shell intact after two VM round-trips")
+
+            pos = len(buf)
+            s.sendall(b"vmkill 1\n")
+            buf = read_until(s, buf, b"kill denied", time.time() + 10, start=pos)
+            print("  [14/14] vmkill deny path ok (default-deny)")
             print("RESULT PASS")
             return 0
         finally:
