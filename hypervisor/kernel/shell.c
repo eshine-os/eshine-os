@@ -5,6 +5,7 @@
 #include "kernel/include/types.h"
 #include "arch/arm64/include/mm.h"
 #include "kernel/include/util.h"
+#include "kernel/include/vcpu.h"
 #include "kernel/include/version.h"
 #include "kernel/include/vm.h"
 #include "drivers/include/pl011.h"
@@ -37,6 +38,24 @@ static void cmd_state(void)
     vm_state_demo();
 }
 
+static void cmd_run_guest(void)
+{
+    struct eshine_vm vm = { .state = VM_INIT };
+    struct vcpu v;
+
+    v.entry_pc = 0x40000000UL;             /* guest IPA(物理在 0x50000000) */
+    v.entry_sp  = 0x40200000UL;            /* 安全初值,guest 自会重设 */
+    v.spsr      = 0x3C5UL;                 /* EL1h(0x5) + DAIF 全掩(0xF<<6) */
+
+    vm_transition(&vm, VM_CREATED);
+    console_puts("run_guest: entering EL1 via stage-2 (non-identity map)\n");
+    vm_transition(&vm, VM_RUNNING);
+    vcpu_run(&v);                          /* 正常返回 == guest 已 HVC exit */
+    vm_transition(&vm, VM_TEARDOWN);
+    vm_transition(&vm, VM_DEAD);
+    console_puts("run_guest: VM_DEAD, back at EL2\n");
+}
+
 static void dispatch(char *line)
 {
     /* 就地拆出第一个词与参数 */
@@ -62,6 +81,8 @@ static void dispatch(char *line)
         cmd_state();
     } else if (strncmp(line, "s2dump", 64) == 0) {
         stage2_dump();
+    } else if (strncmp(line, "run_guest", 64) == 0) {
+        cmd_run_guest();
     } else if (*line) {
         console_puts("unknown command: ");
         console_puts(line);

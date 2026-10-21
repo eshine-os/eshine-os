@@ -21,7 +21,7 @@ el2_vector_table:
     VENTRY el2_unexpected          /* fiq */
     VENTRY el2_unexpected          /* serror */
     /* Lower EL, AArch64 */
-    VENTRY el2_unexpected
+    VENTRY el1_sync
     VENTRY el2_unexpected
     VENTRY el2_unexpected
     VENTRY el2_unexpected
