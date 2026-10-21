@@ -20,6 +20,11 @@ _start:
     str     xzr, [x0], #8
     b       2b
 3:
+    /* 装载异常向量表 */
+    ldr     x0, =el2_vector_table
+    msr     vbar_el2, x0
+    isb
+
     /* 设栈 */
     ldr     x0, =__stack_top
     mov     sp, x0
