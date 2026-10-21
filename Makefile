@@ -3,9 +3,14 @@
 CROSS   ?= aarch64-linux-gnu-
 CC      := $(CROSS)gcc
 
+# VERSION 文件 = 唯一事实源(docs/VERSIONING.md),注入到 version.h
+VERSION := $(shell cat VERSION 2>/dev/null || echo unknown)
+
 CFLAGS  := -ffreestanding -fno-builtin -fno-pie -fno-pic \
            -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
            -mgeneral-regs-only -march=armv8-a -std=gnu11 -O2 -g \
+           -DESHINE_VERSION_STR=\"$(VERSION)\" \
+           -MMD -MP \
            -Wall -Wextra -Ihypervisor
 ASFLAGS := -mgeneral-regs-only -march=armv8-a
 LDFLAGS := -nostdlib -Wl,--build-id=none -T linker.ld
@@ -34,6 +39,9 @@ verify: $(TARGET)
 	python3 tools/verify/verify_el2.py
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(TARGET) $(OBJS:.o=.d)
 
 .PHONY: all run verify clean
+
+# 头文件自动依赖(-MMD -MP),头文件改动触发重编
+-include $(OBJS:.o=.d)

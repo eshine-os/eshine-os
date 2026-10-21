@@ -19,6 +19,8 @@ import time
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ELF = os.path.join(REPO, "eshine.elf")
 SOCK = "/tmp/eshine-el2-verify.sock"
+# VERSION 文件 = 唯一事实源,判据随版本自动同步(docs/VERSIONING.md)
+VER = open(os.path.join(REPO, "VERSION")).read().strip()
 
 
 def read_until(s, buf, needle, deadline, sock_timeout=1.0, start=0):
@@ -74,8 +76,8 @@ def main():
 
         buf = b""
         try:
-            buf = read_until(s, buf, b"eshine-os 0.0.1", time.time() + 30)
-            print("  [1/3] banner ok")
+            buf = read_until(s, buf, ("eshine-os " + VER).encode(), time.time() + 30)
+            print("  [1/3] banner ok (" + VER + ")")
             buf = read_until(s, buf, b"eshine> ", time.time() + 10)
             print("  [2/3] shell prompt ok")
             prompt_pos = len(buf)          # 只在提示符之后的字节里找下一段

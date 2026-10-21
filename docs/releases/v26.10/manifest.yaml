@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Julian Chu
+# eshine-os 26.10 release manifest (docs/VERSIONING.md)
+release: "26.10"
+date: 2026-10-21
+components:
+  hypervisor:
+    version: v26.10
+    scope: EL2 skeleton - direct-EL2 boot, 16-slot vector table,
+      PL011 console, interactive mini-shell, VM state machine
+      (table-driven, default-deny transitions)
+  rtos:
+    status: not-yet
+    note: VM0 management domain, planned
+  guest-linux:
+    status: not-yet
+    policy: upstream LTS pinned per release, no fork
+  toolchain:
+    gcc: aarch64-linux-gnu-gcc 13.3.0
+    qemu: qemu-system-aarch64 8.2.2
+verify: tools/verify/verify_el2.py (banner + prompt + token double echo)
+license: Apache-2.0

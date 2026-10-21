@@ -20,6 +20,9 @@ static void cmd_help(void)
 static void cmd_version(void)
 {
     console_puts(ESHINE_BANNER "\n");
+    console_puts("  hypervisor:  " ESHINE_VERSION_STR "\n");
+    console_puts("  rtos:        not-yet (VM0 management domain, planned)\n");
+    console_puts("  guest-linux: not-yet (upstream LTS pinned per release)\n");
 }
 
 static void cmd_echo(const char *args)

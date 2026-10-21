@@ -40,7 +40,9 @@ Build a high-reliability, high-safety operating-system foundation for the AI era
 
 🚧 Open-sourcing in progress — repositories will be published under this organization as they become ready.
 
-- `v0.0.1` — EL2 skeleton under development（Week-1）
+- **`26.10`** — 第一个正式版 / First release（2026-10-21）：EL2 skeleton（直启 EL2 / 向量表 / mini-shell / VM 状态机 / 真绿门禁），见 [docs/releases/v26.10](docs/releases/v26.10/notes.md)
+- 开发线 / Development line：`27.04-dev` —— stage2 页表与 guest 地址空间
+- 发布节奏 / Cadence：每年 4 月 / 10 月（YY.MM），版本策略见 [docs/VERSIONING.md](docs/VERSIONING.md)
 - 目标架构 / Target architecture: Type-1 hypervisor + management RTOS VM + Linux guest VM
 
 ## 快速开始 / Quick start

@@ -4,3 +4,7 @@
 *.o
 *.elf
 eshine.elf
+# Editor swap files
+*.swp
+# Generated dependency files (-MMD)
+*.d
