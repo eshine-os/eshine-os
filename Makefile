@@ -32,6 +32,9 @@ $(TARGET): $(OBJS) linker.ld
 %.o: %.S
 	$(CC) $(ASFLAGS) -c -o $@ $<
 
+# VERSION 是注入宏的来源,必须作为先决条件(否则改版本不触发重编,门禁会抓)
+$(OBJS): VERSION
+
 run: $(TARGET)
 	./scripts/run_qemu.sh
 
