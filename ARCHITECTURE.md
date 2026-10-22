@@ -51,23 +51,49 @@
     VTCR/描述符规则与第一站一致：AF bit10 铁律、RAM=0xF、设备=0x1+XN
     拓扑不变：pgd[0]->设备段 L2、pgd[1]->RAM 段 L2；boot 单套静态表已删
 
-## vCPU 出入口（27.04 第二站补完）
+## vCPU 出入口（27.04 第二站补完，第三站并入陷阱帧节）
 
     host_ctx = x19-x28 + sp + lr（整块宿主现场）
     ERET 后 guest 覆盖一切可覆盖寄存器 — ret 回宿主前必须全量还回，
     否则调用方 callee-saved 变成 EL2 异常链残留（实测 vmrun 曾把 id
     打印成 HVC 的 ESR 值）
-    guest 侧 ABI 现状：x18-x28 靠 EL2 handler 不触碰而存活 — 编译器
-    巧合，完整 vCPU 上下文切换是下一站的债（devlog 02 记录）
+    第三站起 guest 侧现场由陷阱帧全量保存恢复 — 第二站记账的
+    "编译器巧合"债务已清偿（见下节与 devlog 03）
+
+## vCPU 陷阱帧（27.04 第三站：帧即真相）
+
+    struct vcpu = gprs[31](x0-x30) + sp + pc + pstate   ← 陷阱帧（asm 契约偏移）
+                 + host_ctx(x19-x28 + sp + lr)          ← 宿主现场
+                 + exit_reason(EXIT/YIELD/FAULT)
+    el1_trap:    向量槽入口,停 x0 于 excp_stack → 全 GPR+SP_EL1/ELR/SPSR 入帧
+                 → SP_EL2 归位栈顶 → el1_sync(x0=vcpu)
+    trap_resume: 帧加载尾部(x0 最后回填)→ eret
+    vcpu_enter_guest: 存 host_ctx → 复用帧加载 → eret
+    vcpu_return_host: 还 host_ctx → ret 回 vcpu_run 调用点
+
+- 新跑 = vm_create 初始化帧；yield 后帧 = 断点；续跑同一条进入路径
+- **EL2 handler 从此可自由用任何寄存器** — 第二站"编译器巧合"债清零
+- SP_EL2 每次陷阱入口归位栈顶：handler 链不退栈、eret 不还栈，
+  不归位则每次净泄一截、累计碾穿栈底（实测第 79 发陷阱踩 cur_vcpu）
+- guest 侧 selftest：sum 跨 100 次 HVC 存活（x19/x30 实证落点），
+  帧破则 4950 校验红
 
 ## 异常级分工（当前）
 
 | 异常 | 处理 | 状态 |
 |---|---|---|
-| current-EL sync | 打印 ESR_EL2/FAR_EL2 -> WFI | 已实 |
+| current-EL sync | 打印 ESR_EL2/FAR_EL2 -> WFI（宿主自身异常仍 panic，默认拒绝） | 已实 |
 | current-EL irq  | WFI（无 GIC 配置，不应发生） | 已实 |
-| lower-EL sync   | el1_sync：HVC #0/#1 分发，非 HVC 默认拒绝 panic | 已实 |
+| lower-EL sync   | el1_trap 保存帧 → el1_sync：HVC #0/#1/#2 分发；非 HVC = guest fault → 帧诊断 + VM 隔离死 | 已实 |
 | fiq / serror / 其余 lower-EL 槽 | 默认拒绝 panic + ESR | 占位 |
+
+## Guest fault 隔离（27.04 第三站）
+
+非 HVC 异常 → `fault: ESR/FAR/pc/sp/x0-x3`（读自陷阱帧，展示野访问
+现场）→ vcpu_exit retire → vm_run `faulted -> VM_DEAD`。**坏 guest 杀不死
+hypervisor**；宿主自身异常仍是 panic+WFI（边界反转之处）。
+
+## SP bank 归一（27.04，gdb 实证后固化）
 
 ## SP bank 归一（27.04，gdb 实证后固化）
 
@@ -87,27 +113,30 @@ excp-stack 舞步会覆盖活栈、切到从未初始化的 SP_EL0=0，导致 ER
     描述符铁律：AF（bit10）必置位（实测 ESR 0x8200000A 指令中止）；
     RAM MemAttr=0xF，设备=0x1（S1 关闭时），设备页强制 XN
 
-## 超调用 ABI（HVC，当前两个调用号）
+## 超调用 ABI（HVC，三个调用号）
 
 | imm | 语义 | x0 | 其余寄存器 |
 |---|---|---|---|
-| 0   | putc：guest 控制台 | 入：字符；出：0 | x1-x17 易失（EL2 可自由使用）；x18-x28 现靠 EL2 handler 不触碰存活（编译器巧合，完整上下文切换为后续债） |
-| 1   | exit：guest 主动退出 | - | 同上；noreturn，宿主接手打印 VM_DEAD |
+| 0   | putc：guest 控制台 | 入：字符；出：0 | x1-x17 易失（EL2 可自由使用）；x18-x30 由陷阱帧全量保存恢复（第三站兑现） |
+| 1   | exit：guest 主动退出 → VM 层 TEARDOWN→DEAD | - | 同上 |
+| 2   | yield：主动让出 → VM 层 RUNNING→PAUSED，返回点即续跑断点 | 入 0/出 0 | 同上；返回 = 从断点继续 |
 
-guest 内联 asm 必须声明 x1-x17 clobber，否则编译器会把活跃值放进去
-被 EL2 handler 覆盖。x18 平台保留位不被 EL2 分配，可跨超调用存活。
+guest 内联 asm 必须声明 x1-x17 clobber；跨超调用的活跃值落 x18-x30
+（selftest 实证 x19/x30），由帧保存恢复。
 
 ## 路线注记（范围外，记录归属）
 
 - 真板阶段：EL3/ATF 启动链（QEMU virt 无 secure world，本周用 virtualization=on 直进 EL2）
-- GICv3 虚拟化（ICH_*）、vCPU 调度、完整 vCPU 上下文切换（guest 寄存器态）、
-  分配器（vm_space/vcpu 由内嵌换动态）、VM0=RTOS 管理 VM / VM1=Linux guest
+- GICv3 虚拟化（ICH_*）、vCPU 调度（多 vCPU/抢占，yield 语义升级为
+  调度点）、分配器（vm_space/vcpu 由内嵌换动态）、VM0=RTOS 管理 VM /
+  VM1=Linux guest
 - 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（14 步：banner + prompt +
-宿主 token 双回显 + 空表 vmls + vmcreate + VM0/VM1 各自完整往返
-（HVC banner/直访 UART banner/guest token 双回显/VM_DEAD）+ 全 DEAD 表 +
-宿主完整性复验 + vmkill 拒绝路径，静态 marker 不算）。CI 在
-.github/workflows/ci.yml，同步 GitHub 后生效。
+真绿门禁：`python3 tools/verify/verify_el2.py`（17 步：banner + prompt +
+宿主 token 双回显 + 空表 + vmcreate + VM0 selftest（寄存器跨 100 HVC）+
+token + yield→PAUSED + vmls + 断点续跑 + exit/VM_DEAD + VM1 banner +
+fault 隔离（诊断+VM_DEAD+宿主活）+ 全 DEAD + 宿主完整性复验 +
+vmkill 拒绝路径，静态 marker 不算）。CI 在 .github/workflows/ci.yml，
+同步 GitHub 后生效。
