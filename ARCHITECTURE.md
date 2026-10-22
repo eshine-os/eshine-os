@@ -78,13 +78,14 @@
 - guest 侧 selftest：sum 跨 100 次 HVC 存活（x19/x30 实证落点），
   帧破则 4950 校验红
 
-## 异常级分工（当前）
+## 异常级分工（27.04 第四站后）
 
 | 异常 | 处理 | 状态 |
 |---|---|---|
 | current-EL sync | 打印 ESR_EL2/FAR_EL2 -> WFI（宿主自身异常仍 panic，默认拒绝） | 已实 |
-| current-EL irq  | WFI（无 GIC 配置，不应发生） | 已实 |
-| lower-EL sync   | el1_trap 保存帧 → el1_sync：HVC #0/#1/#2 分发；非 HVC = guest fault → 帧诊断 + VM 隔离死 | 已实 |
+| current-EL irq  | el2_trap → el2_irq：26=宿主 tick（重装后 EOIR+DIR）；27=vtimer（注入 LR 后只降优先级）；spurious 不动 EOIR | 已实 |
+| lower-EL sync   | el1_trap 保存帧 → el1_sync：HVC #0/#1/#2 + WFI 陷阱（EC=0x01 → VCPU_WAIT）；其余 = guest fault → 帧诊断 + VM 隔离死 | 已实 |
+| lower-EL irq    | el2_trap：guest 运行中的物理中断（宿主 tick 等）宿主栈处理后 eret 回 guest 现场 | 已实 |
 | fiq / serror / 其余 lower-EL 槽 | 默认拒绝 panic + ESR | 占位 |
 
 ## Guest fault 隔离（27.04 第三站）
@@ -92,8 +93,6 @@
 非 HVC 异常 → `fault: ESR/FAR/pc/sp/x0-x3`（读自陷阱帧，展示野访问
 现场）→ vcpu_exit retire → vm_run `faulted -> VM_DEAD`。**坏 guest 杀不死
 hypervisor**；宿主自身异常仍是 panic+WFI（边界反转之处）。
-
-## SP bank 归一（27.04，gdb 实证后固化）
 
 ## SP bank 归一（27.04，gdb 实证后固化）
 
@@ -124,19 +123,36 @@ excp-stack 舞步会覆盖活栈、切到从未初始化的 SP_EL0=0，导致 ER
 guest 内联 asm 必须声明 x1-x17 clobber；跨超调用的活跃值落 x18-x30
 （selftest 实证 x19/x30），由帧保存恢复。
 
+## 中断面（27.04 第四站：GICv3 真中断 + 虚拟注入全链）
+
+宿主第一次活在"被中断"里，guest 第一次收到与宿主物理线无关的虚拟中断：
+
+| 层 | 形态 | 关键事实（QEMU 8.2.2 源码 + 活探针双重实证） |
+|---|---|---|
+| 物理 GIC | dist+redist+cpuif 单版本直书（IHI0069 偏移） | SGI 帧 = GICD 家族镜像（IGROUPR0@0x80、ISENABLER0@0x100，空洞 RAZ/WI）；GICD_CTLR bit1=EN_GRP1NS 分发门（G1NS 另需 ICC_IGRPEN1） |
+| PPI 接线 | 活体探针定案（不抄 DTB 槽位序） | CNTHP（宿主 tick）=INTID 26；CNTV（guest vtimer）=27；均为电平触发（不碰 ICFGR） |
+| HCR_EL2 | 宿主 0x10（IMO bit4）；guest 0x80002011（RW\|VM\|IMO\|TWI） | QEMU target_el_table rw=1 列：IMO 位是 EL2 物理 IRQ 回 EL2 的路由门；参考实现 sysregs.h 同值互证；vcpu_exit 恢复宿主值且 daifclr（异常进入自带掩码） |
+| EL2 IRQ 入口 | el2_trap 平衡桩（两组当前 EL 槽 + lower-EL 槽同接） | 单一入口,eret 直用 ELR/SPSR;guest 运行中的物理 tick 断入后原样回 guest |
+| 虚拟注入 | vgic_enable（ICH_VMCR=VPMR 全放行+VENG1、ICH_HCR En）+ vgic_inject_vtimer（LR0 = vINTID27\|pINTID27<<32\|G1\|pending\|HW） | 宿主对物理 27 只 EOIR 降优先级不 DIR；guest 虚 EOI（ICV 视图,EOIR 一发降+撤）经 HW-LR 硬件联动撤销物理线，电平线不重挂起 |
+| WFI 陷阱 | HCR.TWI → EC=0x01（ISS.TI=0）→ VCPU_WAIT | WFI 陷阱不 retire：宿主陪睡（EL2 wfi,滴答/vtimer 唤醒）后代其完成（vm_run 内 PC+4），guest 醒后自查 vtimer 标志（TWI 下 wfi() 永不"返回"） |
+
+中断数据观：未知 intid 记账 EOI 不 panic（同 fault 隔离哲学）；spurious(1023) 不动 EOIR。
+
 ## 路线注记（范围外，记录归属）
 
 - 真板阶段：EL3/ATF 启动链（QEMU virt 无 secure world，本周用 virtualization=on 直进 EL2）
-- GICv3 虚拟化（ICH_*）、vCPU 调度（多 vCPU/抢占，yield 语义升级为
-  调度点）、分配器（vm_space/vcpu 由内嵌换动态）、VM0=RTOS 管理 VM /
-  VM1=Linux guest
+- LR 满兜底（maint PPI 25+UIE+ring）、per-vCPU vtimer_ctx（CNTVOFF/CTL/CVAL）、
+  vCPU 调度（多 vCPU/抢占，yield/WAIT 语义升级为调度点）、分配器
+  （vm_space/vcpu 由内嵌换动态）、VM0=RTOS 管理 VM / VM1=Linux guest
 - 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（17 步：banner + prompt +
-宿主 token 双回显 + 空表 + vmcreate + VM0 selftest（寄存器跨 100 HVC）+
-token + yield→PAUSED + vmls + 断点续跑 + exit/VM_DEAD + VM1 banner +
+真绿门禁：`python3 tools/verify/verify_el2.py`（20 步：banner + prompt +
+宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
+空表 + vmcreate + VM0 selftest（寄存器跨 100 HVC）+ token +
+yield→PAUSED + vmls + 断点续跑 + guest sleep（WFI 陷阱→宿主陪睡→
+vtimer 注入→slept，虚拟中断全链判据）+ exit/VM_DEAD + VM1 banner +
 fault 隔离（诊断+VM_DEAD+宿主活）+ 全 DEAD + 宿主完整性复验 +
-vmkill 拒绝路径，静态 marker 不算）。CI 在 .github/workflows/ci.yml，
-同步 GitHub 后生效。
+guest 退场后 tick 仍增长（HCR/DAIF 恢复判据）+ vmkill 拒绝路径，
+静态 marker 不算）。CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。
