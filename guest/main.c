@@ -70,6 +70,10 @@ void guest_main(void)
             linebuf[idx] = '\0';
             if (streq(linebuf, "exit")) {
                 hvc_exit();                 /* noreturn,宿主接手打印 VM_DEAD */
+            } else if (streq(linebuf, "yield")) {
+                puts_uart("yielding...\n");
+                hvc_yield();
+                puts_uart("resumed\n");     /* 续跑点:从此处继续 */
             } else if (starts(linebuf, "echo ")) {
                 puts_uart(linebuf + 5);
                 puts_uart("\n");

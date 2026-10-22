@@ -115,25 +115,41 @@ int vm_create(u32 id)
 int vm_run(u32 id)
 {
     struct eshine_vm *vm;
+    u64 reason;
+    bool resumed;
 
     if (id >= ESHINE_MAX_VMS) {
         console_puts("no such vm\n");
         return -1;
     }
     vm = &vm_table[id];
-    if (vm->state != VM_CREATED) {
+    resumed = (vm->state == VM_PAUSED);
+    if (vm->state == VM_PAUSED || vm->state == VM_CREATED)
+        vm_transition(vm, VM_RUNNING);       /* 断点续跑 / 新跑 */
+    else {
         vm_id_label(id);
         console_puts("denied: vmcreate first\n");
         return -1;
     }
-    vm_transition(vm, VM_RUNNING);
     vm_id_label(id);
-    console_puts("entering EL1 via stage-2 (non-identity map)\n");
-    vcpu_run(&vm->vcpus[0], vm->space.vttbr);  /* 正常返回 == guest 已 exit */
+    if (resumed)
+        console_puts("resumed (breakpoint)\n");
+    else
+        console_puts("entering EL1 via stage-2 (non-identity map)\n");
+    reason = vcpu_run(&vm->vcpus[0], vm->space.vttbr);
+    if (reason == VCPU_YIELD) {
+        vm_transition(vm, VM_PAUSED);
+        vm_id_label(id);
+        console_puts("yielded -> PAUSED (vmrun to resume)\n");
+        return 0;
+    }
     vm_transition(vm, VM_TEARDOWN);
     vm_transition(vm, VM_DEAD);
     vm_id_label(id);
-    console_puts("VM_DEAD\n");
+    if (reason == VCPU_FAULT)
+        console_puts("faulted -> VM_DEAD\n");
+    else
+        console_puts("VM_DEAD\n");
     return 0;
 }
 
@@ -146,9 +162,9 @@ int vm_kill(u32 id)
         return -1;
     }
     vm = &vm_table[id];
-    if (vm->state != VM_CREATED) {
+    if (vm->state != VM_CREATED && vm->state != VM_PAUSED) {
         vm_id_label(id);
-        console_puts("kill denied (CREATED only, no async kill)\n");
+        console_puts("kill denied (CREATED/PAUSED only, no async kill)\n");
         return -1;
     }
     vm_transition(vm, VM_TEARDOWN);

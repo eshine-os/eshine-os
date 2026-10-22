@@ -18,6 +18,15 @@ static inline void hvc_putc(char c)
     (void)x0;
 }
 
+/* HVC #2 yield:主动让出 vCPU,VM 转 PAUSED;返回点 = 续跑断点 */
+static inline void hvc_yield(void)
+{
+    register u64 x0 __asm__("x0") = 0;
+
+    __asm__ volatile("hvc #2" : "+r"(x0) :: "memory", HVC_CLOBBERS);
+    (void)x0;
+}
+
 static inline void hvc_exit(void)
 {
     __asm__ volatile("hvc #1" ::: "memory");
