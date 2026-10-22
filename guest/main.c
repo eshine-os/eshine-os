@@ -74,6 +74,19 @@ void guest_main(void)
                 puts_uart("yielding...\n");
                 hvc_yield();
                 puts_uart("resumed\n");     /* 续跑点:从此处继续 */
+            } else if (streq(linebuf, "selftest")) {
+                u64 sum = 0;
+                unsigned int i;
+
+                for (i = 0; i < 100; i++) {
+                    sum += i;
+                    __asm__ volatile("" : "+r"(sum));   /* 挡常量折叠:sum 必须真活在寄存器 */
+                    hvc_putc('.');
+                }
+                if (sum == 4950)
+                    puts_uart("\nselftest OK\n");
+                else
+                    puts_uart("\nselftest FAIL\n");
             } else if (streq(linebuf, "fault")) {
                 puts_uart("triggering unmapped read...\n");
                 (void)*(volatile u64 *)0x30000000UL;   /* 永不返回:VM 隔离死 */
