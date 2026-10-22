@@ -40,16 +40,11 @@ void el2_unexpected(void)
         __asm__ volatile("wfi");
 }
 
-/* 置 guest 返回值 x0 并 ERET 回 guest(异常帧由 ELR/SPSR 天然保存) */
-static void eret_set_x0(u64 rv)
-{
-    __asm__ volatile("mov x0, %0\neret" :: "r"(rv) : "memory");
-    __builtin_unreachable();
-}
-
-/* lower-EL AArch64 sync:向量表 b 进入,x0 即 guest x0(HVC ABI: x0 in/out,
- * x1 起易失)。仅认 HVC #0(putc)/#1(exit),其余默认拒绝。 */
-void el1_sync(u64 x0)
+/* lower-EL AArch64 sync:asm 桩(el1_trap)保存 guest 帧后调入,x0=vcpu。
+ * HVC #0/#1/#2 分派;非 HVC = guest fault -> 诊断+VM 隔离死亡(Task 3)。
+ * 帧内改值即改 guest 现场,trap_resume 按帧续跑。 */
+void el1_sync(struct vcpu *v) __attribute__((noreturn));
+void el1_sync(struct vcpu *v)
 {
     u64 esr, ec, imm;
 
@@ -57,17 +52,18 @@ void el1_sync(u64 x0)
     ec = esr >> 26;
     imm = esr & 0xFFFF;
 
-    if (ec == 0x16 && imm == 0) {           /* HVC #0 putc */
-        console_putc((char)x0);
-        eret_set_x0(0);
+    if (ec == 0x16 && imm == 0) {           /* HVC #0 putc:帧内 x0 in/out */
+        console_putc((char)v->gprs[0]);
+        v->gprs[0] = 0;
+        trap_resume(v);
     } else if (ec == 0x16 && imm == 1) {    /* HVC #1 exit */
-        vcpu_exit();                        /* noreturn */
-    } else {
-        console_puts("\n[EXC] unexpected lower-EL exception (non-HVC)\n");
-        console_puts("  ESR_EL2 = 0x");
-        console_puthex(esr);
-        console_puts("\nhalting (WFI)\n");
-        for (;;)
-            __asm__ volatile("wfi");
+        v->exit_reason = VCPU_EXIT;
+        vcpu_exit();
+    } else if (ec == 0x16 && imm == 2) {    /* HVC #2 yield */
+        v->exit_reason = VCPU_YIELD;
+        vcpu_exit();
+    } else {                                /* guest fault:Task 3 带诊断 */
+        v->exit_reason = VCPU_FAULT;
+        vcpu_exit();
     }
 }

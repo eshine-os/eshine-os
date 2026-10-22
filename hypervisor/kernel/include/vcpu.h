@@ -5,27 +5,36 @@
 
 #include "kernel/include/types.h"
 
-/* vcpu_entry.S 依赖此布局: entry_pc@0 entry_sp@8 spsr@16 host_ctx@24。
- * host_ctx 是 ERET 前的完整宿主现场:x19-x28(ABI callee-saved)+ sp + lr —
- * guest 会覆盖一切可覆盖寄存器,ret 回宿主前必须整块还回去
- * (否则调用方缓存在 callee-saved 的值变成 EL2 异常链残留)。 */
+/* 陷阱帧:guest 完整现场。偏移即 asm 契约(vcpu_entry.S):
+ * gprs[31]@0(x0@0...x30@240) sp@248 pc@256 pstate@264
+ * host_ctx@272(x19@272...x28@344,sp@352,lr@360) exit_reason@368 */
 struct vcpu {
-    u64 entry_pc;                    /* ERET 目标(guest IPA) */
-    u64 entry_sp;                    /* SP_EL1 */
-    u64 spsr;                        /* SPSR_EL2: EL1h + DAIF 掩码 */
-    struct {
-        u64 x19, x20, x21, x22, x23, x24, x25, x26, x27, x28;   /* @24-72 */
-        u64 sp;                      /* @104 */
-        u64 lr;                      /* @112 */
+    u64 gprs[31];              /* x0-x30:陷阱入口全量保存,EL2 可自由用寄存器 */
+    u64 sp;                     /* SP_EL1 */
+    u64 pc;                     /* ELR_EL2 */
+    u64 pstate;                 /* SPSR_EL2 */
+    struct {                    /* 宿主现场(第二站已建,偏移随帧前移) */
+        u64 x19, x20, x21, x22, x23, x24, x25, x26, x27, x28;
+        u64 sp;
+        u64 lr;
     } host_ctx;
+    u64 exit_reason;
 };
 
-void vcpu_init(void);                /* boot:安装 SP_EL2 异常栈 */
-void vcpu_run(struct vcpu *v, u64 vttbr);  /* 正常返回 == guest 已 exit */
+/* 退回宿主的原因码(vcpu_run 返回值) */
+#define VCPU_EXIT   0UL         /* HVC #1:guest 主动退出 -> VM 层 TEARDOWN->DEAD */
+#define VCPU_YIELD  1UL         /* HVC #2:主动让出 -> VM 层 RUNNING->PAUSED */
+#define VCPU_FAULT  2UL         /* 非 HVC 异常 -> 诊断后 TEARDOWN->DEAD */
+
+void vcpu_init(void);
+u64  vcpu_run(struct vcpu *v, u64 vttbr);   /* 正常返回值 = exit_reason */
 void vcpu_exit(void) __attribute__((noreturn));
 
 /* vcpu_entry.S */
-void vcpu_eret_enter(struct vcpu *v);
+void vcpu_enter_guest(struct vcpu *v);   /* 正常"返回"= guest 已 retire */
+void trap_resume(struct vcpu *v) __attribute__((noreturn));
 void vcpu_return_host(struct vcpu *v) __attribute__((noreturn));
+
+extern struct vcpu *cur_vcpu;   /* asm 桩引用;单活跃 vCPU(无 SMP) */
 
 #endif /* ESHINE_VCPU_H */

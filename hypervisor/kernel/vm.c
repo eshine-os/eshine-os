@@ -90,9 +90,11 @@ int vm_create(u32 id)
     vm->devices[0].pa   = VM_UART_PA;
     vm->devices[0].size = VM_UART_SIZE;
     vm->devices[0].attr = S2_ATTR_DEVICE;
-    vm->vcpus[0].entry_pc = VM_RAM_IPA;        /* guest IPA,物理在各自 PA 窗口 */
-    vm->vcpus[0].entry_sp = 0x40200000UL;      /* 安全初值,guest 自会重设 */
-    vm->vcpus[0].spsr = 0x3C5UL;               /* EL1h + DAIF 全掩 */
+    vm->vcpus[0].pc = VM_RAM_IPA;              /* 帧即真相:新跑=初始化帧 */
+    vm->vcpus[0].sp = 0x40200000UL;            /* guest 自会重设 */
+    vm->vcpus[0].pstate = 0x3C5UL;            /* EL1h + DAIF 全掩 */
+    memset(vm->vcpus[0].gprs, 0, sizeof(vm->vcpus[0].gprs));
+    vm->vcpus[0].exit_reason = VCPU_EXIT;
 
     if (stage2_build(&vm->space, vm->vmid, vm->mem, vm->n_mem,
                      vm->devices, vm->n_dev) != 0) {
@@ -105,7 +107,7 @@ int vm_create(u32 id)
     console_puts("CREATED (ram ");
     console_puthex(vm->mem[0].pa);
     console_puts(", entry ");
-    console_puthex(vm->vcpus[0].entry_pc);
+    console_puthex(vm->vcpus[0].pc);
     console_puts(")\n");
     return 0;
 }
@@ -172,7 +174,7 @@ void vm_list(void)
             console_puts("  ram ");
             console_puthex(vm->mem[0].pa);
             console_puts("  entry ");
-            console_puthex(vm->vcpus[0].entry_pc);
+            console_puthex(vm->vcpus[0].pc);
         }
         console_putc('\n');
     }
