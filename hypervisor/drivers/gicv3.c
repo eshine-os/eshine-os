@@ -50,12 +50,10 @@ void gicv3_init(void)
     (void)rd32(GICR_RD_BASE + GICR_TYPER);          /* CPU0 redistributor 在位探测 */
     wr32(GICD_BASE + GICD_CTLR, 0);                 /* 配置期先关 */
     wr32(GICR_RD_BASE + GICR_WAKER, 0);             /* ProcessorSleep=0 */
-    ppi_configure(1u << GIC_PPI_HPTIMER);          /* B 相扩为 | 1u<<GIC_PPI_VTIMER */
+    ppi_configure((1u << GIC_PPI_HPTIMER) | (1u << GIC_PPI_VTIMER));
 
     /* CPU interface:sysreg 直访 + 全优先级放行 + EOImode=1(EOIR 只降优先级) */
-    __asm__ volatile("msr hcr_el2, %0" :: "r"(0x10UL)); /* IMO(bit4):EL2 物理 IRQ
-        * 路由门(QEMU target_el_table rw=1 列必须 hcr=1 才回 EL2;参考实现同值);
-        * 真硬件语义为 EL1 以下 ICC 重定向,B 相 guest 亦需;EL2 自身不受影响 */
+    __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_EL2_HOST)); /* 见 gicv3.h */
     __asm__ volatile("msr icc_sre_el2, %0" :: "r"(3UL));   /* SRE + 允许 EL1 访问 */
     __asm__ volatile("isb");
     __asm__ volatile("msr icc_pmr_el1, %0" :: "r"(0xFFUL));
@@ -64,6 +62,36 @@ void gicv3_init(void)
     __asm__ volatile("msr cnthctl_el2, %0" :: "r"(3UL));   /* EL1 计数器访问位开 */
     __asm__ volatile("isb");
     wr32(GICD_BASE + GICD_CTLR, GICD_CTLR_EN_GRP1NS);  /* 开 Group1(NS) 分发 */
+    vgic_enable();                                    /* B 相:虚拟面同场就绪 */
+}
+
+/* ---- B 相:虚拟 CPU interface(ICH_*),guest 经 ICV 视图消费 ---- */
+
+#define ICH_VMCR_VENG1   (1UL << 1)      /* 虚拟 Group1 使能(guest 的 IGRPEN1 镜像) */
+#define ICH_LR_GROUP1    (1UL << 60)
+#define ICH_LR_PENDING   (1UL << 61)
+#define ICH_LR_HW        (1UL << 62)
+
+void vgic_enable(void)
+{
+    /* 虚拟优先级全放行 + Group1 使能;LR 空载,注入时刻才装填。
+     * EOImode 用复位默认 0:guest 一发 EOIR 即降优先级+撤销,硬件联动撤物理线。 */
+    __asm__ volatile("msr ich_vmcr_el2, %0"
+                     :: "r"((0xFFUL << 24) | ICH_VMCR_VENG1));
+    __asm__ volatile("msr ich_hcr_el2, %0" :: "r"(1UL));   /* 虚拟面开(En) */
+    __asm__ volatile("isb");
+}
+
+void vgic_inject_vtimer(void)
+{
+    /* HW 映射:vINTID=27(guest CNTV 视角),pINTID=27(物理同号线)。
+     * guest 虚 EOI(EOIR) -> 硬件撤销物理 27 的 active;
+     * 宿主对物理 27 只降优先级不 DIR,期间电平线被 active 压住不再重挂起。 */
+    u64 lr = GIC_PPI_VTIMER | (GIC_PPI_VTIMER << 32)   /* [31:0]v / [47:32]p */
+           | ICH_LR_GROUP1 | ICH_LR_PENDING | ICH_LR_HW;
+
+    __asm__ volatile("msr ich_lr0_el2, %0" :: "r"(lr));
+    __asm__ volatile("isb");
 }
 
 u64 gicv3_claim(void)

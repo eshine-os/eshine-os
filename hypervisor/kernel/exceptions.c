@@ -34,7 +34,8 @@ void el2_irq(void)
         timer_handler();
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
-        gicv3_eoi_drop(intid);      /* B 相在此行前插入 vgic_inject_vtimer() */
+        vgic_inject_vtimer();        /* LR0 挂 vINTID27(HW 映射),guest 端经 ICV 消费 */
+        gicv3_eoi_drop(intid);      /* 物理线由 guest 虚 EOI 硬件联动撤销 */
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
     }
@@ -74,6 +75,9 @@ void el1_sync(struct vcpu *v)
         vcpu_exit();
     } else if (ec == 0x16 && imm == 2) {    /* HVC #2 yield */
         v->exit_reason = VCPU_YIELD;
+        vcpu_exit();
+    } else if (ec == 0x01 && (imm & 1) == 0) {  /* HCR.TWI:guest WFI -> 等待态 */
+        v->exit_reason = VCPU_WAIT;
         vcpu_exit();
     } else {                                /* guest fault:诊断 -> VM 隔离死 */
         u64 far;

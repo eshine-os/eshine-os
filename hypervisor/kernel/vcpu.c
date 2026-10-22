@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "arch/arm64/include/mm.h"
+#include "drivers/include/gicv3.h"
 #include "kernel/include/vcpu.h"
 
 struct vcpu *cur_vcpu;               /* asm 桩引用,不再 static */
@@ -10,8 +11,9 @@ struct vcpu *cur_vcpu;               /* asm 桩引用,不再 static */
  * eret/retire 都不还 SP_EL2,不归位则每次陷阱净泄一截,累计碾穿栈底。 */
 u64 excp_stack[512] __attribute__((aligned(16)));
 
-/* HCR_EL2: RW(64-bit EL1) | VM(stage-2 使能) */
-#define HCR_GUEST 0x80000001UL
+/* HCR_EL2(guest): RW(64-bit EL1) | VM(stage-2) | IMO(ICV 重定向+IRQ 路由)
+ * | TWI(WFI 陷阱化 -> VCPU_WAIT);IMO 位见 gicv3.h HCR_EL2_HOST 注 */
+#define HCR_GUEST 0x80002011UL
 
 void vcpu_init(void)
 {
@@ -42,7 +44,7 @@ u64 vcpu_run(struct vcpu *v, u64 vttbr)
 
 void vcpu_exit(void)
 {
-    __asm__ volatile("msr hcr_el2, xzr");
+    __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_EL2_HOST));   /* 宿主态可收 IRQ */
     __asm__ volatile("msr vttbr_el2, xzr");
     __asm__ volatile("tlbi vmalls12e1is; dsb sy; isb");
     vcpu_return_host(cur_vcpu);

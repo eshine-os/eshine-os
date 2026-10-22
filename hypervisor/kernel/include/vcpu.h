@@ -25,6 +25,7 @@ struct vcpu {
 #define VCPU_EXIT   0UL         /* HVC #1:guest 主动退出 -> VM 层 TEARDOWN->DEAD */
 #define VCPU_YIELD  1UL         /* HVC #2:主动让出 -> VM 层 RUNNING->PAUSED */
 #define VCPU_FAULT  2UL         /* 非 HVC 异常 -> 诊断后 TEARDOWN->DEAD */
+#define VCPU_WAIT   3UL         /* HCR.TWI 下 guest WFI -> 宿主陪睡,vtimer/滴答唤醒 */
 
 void vcpu_init(void);
 u64  vcpu_run(struct vcpu *v, u64 vttbr);   /* 正常返回值 = exit_reason */
