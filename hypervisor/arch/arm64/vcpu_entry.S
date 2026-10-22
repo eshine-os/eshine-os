@@ -34,6 +34,12 @@ el1_trap:
     str     x1, [x0, #256]
     mrs     x1, spsr_el2
     str     x1, [x0, #264]
+    /* SP_EL2 归位栈顶:handler 链不退栈,eret/retire 都不还 SP_EL2。
+     * 不归位则每次陷阱净泄一截,累计碾穿栈底踩进相邻 BSS(实测第 79 发)。*/
+    adrp    x1, excp_stack
+    add     x1, x1, :lo12:excp_stack
+    add     x1, x1, #0x1000           /* 512 * 8 */
+    mov     sp, x1                    /* SPSel=1 -> SP_EL2 */
     b       el1_sync                  /* x0 = vcpu;此路径不再返回 */
 
 /* ---- 续跑:帧即真相 -> 加载 -> eret(noreturn) ---- */

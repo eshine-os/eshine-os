@@ -5,8 +5,10 @@
 
 struct vcpu *cur_vcpu;               /* asm 桩引用,不再 static */
 
-/* EL2-from-EL1 异常落点专用栈(硬件强制 SPSel=1 -> SP_EL2) */
-static u64 excp_stack[512] __attribute__((aligned(16)));
+/* EL2-from-EL1 异常落点专用栈(硬件强制 SPSel=1 -> SP_EL2)。
+ * 非 static:el1_trap 每次入口把它归位到栈顶 —— handler 链不退栈,
+ * eret/retire 都不还 SP_EL2,不归位则每次陷阱净泄一截,累计碾穿栈底。 */
+u64 excp_stack[512] __attribute__((aligned(16)));
 
 /* HCR_EL2: RW(64-bit EL1) | VM(stage-2 使能) */
 #define HCR_GUEST 0x80000001UL
