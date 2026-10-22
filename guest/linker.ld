@@ -14,6 +14,7 @@ SECTIONS
 {
     . = 0x40000000;                        /* guest IPA 链接地址(物理在 0x50000000) */
     .text : { KEEP(*(.text.boot)) *(.text .text.*) } :text
+    .vectors ALIGN(0x800) : { KEEP(*(.vectors)) } :text
     .rodata : { *(.rodata .rodata.*) } :rodata
     .data : { *(.data .data.*) } :data
     . = ALIGN(16);

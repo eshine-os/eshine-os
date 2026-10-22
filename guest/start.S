@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
-/* EL1 入口:guest 无自身向量表——一切异常皆陷 EL2(EL2 panic 兜底) */
+/* EL1 入口:装好自己的向量表(HVC/WFI/页表错仍陷 EL2;IRQ 到 guest 槽) */
 .section .text.boot
 .global _start
 
@@ -13,4 +13,7 @@ _start:
     b       2b
 3:  ldr     x0, =__stack_top
     mov     sp, x0
+    ldr     x0, =guest_vectors
+    msr     vbar_el1, x0
+    isb
     b       guest_main

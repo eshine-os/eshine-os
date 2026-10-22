@@ -23,7 +23,7 @@ OBJS  := $(CSRCS:.c=.o) $(ASRCS:.S=.o)
 TARGET := eshine.elf
 
 # guest:独立构建,同源双身份(-DGUEST_ID=0/1),链接 IPA 0x40000000(见 guest/linker.ld)
-GOBJS := guest/start.o guest/main0.o guest/main1.o
+GOBJS := guest/start.o guest/vec.o guest/main0.o guest/main1.o
 
 all: $(TARGET) guest1.bin guest2.bin
 
@@ -45,15 +45,15 @@ run: $(TARGET)
 verify: $(TARGET) guest1.bin guest2.bin
 	python3 tools/verify/verify_el2.py
 
-guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h
+guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h
 	$(CC) $(CFLAGS) -DGUEST_ID=0 -c -o $@ $<
-guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h
+guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h
 	$(CC) $(CFLAGS) -DGUEST_ID=1 -c -o $@ $<
 
-guest1.elf: guest/start.o guest/main0.o guest/linker.ld
-	$(CC) $(CFLAGS) -nostdlib -Wl,--build-id=none -T guest/linker.ld -o $@ guest/start.o guest/main0.o
-guest2.elf: guest/start.o guest/main1.o guest/linker.ld
-	$(CC) $(CFLAGS) -nostdlib -Wl,--build-id=none -T guest/linker.ld -o $@ guest/start.o guest/main1.o
+guest1.elf: guest/start.o guest/vec.o guest/main0.o guest/linker.ld
+	$(CC) $(CFLAGS) -nostdlib -Wl,--build-id=none -T guest/linker.ld -o $@ guest/start.o guest/vec.o guest/main0.o
+guest2.elf: guest/start.o guest/vec.o guest/main1.o guest/linker.ld
+	$(CC) $(CFLAGS) -nostdlib -Wl,--build-id=none -T guest/linker.ld -o $@ guest/start.o guest/vec.o guest/main1.o
 
 guest1.bin: guest1.elf
 	$(CROSS)objcopy -O binary $< $@

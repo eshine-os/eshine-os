@@ -138,8 +138,11 @@ int vm_run(u32 id)
         console_puts("entering EL1 via stage-2 (non-identity map)\n");
     do {
         reason = vcpu_run(&vm->vcpus[0], vm->space.vttbr);
-        if (reason == VCPU_WAIT)
-            __asm__ volatile("wfi");   /* 宿主陪睡:滴答/vtimer 到点唤醒再入 guest */
+        if (reason == VCPU_WAIT) {
+            __asm__ volatile("wfi");   /* 宿主陪睡:滴答/vtimer 到点唤醒 */
+            vm->vcpus[0].pc += 4;      /* WFI 陷阱不 retire:代其"完成",guest
+                                          * 醒后自查唤醒条件(vtimer 标志) */
+        }
     } while (reason == VCPU_WAIT);
     if (reason == VCPU_YIELD) {
         vm_transition(vm, VM_PAUSED);

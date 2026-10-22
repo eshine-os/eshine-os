@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
+#include "gic.h"
 #include "hvc.h"
 #include "miniuart.h"
+#include "timer.h"
 
 /* 同源双镜像:-DGUEST_ID=0/1,身份仅差 banner 与提示符(spec §5) */
 #ifndef GUEST_ID
@@ -23,6 +25,22 @@
 #define GBUF_MAX 128
 
 static char linebuf[GBUF_MAX];
+static volatile unsigned int wake_count;   /* vtimer IRQ 计数(sleep 唤醒判据) */
+
+/* guest 自己的 IRQ 处理:认领走 ICV 视图(HCR.IMO 重定向,EL2 的
+ * vgic_inject_vtimer 已把 vINTID 27 挂上)。关定时器在 EOI 前:
+ * 电平线先降,EOIR(降+撤)再联动撤销物理线,不重挂起。 */
+void guest_irq_c(void)
+{
+    u64 iar = gic_claim();
+
+    if (iar == GUEST_INTID_VTIMER) {
+        vtimer_disable();
+        wake_count++;
+    }
+    if (iar != GUEST_INTID_SPURIOUS)
+        gic_eoir(iar);   /* 虚 EOI:硬件联动撤销宿主物理线(HW-LR) */
+}
 
 static void puts_uart(const char *s)
 {
@@ -56,6 +74,7 @@ void guest_main(void)
     const char *p;
     unsigned int idx = 0;
 
+    gic_guest_enable();              /* ICV 面就绪并解 IRQ 后才可碰定时器 */
     for (p = msg; *p; p++)
         hvc_putc(*p);
 
@@ -87,6 +106,13 @@ void guest_main(void)
                     puts_uart("\nselftest OK\n");
                 else
                     puts_uart("\nselftest FAIL\n");
+            } else if (streq(linebuf, "sleep")) {
+                puts_uart("sleeping...\n");
+                vtimer_arm_seconds(2);
+                while (!wake_count)   /* WFI 陷阱回来重查:宿主陪睡后注入才到 */
+                    __asm__ volatile("wfi" ::: "memory");
+                wake_count = 0;
+                puts_uart("slept (vtimer irq)\n");
             } else if (streq(linebuf, "fault")) {
                 puts_uart("triggering unmapped read...\n");
                 (void)*(volatile u64 *)0x30000000UL;   /* 永不返回:VM 隔离死 */
@@ -95,7 +121,7 @@ void guest_main(void)
                 puts_uart(linebuf + 5);
                 puts_uart("\n");
             } else if (linebuf[0]) {
-                puts_uart("guest: try echo <text> | exit\n");
+                puts_uart("guest: try echo <text> | sleep | exit\n");
             }
             idx = 0;
             puts_uart(PROMPT);

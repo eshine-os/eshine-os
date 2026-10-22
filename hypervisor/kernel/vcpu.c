@@ -47,5 +47,7 @@ void vcpu_exit(void)
     __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_EL2_HOST));   /* 宿主态可收 IRQ */
     __asm__ volatile("msr vttbr_el2, xzr");
     __asm__ volatile("tlbi vmalls12e1is; dsb sy; isb");
+    __asm__ volatile("msr daifclr, #2");   /* 异常进入自带掩码;回宿主语境必须解 IRQ,
+                                            * 否则 shell 永远收不到 tick(活体心跳定位) */
     vcpu_return_host(cur_vcpu);
 }

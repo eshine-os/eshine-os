@@ -17,8 +17,11 @@ stage-2 device page (no hypercall), must double-echo its own token,
 and `exit` HVCs back to EL2 with VM_DEAD. A final host token
 double-echo proves the host shell survived the round trip.
 
-第四站 A 相(27.04)加一条真中断判据:CNTHP tick 经 GICv3 投递到 EL2,
-两次 `tick` 读取(ticks 解析)必须严格递增——宿主第一次活在"被中断"里。
+第四站(27.04):A 相加真中断判据(CNTHP tick 经 GICv3 投递到 EL2,
+两次 `tick` 读取严格递增——宿主第一次活在"被中断"里);B 相加虚拟中断
+注入全链判据:guest `sleep` 武装 CNTV 后 WFI 陷阱化,宿主陪睡注入,
+guest 在自己的向量里认领虚 EOI 后醒来(`slept`);末段再验 guest 退场后
+宿主 tick 仍在跑(vcpu_exit 恢复 HCR_EL2_HOST)。
 """
 import os
 import re
@@ -96,9 +99,9 @@ def main():
         buf = b""
         try:
             buf = read_until(s, buf, ("eshine-os " + VER).encode(), time.time() + 30)
-            print("  [1/18] banner ok (" + VER + ")")
+            print("  [1/20] banner ok (" + VER + ")")
             buf = read_until(s, buf, b"eshine> ", time.time() + 10)
-            print("  [2/18] shell prompt ok")
+            print("  [2/20] shell prompt ok")
             prompt_pos = len(buf)          # 只在提示符之后的字节里找下一段
             token = "ESHINEOK%d" % os.getpid()
             s.sendall(("echo " + token + "\n").encode())
@@ -109,7 +112,7 @@ def main():
                     % (buf[prompt_pos:].count(token.encode()), buf.decode(errors="replace"))
                 )
                 return 1
-            print("  [3/18] host token double-echo ok")
+            print("  [3/20] host token double-echo ok")
 
             # ---- 第四站 A 相:真 IRQ 判据(tick 严格递增) ----
             p = len(buf)
@@ -134,32 +137,32 @@ def main():
                 print("FAIL: ticks not growing (%s -> %s); CNTHP IRQ not delivered\noutput:\n%s"
                       % (ticks_before, m.group(1) if m else b"?", buf[p:].decode(errors="replace")))
                 return 1
-            print("  [4/18] tick grows: %d -> %d (CNTHP->GICv3->EL2 IRQ)"
+            print("  [4/20] tick grows: %d -> %d (CNTHP->GICv3->EL2 IRQ)"
                   % (ticks_before, int(m.group(1))))
 
             pos = len(buf)
             s.sendall(b"vmls\n")
             buf = read_until(s, buf, b"[0] VM_INIT", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"[1] VM_INIT", time.time() + 10, start=pos)
-            print("  [5/18] vmls: empty table")
+            print("  [5/20] vmls: empty table")
 
             pos = len(buf)
             s.sendall(b"vmcreate 0\n")
             buf = read_until(s, buf, b"vm0: CREATED", time.time() + 10, start=pos)
-            print("  [6/18] vmcreate 0 -> CREATED")
+            print("  [6/20] vmcreate 0 -> CREATED")
 
             # ---- VM0: selftest + token + yield -> PAUSED -> 断点续跑 ----
             p0 = len(buf)
             s.sendall(b"vmrun 0\n")
             buf = read_until(s, buf, b"eshine-guest VM0 @EL1", time.time() + 15, start=p0)
-            print("  [7/18] VM0 banner (stage-2 + HVC)")
+            print("  [7/20] VM0 banner (stage-2 + HVC)")
             buf = read_until(s, buf, b"eshine-guest VM0 UART", time.time() + 10, start=p0)
             buf = read_until(s, buf, b"vm0> ", time.time() + 10, start=p0)
             p = len(buf)
             s.sendall(b"selftest\n")
             buf = read_until(s, buf, b"selftest OK", time.time() + 20, start=p)
             buf = read_until(s, buf, b"vm0> ", time.time() + 10, start=p)
-            print("  [8/18] selftest OK (x19/x30 live across 100 HVCs)")
+            print("  [8/20] selftest OK (x19/x30 live across 100 HVCs)")
             p = len(buf)
             gtok0 = "GOK%d" % os.getpid()
             s.sendall(("echo " + gtok0 + "\n").encode())
@@ -168,27 +171,32 @@ def main():
                 print("FAIL: VM0 token seen %d time(s)\noutput:\n%s"
                       % (buf[p:].count(gtok0.encode()), buf.decode(errors="replace")))
                 return 1
-            print("  [9/18] VM0 token double-echo ok")
+            print("  [9/20] VM0 token double-echo ok")
             p = len(buf)
             s.sendall(b"yield\n")
             buf = read_until(s, buf, b"vm0: yielded -> PAUSED", time.time() + 10, start=p)
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=p)
-            print("  [10/18] yield -> PAUSED, back at host")
+            print("  [10/20] yield -> PAUSED, back at host")
             pos = len(buf)
             s.sendall(b"vmls\n")
             buf = read_until(s, buf, b"[0] VM_PAUSED", time.time() + 10, start=pos)
-            print("  [11/18] vmls: [0] VM_PAUSED")
+            print("  [11/20] vmls: [0] VM_PAUSED")
             pos = len(buf)
             s.sendall(b"vmrun 0\n")
             buf = read_until(s, buf, b"vm0: resumed (breakpoint)", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"resumed\n", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"vm0> ", time.time() + 10, start=pos)
-            print("  [12/18] resumed from breakpoint, guest shell back")
+            print("  [12/20] resumed from breakpoint, guest shell back")
+            p = len(buf)
+            s.sendall(b"sleep\n")
+            buf = read_until(s, buf, b"slept (vtimer irq)", time.time() + 20, start=p)
+            buf = read_until(s, buf, b"vm0> ", time.time() + 10, start=p)
+            print("  [13/20] guest sleep: WFI 陷阱->宿主陪睡->vtimer 注入->slept")
             p = len(buf)
             s.sendall(b"exit\n")
             buf = read_until(s, buf, b"vm0: VM_DEAD", time.time() + 10, start=p)
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=p)
-            print("  [13/18] VM0 exit -> VM_DEAD")
+            print("  [14/20] VM0 exit -> VM_DEAD")
 
             # ---- VM1: banner + fault 隔离 ----
             pos = len(buf)
@@ -197,7 +205,7 @@ def main():
             pos = len(buf)
             s.sendall(b"vmrun 1\n")
             buf = read_until(s, buf, b"eshine-guest VM1 @EL1", time.time() + 15, start=pos)
-            print("  [14/18] VM1 banner (same IPA, different PA)")
+            print("  [15/20] VM1 banner (same IPA, different PA)")
             buf = read_until(s, buf, b"eshine-guest VM1 UART", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"vm1> ", time.time() + 10, start=pos)
             p = len(buf)
@@ -205,14 +213,14 @@ def main():
             buf = read_until(s, buf, b"fault: ESR=0x", time.time() + 10, start=p)
             buf = read_until(s, buf, b"vm1: faulted -> VM_DEAD", time.time() + 10, start=p)
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=p)
-            print("  [15/18] guest fault isolated: VM_DEAD, host alive")
+            print("  [16/20] guest fault isolated: VM_DEAD, host alive")
 
             pos = len(buf)
             s.sendall(b"vmls\n")
             buf = read_until(s, buf, b"[0] VM_DEAD", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"[1] VM_DEAD", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=pos)
-            print("  [16/18] vmls: both DEAD")
+            print("  [17/20] vmls: both DEAD")
 
             prompt_pos = len(buf)
             token2 = "ESHINEOK%d" % (os.getpid() + 1)
@@ -222,12 +230,38 @@ def main():
                 print("FAIL: post-VM host token seen %d time(s), expected >= 2\noutput:\n%s"
                       % (buf[prompt_pos:].count(token2.encode()), buf.decode(errors="replace")))
                 return 1
-            print("  [17/18] host shell intact after fault+yield+resume")
+            print("  [18/20] host shell intact after fault+yield+resume")
+
+            # ---- 第四站 B 相末判:guest 退场后宿主 tick 仍在跑 ----
+            p = len(buf)
+            s.sendall(b"tick\n")
+            buf = read_until(s, buf, b"ticks: ", time.time() + 10, start=p)
+            i = buf.index(b"ticks: ", p) + len(b"ticks: ")
+            buf = read_until(s, buf, b"\n", time.time() + 10, start=i)
+            m = re.search(rb"ticks: (\d+)", buf[p:])
+            if not m:
+                print("FAIL: post-VM tick output not parseable\noutput:\n%s"
+                      % buf[p:].decode(errors="replace"))
+                return 1
+            ticks_before = int(m.group(1))
+            time.sleep(2.5)
+            p = len(buf)
+            s.sendall(b"tick\n")
+            buf = read_until(s, buf, b"ticks: ", time.time() + 10, start=p)
+            i = buf.index(b"ticks: ", p) + len(b"ticks: ")
+            buf = read_until(s, buf, b"\n", time.time() + 10, start=i)
+            m = re.search(rb"ticks: (\d+)", buf[p:])
+            if not m or int(m.group(1)) <= ticks_before:
+                print("FAIL: post-VM ticks not growing (%s -> %s); HCR_EL2_HOST restore broken?\noutput:\n%s"
+                      % (ticks_before, m.group(1) if m else b"?", buf[p:].decode(errors="replace")))
+                return 1
+            print("  [19/20] post-guest tick grows: %d -> %d (HCR_EL2_HOST restore)"
+                  % (ticks_before, int(m.group(1))))
 
             pos = len(buf)
             s.sendall(b"vmkill 1\n")
             buf = read_until(s, buf, b"kill denied", time.time() + 10, start=pos)
-            print("  [18/18] vmkill deny path ok (default-deny)")
+            print("  [20/20] vmkill deny path ok (default-deny)")
             print("RESULT PASS")
             return 0
         finally:
