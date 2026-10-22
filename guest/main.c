@@ -74,6 +74,10 @@ void guest_main(void)
                 puts_uart("yielding...\n");
                 hvc_yield();
                 puts_uart("resumed\n");     /* 续跑点:从此处继续 */
+            } else if (streq(linebuf, "fault")) {
+                puts_uart("triggering unmapped read...\n");
+                (void)*(volatile u64 *)0x30000000UL;   /* 永不返回:VM 隔离死 */
+                puts_uart("unreachable\n");
             } else if (starts(linebuf, "echo ")) {
                 puts_uart(linebuf + 5);
                 puts_uart("\n");

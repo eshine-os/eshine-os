@@ -62,8 +62,28 @@ void el1_sync(struct vcpu *v)
     } else if (ec == 0x16 && imm == 2) {    /* HVC #2 yield */
         v->exit_reason = VCPU_YIELD;
         vcpu_exit();
-    } else {                                /* guest fault:Task 3 带诊断 */
+    } else {                                /* guest fault:诊断 -> VM 隔离死 */
+        u64 far;
+
         v->exit_reason = VCPU_FAULT;
+        __asm__ volatile("mrs %0, far_el2" : "=r"(far));
+        console_puts("fault: ESR=0x");
+        console_puthex(esr);
+        console_puts(" FAR=0x");
+        console_puthex(far);
+        console_puts(" pc=0x");
+        console_puthex(v->pc);
+        console_puts(" sp=0x");
+        console_puthex(v->sp);
+        console_puts(" x0=0x");
+        console_puthex(v->gprs[0]);
+        console_puts(" x1=0x");
+        console_puthex(v->gprs[1]);
+        console_puts(" x2=0x");
+        console_puthex(v->gprs[2]);
+        console_puts(" x3=0x");
+        console_puthex(v->gprs[3]);
+        console_puts("\n");
         vcpu_exit();
     }
 }
