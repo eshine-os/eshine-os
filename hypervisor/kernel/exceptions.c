@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
+#include "drivers/include/gicv3.h"
+#include "drivers/include/timer.h"
 #include "kernel/include/console.h"
 #include "kernel/include/types.h"
 #include "kernel/include/vcpu.h"
@@ -20,11 +22,22 @@ void el2_sync(void)
         __asm__ volatile("wfi");
 }
 
+/* EL2 IRQ:el2_trap(asm)保存被中断现场后 bl 进来。
+ * 26=宿主 CNTHP tick(EOIR+DIR);VTIMER=guest CNTV(B 相注入,EOIR 只降优先级,
+ * 物理线由 guest 虚 EOI 经 HW-LR 硬件联动撤销);未知 intid 记账不 panic
+ * (中断是数据,同 fault 隔离哲学)。spurious(1023)不动 EOIR。 */
 void el2_irq(void)
 {
-    /* 本周无 GIC 配置,IRQ 不应发生;wfi 防忙转(spec §3) */
-    for (;;)
-        __asm__ volatile("wfi");
+    u64 intid = gicv3_claim();
+
+    if (intid == GIC_PPI_HPTIMER) {
+        timer_handler();
+        gicv3_eoi_dir(intid);
+    } else if (intid == GIC_PPI_VTIMER) {
+        gicv3_eoi_drop(intid);      /* B 相在此行前插入 vgic_inject_vtimer() */
+    } else if (intid != IAR_SPURIOUS) {
+        gicv3_eoi_dir(intid);
+    }
 }
 
 void el2_unexpected(void)

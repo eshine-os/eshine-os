@@ -7,6 +7,7 @@
 #include "kernel/include/version.h"
 #include "kernel/include/vm.h"
 #include "drivers/include/pl011.h"
+#include "drivers/include/timer.h"
 
 #define SHELL_BUF_MAX 64
 
@@ -14,7 +15,7 @@ static char linebuf[SHELL_BUF_MAX];
 
 static void cmd_help(void)
 {
-    console_puts("commands: help version echo <text> state vmls vmcreate <id> vmrun <id> vmkill <id>\n");
+    console_puts("commands: help version echo <text> state tick vmls vmcreate <id> vmrun <id> vmkill <id>\n");
 }
 
 static void cmd_version(void)
@@ -34,6 +35,13 @@ static void cmd_echo(const char *args)
 static void cmd_state(void)
 {
     vm_state_demo();
+}
+
+static void cmd_tick(void)
+{
+    console_puts("ticks: ");
+    util_putdec((u32)timer_ticks());
+    console_puts("\n");
 }
 
 /* 单数字 id 解析("0"/"1");其余拒绝 */
@@ -70,6 +78,8 @@ static void dispatch(char *line)
         cmd_echo(args);
     } else if (strncmp(line, "state", 64) == 0) {
         cmd_state();
+    } else if (strncmp(line, "tick", 64) == 0) {
+        cmd_tick();
     } else if (strncmp(line, "vmls", 64) == 0) {
         vm_list();
     } else if (strncmp(line, "vmcreate", 64) == 0) {
