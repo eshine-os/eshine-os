@@ -40,13 +40,14 @@ void el2_irq_host(void)
          * PREEMPT 的扳机在 HVC 出口(resume_or_preempt)。 */
         if (cur_vcpu && cur_vcpu->slice_left > 0)
             cur_vcpu->slice_left--;
+        sched_vtimer_sweep();               /* 每拍表扫:多等待者到期判定 */
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
-        struct vcpu *w = sched_waiter();   /* 单等待者:27 归等待者,
-                                             * cur_vcpu 可能是别的在跑 VM */
-        if (w)
-            w->wait_state = 2UL;           /* WOKE:泵给它注入并复位跑 */
-        vgic_wake_waiter();
+        /* 物理线到点 = 其 ctx 装载者的 cval 已过。双等待者时代按表序
+         * 找人会归错(先武者 cval 未到先醒,实测);按到期判定归属——
+         * 与每拍扫描同谓词,过期者一律 WOKE+熄火。 */
+        sched_vtimer_sweep();
+        vgic_wake_waiter();              /* 本次真响过物理线:关线+降优先级 */
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
     }
@@ -67,13 +68,15 @@ void el2_irq_guest(void)
             cur_vcpu->exit_reason = VCPU_PREEMPT;   /* 桩出口转写后弃帧 */
             sched_need_resched = 1;
         }
+        sched_vtimer_sweep();               /* 每拍表扫:多等待者到期判定 */
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
-        struct vcpu *w = sched_waiter();   /* 串台防护:guest 态到点时,
-                                             * cur_vcpu 未必是等待者 */
-        if (w)
-            w->wait_state = 2UL;          /* WOKE:泵轮到它时注入后醒 */
+        /* 第七站不变量:物理 CNTV 恒为"当前客"的——guest 态 27 即
+         * 其本人到点。直注 LR0(eret 后自认领,无串台:主人就是它),
+         * 同步熄火 ctx;关线+降优先级与第四站醒路径同构。 */
+        cur_vcpu->vtimer_ctl = 0UL;         /* ctx 熄火 */
         vgic_wake_waiter();
+        vgic_inject_vtimer();
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
     }

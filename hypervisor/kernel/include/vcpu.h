@@ -8,8 +8,8 @@
 /* 陷阱帧:guest 完整现场。偏移即 asm 契约(vcpu_entry.S):
  * gprs[31]@0(x0@0...x30@240) sp@248 pc@256 pstate@264
  * host_ctx@272(x19@272...x28@344,sp@352,lr@360) exit_reason@368
- * wait_state@376 slice_left@384 wait_reason@392(第五/六站尾部扩展,
- * asm 转写只到 pstate,不触及) */
+ * wait_state@376 slice_left@384 wait_reason@392
+ * vtimer_ctl@400 vtimer_cval@408(第五/六/七站尾部扩展,asm 不触及) */
 struct vcpu {
     u64 gprs[31];              /* x0-x30:陷阱入口全量保存,EL2 可自由用寄存器 */
     u64 sp;                     /* SP_EL1 */
@@ -24,6 +24,9 @@ struct vcpu {
     u64 wait_state;             /* 0=不在等 1=WAIT(WFI 陷阱) 2=WOKE(唤醒到点) */
     u64 slice_left;             /* 剩余量子(tick 计);耗尽 -> 出口帧转写切走 */
     u64 wait_reason;            /* 等待源:0=无 1=TIMER 2=RX(第六站两源等待) */
+    u64 vtimer_ctl;             /* 第七站 per-VM vtimer ctx:cortex-a57 无 CNTV
+                                 * 陷阱位(guest 直写物理),泵切出存/切入还 */
+    u64 vtimer_cval;
 };
 
 /* 退回宿主的原因码(vcpu_run 返回值) */

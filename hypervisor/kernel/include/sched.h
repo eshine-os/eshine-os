@@ -26,6 +26,7 @@ extern volatile unsigned long sched_need_resched;  /* asm 桩出口检查 */
 extern unsigned long sched_preempts;               /* 抢占计数(vmstat 判据) */
 extern struct vcpu *sched_console_owner;           /* UART RX 所有权(NULL=host) */
 
-struct vcpu *sched_waiter(void);   /* 找 WAIT 态 vcpu(单等待者;无=NULL) */
+void sched_vtimer_sweep(void);     /* 到期扫描:表判 ctx,WOKE 过期者(多家);
+                                    * 27 到点与每拍 tick 共用同一归属谓词 */
 
 #endif /* ESHINE_SCHED_H */

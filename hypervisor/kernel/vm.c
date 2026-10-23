@@ -181,19 +181,30 @@ struct eshine_vm *vm_of_vcpu(struct vcpu *v)
     panic("vm_of_vcpu: vcpu not in vm_table");
 }
 
-/* 单 vtimer 等待者:全表扫 WAIT 且原因=TIMER(第六站起两 VM 可同时
- * 等——一 TIMER 一 RX,27 的 WOKE 只归 TIMER 等待者,按原因找人)。
- * 27 到点时 cur_vcpu 可能是别的在跑 VM,归错即串台。 */
-struct vcpu *sched_waiter(void)
+/* 每拍到期扫描(第七站,多等待者):物理 CNTV 恒为"当前客"的,别家
+ * 到期不响物理线——本扫描按保存的 ctx 表判定,WOKE 过期者(多家皆醒,
+ * 先后由各自 cval 决定)。纯表逻辑:无 27 未响则无需关线降优先级
+ * (vgic_wake_waiter 只属真正响过的物理 27 路径);拍频 = 1 tick,
+ * 与泵粒度同阶——WOKE 的生效本就要等下一次泵轮到它,与即时判定
+ * 等效(单核调度的本质粒度)。 */
+void sched_vtimer_sweep(void)
 {
+    u64 now;
     u32 id;
 
-    for (id = 0; id < ESHINE_MAX_VMS; id++)
-        if (vm_table[id].state == VM_RUNNING &&
-            vm_table[id].vcpus[0].wait_state == 1UL &&
-            vm_table[id].vcpus[0].wait_reason == VCPU_WAIT_TIMER)
-            return &vm_table[id].vcpus[0];
-    return NULL;
+    __asm__ volatile("mrs %0, cntvct_el0" : "=r"(now));
+    for (id = 0; id < ESHINE_MAX_VMS; id++) {
+        struct vcpu *v = &vm_table[id].vcpus[0];
+
+        if (vm_table[id].state != VM_RUNNING)
+            continue;
+        if (v->wait_state != 1UL || v->wait_reason != VCPU_WAIT_TIMER)
+            continue;
+        if (!(v->vtimer_ctl & 1UL) || v->vtimer_cval > now)
+            continue;
+        v->wait_state = 2UL;              /* WOKE:泵轮到时注 LR */
+        v->vtimer_ctl = 0UL;              /* ctx 熄火:防切入装回过期值即重挂 */
+    }
 }
 
 /* 调度泵:轮转游标遍历,每 VM 一个量子;宿主权威在 shell(命令即原子段,
@@ -218,31 +229,38 @@ bool sched_pump(void)
         rr_next = (id + 1) % ESHINE_MAX_VMS;
         v->slice_left = SCHED_QUANTUM_TICKS;
         sched_need_resched = 0;
-        if (v->wait_state == 2UL) {        /* WOKE 专属 vtimer(27 经
-                                            * sched_waiter 定位;RX 走直通
-                                            * runnable 不经 WOKE——两源零串台) */
+        if (v->wait_state == 2UL) {        /* WOKE 专属 vtimer(27/扫描经
+                                            * ctx 表定位;RX 走直通 runnable
+                                            * 不经 WOKE——两源零串台) */
             if (v->wait_reason == VCPU_WAIT_TIMER)
                 vgic_inject_vtimer();       /* per-pCPU 单 LR 只能泵挂 */
             v->wait_state = 0UL;
             v->wait_reason = 0UL;
         }
+        /* vtimer ctx 切入对(第七站):cortex-a57(v8.0)无 CNTV 陷阱位,
+         * guest 直写物理;泵以切换对齐——切入还本人 ctx,物理 CNTV
+         * 恒为"当前客"的;切出即存(全出口含 YIELD/EXIT/FAULT/WAIT),
+         * 别家错过由每拍扫描兜住。CNTVOFF 共享 0:双 guest 同墙钟。 */
+        __asm__ volatile("msr cntv_cval_el0, %0" :: "r"(v->vtimer_cval));
+        __asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(v->vtimer_ctl));
         reason = vcpu_run(v, vm->space.vttbr);
+        __asm__ volatile("mrs %0, cntv_ctl_el0" : "=r"(v->vtimer_ctl));
+        __asm__ volatile("mrs %0, cntv_cval_el0" : "=r"(v->vtimer_cval));
         cur_vcpu = NULL;                /* 宿主语境:shell 命令期 tick 不误
                                           * 计入 guest 量子(27 分支已独立查) */
         progressed = true;
         if (reason == VCPU_PREEMPT) {
             sched_preempts++;             /* 量子耗尽:出口已转写帧,下一 VM */
         } else if (reason == VCPU_WAIT) {
-            u64 ctl;
-
             v->pc += 4;                   /* WFI 不 retire:代完成,醒后自查 */
             v->wait_state = 1UL;
-            /* 两源等待(第六站):cntv 武装 = TIMER(27 到点经 WOKE 注 LR
-             * 醒),否则 RX(shell 输入入环直通唤醒)。RX 等待持 owner——
-             * 输入即唤醒源,前台的意义所在;TIMER 等待才归还(宿主睡期
-             * 间要能敲命令,回收出口在 guest 的 host 命令 HVC #4)。 */
-            __asm__ volatile("mrs %0, cntv_ctl_el0" : "=r"(ctl));
-            v->wait_reason = (ctl & 1UL) ? VCPU_WAIT_TIMER : VCPU_WAIT_RX;
+            /* 两源等待(第六站;第七站起判据用切出保存的本人 ctx——
+             * 物理此刻可能是他人视角):cntv 武装 = TIMER(到期经 WOKE
+             * 注 LR 醒),否则 RX(shell 输入入环直通唤醒)。RX 等待持
+             * owner——输入即唤醒源,前台的意义所在;TIMER 等待才归还
+             * (宿主睡期间要能敲命令,回收出口在 guest 的 host 命令)。 */
+            v->wait_reason = (v->vtimer_ctl & 1UL) ? VCPU_WAIT_TIMER
+                                                   : VCPU_WAIT_RX;
             if (sched_console_owner == v && v->wait_reason == VCPU_WAIT_TIMER)
                 sched_console_owner = NULL;
         } else {

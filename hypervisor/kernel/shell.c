@@ -19,7 +19,7 @@ static void cmd_help(void)
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
     console_puts("          vmrun <id> vmconsole <id|host> vmstat vmkill <id>\n");
     console_puts("guest:    selftest sleep [N] spin echo <text> host exit\n");
-    console_puts("make verify walkthrough (25 步;与 make run 同一构建,可手动过):\n");
+    console_puts("make verify walkthrough (27 步;与 make run 同一构建,可手动过):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [3]\n");
     console_puts("  tick x2             -> ticks 递增             [4]\n");
     console_puts("  vmls / vmcreate 0   -> 空表 / CREATED         [5-6]\n");

@@ -99,13 +99,24 @@ void guest_main(void)
                     puts_uart("\nselftest OK\n");
                 else
                     puts_uart("\nselftest FAIL\n");
-            } else if (streq(linebuf, "sleep")) {
-                puts_uart("sleeping...\n");
-                vtimer_arm_seconds(2);
-                while (!wake_count)   /* WFI 陷阱回来重查:宿主陪睡后注入才到 */
-                    __asm__ volatile("wfi" ::: "memory");
-                wake_count = 0;
-                puts_uart("slept (vtimer irq)\n");
+            } else if (starts(linebuf, "sleep")) {
+                unsigned int secs = 2;
+
+                if (linebuf[5] == ' ' && linebuf[6] >= '1' && linebuf[6] <= '9'
+                    && linebuf[7] == '\0')
+                    secs = (unsigned int)(linebuf[6] - '0');
+                else if (linebuf[5] != '\0')
+                    secs = 0;                     /* 参数不合法:走 usage */
+                if (secs == 0) {
+                    puts_uart("usage: sleep [1-9]\n");
+                } else {
+                    puts_uart("sleeping...\n");
+                    vtimer_arm_seconds(secs);
+                    while (!wake_count)   /* WFI 陷阱回来重查:WOKE 注入才到 */
+                        __asm__ volatile("wfi" ::: "memory");
+                    wake_count = 0;
+                    puts_uart("slept (vtimer irq)\n");
+                }
             } else if (streq(linebuf, "host")) {
                 puts_uart("releasing console...\n");
                 hvc_host();                  /* 交还 RX;此后 -2 -> WFI 让位 */
