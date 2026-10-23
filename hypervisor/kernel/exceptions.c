@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "drivers/include/gicv3.h"
-#include "drivers/include/pl011.h"
 #include "drivers/include/timer.h"
 #include "kernel/include/console.h"
 #include "kernel/include/mmio.h"
@@ -94,8 +93,11 @@ void el2_unexpected(void)
 }
 
 /* lower-EL AArch64 sync:asm 桩(el1_trap)保存 guest 帧后调入,x0=vcpu。
- * HVC #0/#1/#2 分派;非 HVC = guest fault -> 诊断+VM 隔离死亡(Task 3)。
- * 帧内改值即改 guest 现场,trap_resume 按帧续跑。 */
+ * HVC #1/#2/#4 控制类分派(第六站:#0 putc/#3 getc 退役,IO 面走
+ * vuart MMIO 陷阱仿真;未知 imm 默认拒绝=guest fault 隔离死)。
+ * EC 0x24 = data abort -> mmio_dispatch(仿真窗口);非 HVC/非窗口 =
+ * guest fault -> 诊断+VM 隔离死亡。帧内改值即改 guest 现场,
+ * trap_resume 按帧续跑。 */
 /* HVC 出口的集中调度点(参考实现形态:guest trap 退出即查):量子尽则
  * PREEMPT 弃帧走 vcpu_exit(帧已在 el1_trap 存好,无需转写)。
  * getc 轮询风暴下 tick 多落宿主态,slice 递减在 el2_irq_host,
@@ -152,27 +154,12 @@ void el1_sync(struct vcpu *v)
     ec = esr >> 26;
     imm = esr & 0xFFFF;
 
-    if (ec == 0x16 && imm == 0) {           /* HVC #0 putc:帧内 x0 in/out */
-        console_putc((char)v->gprs[0]);
-        v->gprs[0] = 0;
-        resume_or_preempt(v);
-    } else if (ec == 0x16 && imm == 1) {    /* HVC #1 exit */
+    if (ec == 0x16 && imm == 1) {           /* HVC #1 exit */
         v->exit_reason = VCPU_EXIT;
         vcpu_exit();
     } else if (ec == 0x16 && imm == 2) {    /* HVC #2 yield */
         v->exit_reason = VCPU_YIELD;
         vcpu_exit();
-    } else if (ec == 0x16 && imm == 3) {    /* HVC #3 getc:RX 所有权路由,
-                                             * owner 是本 vCPU 则代读真硬件,
-                                             * 否则恒 -1(后台/前台他人=无输入) */
-        if (cur_vcpu == sched_console_owner) {
-            int ch = pl011_getc_poll();
-
-            v->gprs[0] = (ch >= 0) ? (u64)(u32)ch : ~0UL;   /* -1:前台暂无字符 */
-        } else {
-            v->gprs[0] = ~1UL;                              /* -2:无输入权,WFI 让位 */
-        }
-        resume_or_preempt(v);
     } else if (ec == 0x16 && imm == 4) {    /* HVC #4 host:前台交还 RX */
         if (cur_vcpu == sched_console_owner) {
             sched_console_owner = NULL;

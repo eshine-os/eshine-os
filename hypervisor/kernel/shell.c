@@ -112,6 +112,12 @@ static void dispatch(char *line)
             console_puts("usage: vmrun <id>\n");
     } else if (strncmp(line, "vmconsole", 64) == 0) {
         if (strncmp(args, "host", 64) == 0) {
+            if (sched_console_owner) {
+                /* 切换前冲原 owner 半行(按其积累时 tag),免前缀串味 */
+                struct eshine_vm *vm = vm_of_vcpu(sched_console_owner);
+
+                vuart_tx_flush(&vm->vu, (u32)vm->vmid);
+            }
             sched_console_owner = NULL;
             console_puts("console -> host\n");
         } else {
@@ -120,8 +126,11 @@ static void dispatch(char *line)
 
             if (ok && id < ESHINE_MAX_VMS) {
                 /* 死/暂停的 guest 由善后路径自动回收 owner。
-                 * 新 owner 若因无输入权 WFI 让位睡去(WAIT),此处唤醒它
-                 * 回轮询——前台 = 有权轮询,后台 = 无权让位。 */
+                 * 新 owner 若在 WAIT 即唤醒(RX 等待者输入已可入环;
+                 * TIMER 等待者醒后自查 wake_count,空转一轮无害)。 */
+                struct eshine_vm *vm = vm_of_vcpu(vm_vcpu(id));
+
+                vuart_tx_flush(&vm->vu, id);   /* 先冲半行再切 owner */
                 sched_console_owner = vm_vcpu(id);
                 if (sched_console_owner->wait_state == 1UL)
                     sched_console_owner->wait_state = 0UL;
@@ -147,21 +156,30 @@ static void dispatch(char *line)
     }
 }
 
-/* 泵主循环:shell 即最高优先级任务——有输入则处理(命令=原子段,泵停摆),
- * 无输入则泵一轮(每个就绪 VM 一个量子);owner 让渡给 guest 时宿主不读
- * RX,纯泵。命令之间的输入响应性=泵的量子粒度。 */
+/* 泵主循环:shell 即最高优先级任务——owner=host 时有输入则处理(命令=
+ * 原子段,泵停摆),无输入则泵一轮(每个就绪 VM 一个量子);owner=guest
+ * 时宿主恒排空 RX 入 owner 的 vuart 环(shell 即仲裁者,第六站)。命令
+ * 之间的输入响应性=泵的量子粒度。 */
 void shell_run(void)
 {
     u32 idx = 0;
 
     console_puts("eshine> ");
     for (;;) {
-        int ch = (sched_console_owner == NULL)
-                     ? pl011_getc_poll() : -1;
+        int ch = pl011_getc_poll();    /* 恒排空:按 owner 路由,不再门控 */
 
         if (ch >= 0) {
             char c = (char)ch;
 
+            if (sched_console_owner) {
+                struct vcpu *v = sched_console_owner;
+
+                /* 前台 guest 的输入入其 vuart 环;RX 等待者即刻唤醒 */
+                vuart_rx_push(&vm_of_vcpu(v)->vu, c);
+                if (v->wait_state == 1UL && v->wait_reason == VCPU_WAIT_RX)
+                    v->wait_state = 0UL;    /* 直通 runnable:环内已有数据 */
+                continue;
+            }
             if (c == '\r' || c == '\n') {
                 console_putc('\n');
                 linebuf[idx] = '\0';

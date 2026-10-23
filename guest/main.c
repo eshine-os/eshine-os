@@ -11,13 +11,11 @@
 #endif
 
 #if GUEST_ID == 0
-#define BANNER_HVC  "eshine-guest VM0 @EL1 via stage-2 (HVC console)\n"
-#define BANNER_UART "eshine-guest VM0 UART @IPA 0x09000000 (stage-2 device page)\n"
-#define PROMPT      "vm0> "
+#define BANNER "eshine-guest VM0 @EL1 via stage-2 (vuart @trap)\n"
+#define PROMPT "vm0> "
 #elif GUEST_ID == 1
-#define BANNER_HVC  "eshine-guest VM1 @EL1 via stage-2 (HVC console)\n"
-#define BANNER_UART "eshine-guest VM1 UART @IPA 0x09000000 (stage-2 device page)\n"
-#define PROMPT      "vm1> "
+#define BANNER "eshine-guest VM1 @EL1 via stage-2 (vuart @trap)\n"
+#define PROMPT "vm1> "
 #else
 #error "GUEST_ID must be 0 or 1"
 #endif
@@ -70,15 +68,10 @@ static int starts(const char *s, const char *pfx)
  * 行编辑交互(echo/exit)。exit 经 HVC #1 退回 EL2。 */
 void guest_main(void)
 {
-    const char *msg = BANNER_HVC;
-    const char *p;
     unsigned int idx = 0;
 
     gic_guest_enable();              /* ICV 面就绪并解 IRQ 后才可碰定时器 */
-    for (p = msg; *p; p++)
-        hvc_putc(*p);
-
-    puts_uart(BANNER_UART);
+    puts_uart(BANNER);              /* 第六站:全输出面经 vuart 陷阱仿真 */
     puts_uart(PROMPT);
 
     for (;;) {
@@ -100,7 +93,7 @@ void guest_main(void)
                 for (i = 0; i < 100; i++) {
                     sum += i;
                     __asm__ volatile("" : "+r"(sum));   /* 挡常量折叠:sum 必须真活在寄存器 */
-                    hvc_putc('.');
+                    uart_putc('.');   /* 100 次 MMIO 陷阱:寄存器存活性判据比 HVC 更硬 */
                 }
                 if (sum == 4950)
                     puts_uart("\nselftest OK\n");

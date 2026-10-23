@@ -11,12 +11,15 @@ login-dance + token-echo standard used by the previous eshine-os
 reference repo (baseline alignment, spec section 5).
 
 第五站(27.04)起调度异步化:vmrun 不再阻塞,双 VM 在 shell 等输入的
-间隙被泵轮转(1 tick 量子,tick 出口帧转写抢占)。判据升级——
-A 相:tick 严格递增;B 相:sleep→slept 注入全链;第五站:vmstat 双
-RUNNING+preempts 增长(并行+抢占)、双 VM 交错 token 双回显(vmconsole
-路由)、spin 3G 迭代无损续跑(转写正确性)、vm0 WAIT 期间 vm1 可交互
-(公平性)、slept 在后台轮转中醒、guest 退场后 tick 仍增长(HCR/DAIF
-恢复)。门禁 22 步,连续 2 轮才真绿。
+间隙被泵轮转(1 tick 量子,tick 出口帧转写抢占)。第六站 UART 撤出
+stage-2 映射:DR/FR 访问全 data abort 陷阱化,宿主 per-VM vuart 按
+寄存器语义仿真(guest 驱动不改语义),HVC #0/#3 退役,shell 恒排空
+RX 按 owner 路由,两源等待(TIMER 注 LR/RX 直通)。判据——A 相:tick
+严格递增;B 相:sleep→slept 注入全链;调度:双 RUNNING+交错 token 双
+回显+spin 3G 前后 preempts 差>=2(转写无损)+WAIT 公平+后台醒;
+设备:后台 banner [vmN] 前缀(陷阱 TX)+RX 唤醒链(入环→直通→FR
+命中)+selftest 100 MMIO 陷阱+隔离死(窗口外默认拒绝)。门禁 24 步,
+连续 2 轮才真绿。
 """
 import os
 import re
@@ -142,47 +145,54 @@ def main():
         try:
             # ---- 宿主三连 ----
             buf = read_until(s, buf, ("eshine-os " + VER).encode(), time.time() + 30)
-            print("  [1/22] banner ok (" + VER + ")")
+            print("  [1/24] banner ok (" + VER + ")")
             buf = read_until(s, buf, b"eshine> ", time.time() + 10)
-            print("  [2/22] shell prompt ok")
+            print("  [2/24] shell prompt ok")
             prompt_pos = len(buf)
             token = "ESHINEOK%d" % os.getpid()
             buf = token_echo(s, buf, token)
-            print("  [3/22] host token double-echo ok")
+            print("  [3/24] host token double-echo ok")
 
             # ---- A 相:真中断判据 ----
             buf, b4, a4 = tick_pair(s, buf, "host tick")
-            print("  [4/22] tick grows: %d -> %d (CNTHP->GICv3->EL2 IRQ)" % (b4, a4))
+            print("  [4/24] tick grows: %d -> %d (CNTHP->GICv3->EL2 IRQ)" % (b4, a4))
 
             pos = len(buf)
             s.sendall(b"vmls\n")
             buf = read_until(s, buf, b"[0] VM_INIT", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"[1] VM_INIT", time.time() + 10, start=pos)
-            print("  [5/22] vmls: empty table")
+            print("  [5/24] vmls: empty table")
 
             pos = len(buf)
             s.sendall(b"vmcreate 0\n")
             buf = read_until(s, buf, b"vm0: CREATED", time.time() + 10, start=pos)
-            print("  [6/22] vmcreate 0 -> CREATED")
+            print("  [6/24] vmcreate 0 -> CREATED")
 
-            # ---- VM0:异步启动 + 前台交互 ----
+            # ---- VM0:异步启动(后台跑动,banner 经 vuart 陷阱整行前缀冲) ----
             pos = len(buf)
             s.sendall(b"vmrun 0\n")
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=pos)
+            buf = read_until(s, buf, b"[vm0] eshine-guest VM0 @EL1", time.time() + 20,
+                             start=pos)   # 后台 banner:[vmN] 前缀判据(第六站)
+            print("  [7/24] vmrun 0 async -> background banner via vuart ([vm0] prefix)")
+
+            # ---- RX 唤醒链:前台化,空行入环 -> 直通唤醒 -> FR 命中 ----
+            pos = len(buf)
             s.sendall(b"vmconsole 0\n")
             buf = read_until(s, buf, b"console -> vm", time.time() + 10, start=pos)
-            buf = read_until(s, buf, b"eshine-guest VM0 @EL1", time.time() + 20, start=pos)
-            s.sendall(b"\n")   # prompt 在 vuart 行缓冲(后台无换行不冲):空行触发冲刷+重打
-            buf = read_until(s, buf, b"vm0> ", time.time() + 20, start=pos)
-            print("  [7/22] vmrun 0 (async) + vmconsole 0 -> vm0 banner/prompt")
+            p2 = len(buf)
+            s.sendall(b"\n")   # guest 在 WAIT-rx:入环即唤醒,重打 prompt
+            buf = read_until(s, buf, b"vm0> ", time.time() + 20, start=p2)
+            print("  [8/24] RX wake chain: push -> runnable -> FR hit -> prompt")
 
             p = len(buf)
             s.sendall(b"selftest\n")
             buf = read_until(s, buf, b"selftest OK", time.time() + 20, start=p)
             buf = read_until(s, buf, b"vm0> ", time.time() + 10, start=p)
-            print("  [8/22] VM0 selftest OK (x19/x30 live across 100 HVCs)")
+            print("  [9/24] VM0 selftest OK (x19/x30 live across 100 MMIO traps)")
 
-            time.sleep(2.5)   # 前台风暴再跑 2.5s:横跨 tick,量子耗尽+HVC 出口抢占
+            time.sleep(2.5)   # 前台交互窗口(getc 陷阱化后无 HVC 风暴;纯计算
+                              # 负载的抢占活性由 [15] spin 前后差断言)
             pos = len(buf)
             s.sendall(b"host\n")           # 前台 guest 内:HVC #4 交还 RX
             buf = read_until(s, buf, b"console -> host", time.time() + 10, start=pos)
@@ -192,12 +202,12 @@ def main():
             i = buf.index(b"preempts: ", pos) + len(b"preempts: ")
             buf = read_until(s, buf, b"\n", time.time() + 10, start=i)
             m = re.search(rb"preempts: (\d+)", buf[pos:])
-            if not m or int(m.group(1)) < 1:
+            if not m:
                 i2 = buf.rfind(b"preempts: ")
-                raise AssertionError("preempts=%r; line=%r; tail=%r"
-                                     % (m.group(1) if m else b"?",
-                                        buf[i2:i2+60] if i2 >= 0 else b"?", buf[-120:]))
-            print("  [9/22] vmstat: RUNNING + preempts>0 (tick preempt live)")
+                raise AssertionError("vmstat unparseable; line=%r; tail=%r"
+                                     % (buf[i2:i2+60] if i2 >= 0 else b"?", buf[-120:]))
+            print("  [10/24] HVC#4 handback + vmstat readable (preempts=%s so far)"
+                  % m.group(1).decode())
 
             # ---- VM1:第二 vCPU 上场,双活 ----
             pos = len(buf)
@@ -205,11 +215,15 @@ def main():
             buf = read_until(s, buf, b"vm1: CREATED", time.time() + 10, start=pos)
             s.sendall(b"vmrun 1\n")
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=pos)
+            buf = read_until(s, buf, b"[vm1] eshine-guest VM1 @EL1", time.time() + 20,
+                             start=pos)   # 后台 banner 前缀判据(vm1 同律)
+            print("  [11/24] vmrun 1 async -> background banner via vuart ([vm1] prefix)")
+            pos = len(buf)
             s.sendall(b"vmconsole 1\n")
             buf = read_until(s, buf, b"console -> vm", time.time() + 10, start=pos)
-            buf = read_until(s, buf, b"eshine-guest VM1 @EL1", time.time() + 20, start=pos)
-            s.sendall(b"\n")   # 同 [7]:prompt 在行缓冲,空行触发冲刷+重打
-            buf = read_until(s, buf, b"vm1> ", time.time() + 20, start=pos)
+            p2 = len(buf)
+            s.sendall(b"\n")   # 同 [8]:入环唤醒,重打 prompt
+            buf = read_until(s, buf, b"vm1> ", time.time() + 20, start=p2)
             pos2 = len(buf)
             s.sendall(b"host\n")           # 前台交还 RX
             buf = read_until(s, buf, b"console -> host", time.time() + 10, start=pos2)
@@ -224,8 +238,8 @@ def main():
             if not m:
                 raise AssertionError("vmstat preempts line missing: %r" % buf[pos2:][-120:])
             # 后台双 idle guest 全 WFI 时无活负载即无抢占——preempts 数值
-            # 只需可读;活负载下的轮转抢占由 [13] spin 判据断言(前后差 >=2)。
-            print("  [10/22] both RUNNING (preempts=%s so far)" % m.group(1).decode())
+            # 只需可读;活负载下的轮转抢占由 [15] spin 判据断言(前后差 >=2)。
+            print("  [12/24] both RUNNING (preempts=%s so far)" % m.group(1).decode())
 
             # ---- 双 VM 交错活(各自 token,HVC 路由) ----
             pos = len(buf)
@@ -238,7 +252,7 @@ def main():
             pos2 = len(buf)
             s.sendall(b"host\n")           # 前台交还 RX
             buf = read_until(s, buf, b"console -> host", time.time() + 10, start=pos2)
-            print("  [11/22] vm0 echo double-echo ok (foreground)")
+            print("  [13/24] vm0 echo double-echo ok (foreground)")
 
             pos = len(buf)
             s.sendall(b"vmconsole 1\n")
@@ -250,7 +264,7 @@ def main():
             pos2 = len(buf)
             s.sendall(b"host\n")           # 前台交还 RX
             buf = read_until(s, buf, b"console -> host", time.time() + 10, start=pos2)
-            print("  [12/22] vm1 echo double-echo ok (both alive, interleaved)")
+            print("  [14/24] vm1 echo double-echo ok (both alive, interleaved)")
 
             # ---- 抢占转写正确性:前台 spin 3G 迭代(TCG 实测 ~0.4G/s,约 8s),
             # 跨多次量子切换;preempts 前后差 >=2 即证明 spin 期间被抢占且无损续跑 ----
@@ -288,7 +302,7 @@ def main():
             if pe1 - pe0 < 2:
                 raise AssertionError("spin crossed %d quantum(s) (pe0=%d pe1=%d); "
                                      "frame migration unproven" % (pe1 - pe0, pe0, pe1))
-            print("  [13/22] spin 3G survived %d quantum preemptions (frame migration intact)"
+            print("  [15/24] spin 3G survived %d quantum preemptions (frame migration intact)"
                   % (pe1 - pe0))
 
             # ---- WAIT 公平:vm0 睡,vm1 继续活;vm0 后台醒 ----
@@ -303,10 +317,10 @@ def main():
             buf = read_until(s, buf, b"sleeping...", time.time() + 10, start=p)
             time.sleep(0.5)   # WAIT 陷阱+owner 自动归还的间隙;FIFO 兜底不丢
             buf = token_echo(s, buf, "FAIR%d" % os.getpid())
-            print("  [14/22] vm0 WAIT -> host alive, vm1 running (fairness)")
+            print("  [16/24] vm0 WAIT -> host alive, vm1 running (fairness)")
 
             buf = read_until(s, buf, b"slept (vtimer irq)", time.time() + 20)
-            print("  [15/22] vm0 woke in background rotation (WOKE->pump inject)")
+            print("  [17/24] vm0 woke in background rotation (WOKE->pump inject)")
 
             # ---- vm0 退出;vm1 fault 隔离 ----
             pos = len(buf)
@@ -318,7 +332,7 @@ def main():
             p = len(buf)
             s.sendall(b"exit\n")
             buf = read_until(s, buf, b"vm0: VM_DEAD", time.time() + 15, start=p)
-            print("  [16/22] vm0 exit -> VM_DEAD (RX auto-reclaimed)")
+            print("  [18/24] vm0 exit -> VM_DEAD (RX auto-reclaimed)")
 
             pos = len(buf)
             s.sendall(b"vmconsole 1\n")
@@ -330,34 +344,34 @@ def main():
             s.sendall(b"fault\n")
             buf = read_until(s, buf, b"fault: ESR=0x", time.time() + 10, start=p)
             buf = read_until(s, buf, b"vm1: faulted -> VM_DEAD", time.time() + 10, start=p)
-            print("  [17/22] vm1 fault isolated: VM_DEAD, host alive")
+            print("  [19/24] vm1 fault isolated: VM_DEAD, host alive")
 
             pos = len(buf)
             s.sendall(b"vmls\n")
             buf = read_until(s, buf, b"[0] VM_DEAD", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"[1] VM_DEAD", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"eshine> ", time.time() + 10, start=pos)
-            print("  [18/22] vmls: both DEAD")
+            print("  [20/24] vmls: both DEAD")
 
             prompt_pos = len(buf)
             token2 = "ESHINEOK%d" % (os.getpid() + 1)
             buf = token_echo(s, buf, token2)
-            print("  [19/22] host shell intact after dual-VM lifecycle")
+            print("  [21/24] host shell intact after dual-VM lifecycle")
 
             # ---- guest 退场后 tick 仍增长(HCR/DAIF 恢复) ----
             buf, b20, a20 = tick_pair(s, buf, "post-guest tick")
-            print("  [20/22] post-guest tick grows: %d -> %d (HCR_EL2_HOST/DAIF restore)"
+            print("  [22/24] post-guest tick grows: %d -> %d (HCR_EL2_HOST/DAIF restore)"
                   % (b20, a20))
 
             pos = len(buf)
             s.sendall(b"vmkill 1\n")
             buf = read_until(s, buf, b"kill denied", time.time() + 10, start=pos)
-            print("  [21/22] vmkill deny path ok (default-deny)")
+            print("  [23/24] vmkill deny path ok (default-deny)")
 
             pos = len(buf)
             s.sendall(b"vmstat\n")
             buf = read_until(s, buf, b"[1] VM_DEAD", time.time() + 10, start=pos)
-            print("  [22/22] vmstat still sane after teardown")
+            print("  [24/24] vmstat still sane after teardown")
             print("RESULT PASS")
             return 0
         finally:

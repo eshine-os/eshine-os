@@ -148,6 +148,7 @@ static void vm_finish(u32 id, u64 reason)
 {
     struct eshine_vm *vm = &vm_table[id];
 
+    vuart_tx_flush(&vm->vu, id);        /* 死/停前冲尾:半行不吞(tag 定前缀) */
     if (reason == VCPU_YIELD) {
         vm_transition(vm, VM_PAUSED);
         vm_id_label(id);
@@ -180,15 +181,17 @@ struct eshine_vm *vm_of_vcpu(struct vcpu *v)
     panic("vm_of_vcpu: vcpu not in vm_table");
 }
 
-/* 单等待者:全表扫 WAIT 态(单等待者假设下的 O(2))。27 到点时 cur_vcpu
- * 可能是别的在跑 VM,WOKE 必须归等待者,否则串台。 */
+/* 单 vtimer 等待者:全表扫 WAIT 且原因=TIMER(第六站起两 VM 可同时
+ * 等——一 TIMER 一 RX,27 的 WOKE 只归 TIMER 等待者,按原因找人)。
+ * 27 到点时 cur_vcpu 可能是别的在跑 VM,归错即串台。 */
 struct vcpu *sched_waiter(void)
 {
     u32 id;
 
     for (id = 0; id < ESHINE_MAX_VMS; id++)
         if (vm_table[id].state == VM_RUNNING &&
-            vm_table[id].vcpus[0].wait_state == 1UL)
+            vm_table[id].vcpus[0].wait_state == 1UL &&
+            vm_table[id].vcpus[0].wait_reason == VCPU_WAIT_TIMER)
             return &vm_table[id].vcpus[0];
     return NULL;
 }
@@ -215,10 +218,13 @@ bool sched_pump(void)
         rr_next = (id + 1) % ESHINE_MAX_VMS;
         v->slice_left = SCHED_QUANTUM_TICKS;
         sched_need_resched = 0;
-        if (v->wait_state == 2UL) {        /* WOKE:泵注入点(per-pCPU 单 LR
-                                            * 只能在此挂,防在跑 VM 串台) */
-            vgic_inject_vtimer();
+        if (v->wait_state == 2UL) {        /* WOKE 专属 vtimer(27 经
+                                            * sched_waiter 定位;RX 走直通
+                                            * runnable 不经 WOKE——两源零串台) */
+            if (v->wait_reason == VCPU_WAIT_TIMER)
+                vgic_inject_vtimer();       /* per-pCPU 单 LR 只能泵挂 */
             v->wait_state = 0UL;
+            v->wait_reason = 0UL;
         }
         reason = vcpu_run(v, vm->space.vttbr);
         cur_vcpu = NULL;                /* 宿主语境:shell 命令期 tick 不误
@@ -227,12 +233,18 @@ bool sched_pump(void)
         if (reason == VCPU_PREEMPT) {
             sched_preempts++;             /* 量子耗尽:出口已转写帧,下一 VM */
         } else if (reason == VCPU_WAIT) {
+            u64 ctl;
+
             v->pc += 4;                   /* WFI 不 retire:代完成,醒后自查 */
             v->wait_state = 1UL;
-            if (sched_console_owner == v)
-                sched_console_owner = NULL;   /* 前台 VM 进等待:RX 还宿主——
-                                                 * 否则宿主读不到回收命令,泵又
-                                                 * 被 owner 挡住别 VM,死等 WOKE */
+            /* 两源等待(第六站):cntv 武装 = TIMER(27 到点经 WOKE 注 LR
+             * 醒),否则 RX(shell 输入入环直通唤醒)。RX 等待持 owner——
+             * 输入即唤醒源,前台的意义所在;TIMER 等待才归还(宿主睡期
+             * 间要能敲命令,回收出口在 guest 的 host 命令 HVC #4)。 */
+            __asm__ volatile("mrs %0, cntv_ctl_el0" : "=r"(ctl));
+            v->wait_reason = (ctl & 1UL) ? VCPU_WAIT_TIMER : VCPU_WAIT_RX;
+            if (sched_console_owner == v && v->wait_reason == VCPU_WAIT_TIMER)
+                sched_console_owner = NULL;
         } else {
             vm_finish(id, reason);        /* YIELD/EXIT/FAULT */
         }
