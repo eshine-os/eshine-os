@@ -18,6 +18,27 @@ static void cmd_help(void)
 {
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
     console_puts("          vmrun <id> vmconsole <id|host> vmstat vmkill <id>\n");
+    console_puts("guest:    selftest sleep [N] spin echo <text> host exit\n");
+    console_puts("make verify walkthrough (25 步;与 make run 同一构建,可手动过):\n");
+    console_puts("  echo ESHINEOKx      -> token 双次回显        [3]\n");
+    console_puts("  tick x2             -> ticks 递增             [4]\n");
+    console_puts("  vmls / vmcreate 0   -> 空表 / CREATED         [5-6]\n");
+    console_puts("  vmconsole 0         -> denied: not running    [7]\n");
+    console_puts("  vmrun 0             -> [vm0] banner (vuart)   [8]\n");
+    console_puts("  vmconsole 0 + 回车   -> vm0> (RX 唤醒链)       [9]\n");
+    console_puts("  selftest            -> 100 MMIO 陷阱 OK       [10]\n");
+    console_puts("  host / vmstat       -> console->host; RUNNING [11]\n");
+    console_puts("  vmcreate 1 / vmrun 1 / vmconsole 1 + 回车 -> [vm1] / vm1> [12-13]\n");
+    console_puts("  vmconsole host / vmstat -> both RUNNING      [13]\n");
+    console_puts("  vmconsole 0+回车 / echo GOKAx / host         [14]\n");
+    console_puts("  vmconsole 1+回车 / echo GOKBx / host         [15]\n");
+    console_puts("  vmstat / vmconsole 0+回车 / spin -> spun 3G   [16]\n");
+    console_puts("    (preempts 前后差>=2:跨量子无损转写)\n");
+    console_puts("  vmconsole 0+回车 / sleep -> 公平+后台 slept   [17-18]\n");
+    console_puts("  vmconsole 0+回车 / exit    -> VM_DEAD         [19]\n");
+    console_puts("  vmconsole 1+回车 / fault   -> 隔离死          [20]\n");
+    console_puts("  vmls / echo 复验 / tick x2 -> 双 DEAD/仍递增   [21-23]\n");
+    console_puts("  vmkill 1 / vmstat   -> denied / 收尾          [24-25]\n");
 }
 
 static void cmd_version(void)

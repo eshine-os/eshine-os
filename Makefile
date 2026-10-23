@@ -39,7 +39,9 @@ $(TARGET): $(OBJS) linker.ld
 # VERSION 是注入宏的来源,必须作为先决条件(否则改版本不触发重编,门禁会抓)
 $(OBJS): VERSION
 
-run: $(TARGET)
+# make run 与 make verify 同构:同一构建产物(含 guest 双镜像),
+# run 走 run_qemu.sh 交互,verify 走 25 步门禁——两者验的是同一个 elf
+run: $(TARGET) guest1.bin guest2.bin
 	./scripts/run_qemu.sh
 
 verify: $(TARGET) guest1.bin guest2.bin
