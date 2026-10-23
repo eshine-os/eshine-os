@@ -3,6 +3,7 @@
 #include "drivers/include/gicv3.h"
 #include "drivers/include/timer.h"
 #include "kernel/include/console.h"
+#include "kernel/include/sched.h"
 #include "kernel/include/types.h"
 #include "kernel/include/vcpu.h"
 
@@ -26,7 +27,9 @@ void el2_sync(void)
  * 26=宿主 CNTHP tick(EOIR+DIR);VTIMER=guest CNTV(B 相注入,EOIR 只降优先级,
  * 物理线由 guest 虚 EOI 经 HW-LR 硬件联动撤销);未知 intid 记账不 panic
  * (中断是数据,同 fault 隔离哲学)。spurious(1023)不动 EOIR。 */
-void el2_irq(void)
+/* 宿主态 tick:只服务 timer,不消耗量子(shell 命令即原子段)。
+ * 27 分支为"陪睡中的前台 WAIT VM"到点(单等待者):置 WOKE 交泵。 */
+void el2_irq_host(void)
 {
     u64 intid = gicv3_claim();
 
@@ -34,8 +37,33 @@ void el2_irq(void)
         timer_handler();
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
-        vgic_inject_vtimer();        /* LR0 挂 vINTID27(HW 映射),guest 端经 ICV 消费 */
-        gicv3_eoi_drop(intid);      /* 物理线由 guest 虚 EOI 硬件联动撤销 */
+        if (cur_vcpu && cur_vcpu->wait_state == 1UL)
+            cur_vcpu->wait_state = 2UL;   /* WOKE:泵给它注入并复位跑 */
+        vgic_wake_waiter();
+    } else if (intid != IAR_SPURIOUS) {
+        gicv3_eoi_dir(intid);
+    }
+}
+
+/* guest 运行态物理中断(lower-EL 槽):宿主栈帧建在 excp_stack。
+ * tick 服务 timer 同时递减量子,耗尽置 PREEMPT 由桩出口帧转写切走;
+ * 27 是该 guest 自己的 vtimer 到点:置 WOKE+关线,注入留给下次泵到它。 */
+void el2_irq_guest(void)
+{
+    u64 intid = gicv3_claim();
+
+    if (intid == GIC_PPI_HPTIMER) {
+        timer_handler();
+        if (cur_vcpu->slice_left > 0)
+            cur_vcpu->slice_left--;
+        if (cur_vcpu->slice_left == 0) {
+            cur_vcpu->exit_reason = VCPU_PREEMPT;   /* 桩出口转写后弃帧 */
+            sched_need_resched = 1;
+        }
+        gicv3_eoi_dir(intid);
+    } else if (intid == GIC_PPI_VTIMER) {
+        cur_vcpu->wait_state = 2UL;       /* WOKE:本轮被切走,泵注入后醒 */
+        vgic_wake_waiter();
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
     }

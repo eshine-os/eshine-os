@@ -6,6 +6,8 @@
 #include "kernel/include/panic.h"
 #include "kernel/include/util.h"
 #include "kernel/include/vcpu.h"
+#include "drivers/include/gicv3.h"
+#include "kernel/include/sched.h"
 #include "kernel/include/vm.h"
 
 static struct eshine_vm vm_table[ESHINE_MAX_VMS];
@@ -137,13 +139,26 @@ int vm_run(u32 id)
     else
         console_puts("entering EL1 via stage-2 (non-identity map)\n");
     do {
+        vm->vcpus[0].slice_left = SCHED_QUANTUM_TICKS;   /* 过渡期:泵化后由泵置 */
+        sched_need_resched = 0;
         reason = vcpu_run(&vm->vcpus[0], vm->space.vttbr);
         if (reason == VCPU_WAIT) {
             __asm__ volatile("wfi");   /* 宿主陪睡:滴答/vtimer 到点唤醒 */
             vm->vcpus[0].pc += 4;      /* WFI 陷阱不 retire:代其"完成",guest
                                           * 醒后自查唤醒条件(vtimer 标志) */
+            if (vm->vcpus[0].wait_state == 0UL)     /* 仅首次进等待置 WAIT:
+                                                     * wfi 循环反复醒睡不得抹掉
+                                                     * 27 已置的 WOKE */
+                vm->vcpus[0].wait_state = 1UL;
+            if (vm->vcpus[0].wait_state == 2UL) {   /* WOKE:泵化前的过渡内联,
+                                                     * Task 2 由泵收编注入点 */
+                vgic_inject_vtimer();
+                vm->vcpus[0].wait_state = 0UL;
+            }
         }
-    } while (reason == VCPU_WAIT);
+        /* PREEMPT:量子耗尽被出口切走;阻塞语义下继续跑自己,
+         * 调度泵接手后此分支消失(让位给下一 VM)。 */
+    } while (reason == VCPU_WAIT || reason == VCPU_PREEMPT);
     if (reason == VCPU_YIELD) {
         vm_transition(vm, VM_PAUSED);
         vm_id_label(id);

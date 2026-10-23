@@ -82,6 +82,15 @@ void vgic_enable(void)
     __asm__ volatile("isb");
 }
 
+void vgic_wake_waiter(void)
+{
+    /* 27 到点的宿主侧动作:关 CNTV 让电平线降(不清则重挂起风暴),
+     * 只降优先级不撤物理线——撤线交给 WOKE 后泵注入时 guest 的虚 EOI
+     * 硬件联动(LR 不预挂:per-pCPU 单通道,在跑的别的 VM 会串台消费)。 */
+    __asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(0UL));
+    gicv3_eoi_drop(GIC_PPI_VTIMER);
+}
+
 void vgic_inject_vtimer(void)
 {
     /* HW 映射:vINTID=27(guest CNTV 视角),pINTID=27(物理同号线)。

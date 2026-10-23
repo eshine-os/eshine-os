@@ -22,7 +22,7 @@ el2_vector_table:
     VENTRY el2_unexpected          /* serror */
     /* Lower EL, AArch64 */
     VENTRY el1_trap               /* sync:asm 桩保存 guest 帧后进 C */
-    VENTRY el2_trap                /* irq:guest 运行中到的物理中断走宿主栈处理后 eret 回 guest */
+    VENTRY el2_trap_guest         /* irq:guest 态物理中断,出口可抢占(帧转写) */
     VENTRY el2_unexpected
     VENTRY el2_unexpected
     /* Lower EL, AArch32 */
