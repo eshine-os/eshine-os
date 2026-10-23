@@ -125,16 +125,25 @@ static void dispatch(char *line)
             u32 id = parse_id(args, &ok);
 
             if (ok && id < ESHINE_MAX_VMS) {
-                /* 死/暂停的 guest 由善后路径自动回收 owner。
-                 * 新 owner 若在 WAIT 即唤醒(RX 等待者输入已可入环;
-                 * TIMER 等待者醒后自查 wake_count,空转一轮无害)。 */
                 struct eshine_vm *vm = vm_of_vcpu(vm_vcpu(id));
 
-                vuart_tx_flush(&vm->vu, id);   /* 先冲半行再切 owner */
-                sched_console_owner = vm_vcpu(id);
-                if (sched_console_owner->wait_state == 1UL)
-                    sched_console_owner->wait_state = 0UL;
-                console_puts("console -> vm\n");
+                /* 状态门(第六站 bug 修复):只有 RUNNING 的 VM 消费输入,
+                 * owner 指给非 RUNNING 的 VM = 所有输入入环无人读,且
+                 * vmconsole host 自救同样被路由——终端永久锁死。默认拒绝,
+                 * 宿主命令面永远可用(vmconsole host 无条件)。 */
+                if (vm->state != VM_RUNNING) {
+                    console_puts("vm");
+                    util_putdec(id);
+                    console_puts(": denied: not running (vmrun first)\n");
+                } else {
+                    /* 新 owner 若在 WAIT 即唤醒(RX 等待者输入已可入环;
+                     * TIMER 等待者醒后自查 wake_count,空转一轮无害)。 */
+                    vuart_tx_flush(&vm->vu, id);   /* 先冲半行再切 owner */
+                    sched_console_owner = vm_vcpu(id);
+                    if (sched_console_owner->wait_state == 1UL)
+                        sched_console_owner->wait_state = 0UL;
+                    console_puts("console -> vm\n");
+                }
             } else {
                 console_puts("usage: vmconsole <id|host>\n");
             }
