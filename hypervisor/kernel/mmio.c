@@ -4,12 +4,13 @@
  * HPFAR_EL2 是 stage-2 fault 的 IPA 权威来源(FAR_EL2 对 S2 fault 无效,
  * 不信;QEMU 8.2.2 实现,落地经 guest fault 诊断打点活探针复核)。 */
 #include "arch/arm64/include/mm.h"       /* S2_ATTR_EMULATED */
+#include "drivers/include/vblk.h"
 #include "drivers/include/vuart.h"
 #include "kernel/include/console.h"
 #include "kernel/include/mmio.h"
 #include "kernel/include/sched.h"        /* sched_console_owner */
 #include "kernel/include/vcpu.h"
-#include "kernel/include/vm.h"           /* vm_of_vcpu */
+#include "kernel/include/vm.h"           /* vm_of_vcpu/vm_ipa_to_pa/VM_DEV_* */
 
 /* ESR_ISS(data abort from lower EL, EC=0x24;ARM DDI 0487):
  *   [24] ISV(寄存器现场有效) [23:22] SAS(访问宽) [21:16] SRT(寄存器号)
@@ -38,18 +39,33 @@ void mmio_dispatch(struct vcpu *v, u64 esr)
             continue;
         if (ipa < d->ipa || ipa >= d->ipa + d->size)
             continue;
-        /* 命中仿真窗口:vuart(当前唯一仿真设备;多设备后此处查设备表)。
+        /* 命中仿真窗口(第九站设备表化):按 dev 分发。
          * 关键不变量:data abort 不退休——ELR 指向 faulting 指令
          * (HVC/WFI 是"已完成"语义,ELR 指向下条;两副面孔),仿真完成
          * 必须代 retire(pc+=4),否则 ERET 原地重执行->无穷陷阱环。 */
-        if ((iss >> 6) & 1UL) {          /* WnR:写 */
-            vuart_mmio_write(&vm->vu, (u32)vm->vmid, ipa - d->ipa,
-                             v->gprs[(iss >> 16) & 0x1FUL],
-                             v == sched_console_owner);
-        } else {
-            if (((iss >> 16) & 0x1FUL) != 31)   /* SRT=31 -> xzr,不回填 */
-                v->gprs[(iss >> 16) & 0x1FUL] =
-                    vuart_mmio_read(&vm->vu, ipa - d->ipa);
+        {
+            u32 srt = (u32)((iss >> 16) & 0x1FUL);
+            bool wnr = ((iss >> 6) & 1UL) != 0;
+
+            switch (d->dev) {
+            case VM_DEV_VUART:
+                if (wnr)
+                    vuart_mmio_write(&vm->vu, (u32)vm->vmid, ipa - d->ipa,
+                                     v->gprs[srt], v == sched_console_owner);
+                else if (srt != 31)      /* SRT=31 -> xzr,不回填 */
+                    v->gprs[srt] = vuart_mmio_read(&vm->vu, ipa - d->ipa);
+                break;
+            case VM_DEV_VBLK:
+                if (wnr)
+                    vblk_mmio_write(vm, (u32)vm->vmid, ipa - d->ipa,
+                                    v->gprs[srt]);
+                else if (srt != 31)
+                    v->gprs[srt] = vblk_mmio_read(vm, (u32)vm->vmid,
+                                                  ipa - d->ipa);
+                break;
+            default:
+                guest_fault(v, esr);      /* 表内未知设备:不变量破坏 */
+            }
         }
         v->pc += 4UL;                    /* 代 retire:A64 定长 4 字节 */
         resume_or_preempt(v);

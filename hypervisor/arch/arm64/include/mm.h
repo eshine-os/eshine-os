@@ -20,8 +20,9 @@
 
 /* VM 内存区:2MB block 粒度,RAM 段(IPA 1-2GB)内 */
 struct mem_region { u64 ipa, pa, size, attr; };
-/* VM 设备页:4KB 粒度,设备段(IPA 0-1GB)内,构建时强制 XN */
-struct vm_device  { u64 ipa, pa, size, attr; };
+/* VM 设备页:4KB 粒度,设备段(IPA 0-1GB)内,构建时强制 XN。
+ * dev = 仿真设备类型(第九站设备表化:窗口命中后按此分发) */
+struct vm_device  { u64 ipa, pa, size, attr, dev; };
 
 /* per-VM stage-2 全套表;topology 与第一站一致:
  *   pgd[0] -> l2_dev(设备段 L2)   pgd[1] -> l2_ram(RAM 段 L2)

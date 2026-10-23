@@ -40,16 +40,16 @@ $(TARGET): $(OBJS) linker.ld
 $(OBJS): VERSION
 
 # make run 与 make verify 同构:同一构建产物(含 guest 双镜像),
-# run 走 run_qemu.sh 交互,verify 走 25 步门禁——两者验的是同一个 elf
+# run 走 run_qemu.sh 交互,verify 走 31 步门禁——两者验的是同一个 elf
 run: $(TARGET) guest1.bin guest2.bin
 	./scripts/run_qemu.sh
 
 verify: $(TARGET) guest1.bin guest2.bin
 	python3 tools/verify/verify_el2.py
 
-guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h
+guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/blk.h
 	$(CC) $(CFLAGS) -DGUEST_ID=0 -c -o $@ $<
-guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h
+guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/blk.h
 	$(CC) $(CFLAGS) -DGUEST_ID=1 -c -o $@ $<
 
 guest1.elf: guest/start.o guest/vec.o guest/main0.o guest/linker.ld

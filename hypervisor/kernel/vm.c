@@ -88,12 +88,19 @@ int vm_create(u32 id)
     vm->mem[0].pa   = vm_ram_pa[id];
     vm->mem[0].size = VM_RAM_SIZE;
     vm->mem[0].attr = S2_ATTR_NORMAL;
-    vm->n_dev = 1;
+    vm->n_dev = 2;
     vm->devices[0].ipa  = VM_UART_IPA;
     vm->devices[0].pa   = 0;                /* 仿真设备无 PA:不映射,只有窗口 */
     vm->devices[0].size = VM_UART_SIZE;
     vm->devices[0].attr = S2_ATTR_EMULATED; /* 撤直通:访问即 data abort 陷阱 */
+    vm->devices[0].dev  = VM_DEV_VUART;
+    vm->devices[1].ipa  = VBLK_BASE;        /* 第九站:RAM 磁盘窗口 */
+    vm->devices[1].pa   = 0;
+    vm->devices[1].size = 0x1000UL;
+    vm->devices[1].attr = S2_ATTR_EMULATED;
+    vm->devices[1].dev  = VM_DEV_VBLK;
     vuart_init(&vm->vu);
+    memset(&vm->vb, 0, sizeof(vm->vb));    /* regs 复位;磁盘数据不在生命周期内 */
     vm->vcpus[0].pc = VM_RAM_IPA;              /* 帧即真相:新跑=初始化帧 */
     vm->vcpus[0].sp = 0x40200000UL;            /* guest 自会重设 */
     vm->vcpus[0].pstate = 0x3C5UL;            /* EL1h + DAIF 全掩 */
@@ -187,6 +194,22 @@ struct eshine_vm *vm_of_vcpu(struct vcpu *v)
     panic("vm_of_vcpu: vcpu not in vm_table");
 }
 
+/* 静态翻译(第九站 vblk 数据面):IPA 落 mem[] 区且全尺寸含 → PA,
+ * 否则 0(调用方按设备错处理,默认拒绝不杀 guest)。
+ * EL2 恒等映射,PA 即宿主可直接访存的地址。 */
+u64 vm_ipa_to_pa(struct eshine_vm *vm, u64 ipa, u64 size)
+{
+    u32 i;
+
+    for (i = 0; i < vm->n_mem; i++) {
+        const struct mem_region *r = &vm->mem[i];
+
+        if (ipa >= r->ipa && ipa + size <= r->ipa + r->size)
+            return r->pa + (ipa - r->ipa);
+    }
+    return 0UL;
+}
+
 /* 每拍到期扫描(第七站,多等待者):物理 CNTV 恒为"当前客"的,别家
  * 到期不响物理线——本扫描按保存的 ctx 表判定,WOKE 过期者(多家皆醒,
  * 先后由各自 cval 决定)。纯表逻辑:无 27 未响则无需关线降优先级
@@ -231,13 +254,14 @@ bool sched_pump(void)
         if (vm->state != VM_RUNNING)
             continue;                     /* 非就绪 */
         if (v->wait_state == 1UL) {
-            /* RX 等待者仍有待取数据(注入与消费的时序缝隙,多字符
-             * 爆发的兜底网):再唤醒,本轮流到它时注入+消费 */
-            if (v->wait_reason == VCPU_WAIT_RX &&
-                vuart_rx_irq_ready(&vm->vu))
+            /* 设备中断等待者(RX/vblk 完成等非 TIMER 源)仍有待取
+             * 事件(注入与消费的时序缝隙的兜底网):再唤醒,本轮流到
+             * 它时注入+消费;TIMER 睡眠与无事件者继续让位 */
+            if (v->wait_reason != VCPU_WAIT_TIMER &&
+                (vuart_rx_irq_ready(&vm->vu) || vblk_irq_ready(vm)))
                 v->wait_state = 0UL;
             else
-                continue;                 /* TIMER 等待/环空:继续让位 */
+                continue;
         }
         if (sched_console_owner && sched_console_owner != v)
             continue;                     /* 前台模式:console 独占,免 RX 竞争 */
@@ -257,6 +281,9 @@ bool sched_pump(void)
                                              * RIS 在 DR 读时重评定:多字符
                                              * 爆发每注一发弹一个,续注排空 */
             vgic_inject_uart();
+        }
+        if (vblk_irq_ready(vm)) {          /* 第九站:vblk 完成中断(LR2) */
+            vgic_inject_blk();
         }
         /* vtimer ctx 切入对(第七站):cortex-a57(v8.0)无 CNTV 陷阱位,
          * guest 直写物理;泵以切换对齐——切入还本人 ctx,物理 CNTV

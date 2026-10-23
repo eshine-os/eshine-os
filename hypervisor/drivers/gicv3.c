@@ -116,6 +116,17 @@ void vgic_inject_uart(void)
     __asm__ volatile("isb");
 }
 
+void vgic_inject_blk(void)
+{
+    /* 同 uart:纯虚拟完成中断,Group+State(pending) 两位置足,
+     * HW 位不置(HW LR 挂起跟随物理线,物理侧无源)。LR2 通道
+     * (LR0=vtimer HW/LR1=vuart/LR2=vblk,a57 四槽)。 */
+    u64 lr = GIC_SPI_BLK | ICH_LR_GROUP1 | ICH_LR_PENDING;
+
+    __asm__ volatile("msr ich_lr2_el2, %0" :: "r"(lr));
+    __asm__ volatile("isb");
+}
+
 u64 gicv3_claim(void)
 {
     u64 v;
