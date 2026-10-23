@@ -218,6 +218,18 @@ cortex-a57(v8.0) 无 CNTV 陷阱位（guest 直写物理），泵以切换对齐
 切入还本人 ctx、切出即存（全出口），物理恒为"当前客"的；CNTVOFF
 共享 0（双 guest 同墙钟）。
 
+设备表化与 vblk（第九站）：vm_device 增 dev 字段，窗口命中按
+VM_DEV_VUART/VM_DEV_VBLK 分发。vblk = RAM 磁盘块设备：**内存即
+传输面，寄存器即门铃**（virtqueue 种子）——数据缓冲在 guest 自有
+RAM，宿主经 vm_ipa_to_pa（mem[] 静态映射）首次直访 guest 物理内存；
+MMIO 只承载 CMD 门铃/ADDR/STATUS/CAP/IMSC；服务在门铃陷阱内同步
+完成，**异步的只有完成中断**（ris+imsc → 泵注 LR2 vSPI 34 →
+guest ISR 读 STATUS 清挂起）——请求→服务→完成→ISR 的完整设备
+生命周期。参数越界置 err 照常完成（设备级默认拒绝，不杀 guest）。
+**持久化=结构保证**：静态磁盘数组不经 vm_create 复位，销毁重建
+数据仍在。中断通道编号化：LR0=vtimer(HW)/LR1=vuart/LR2=vblk
+（a57 四槽）。
+
 ## 路线注记（范围外，记录归属）
 
 - 真板阶段：EL3/ATF 启动链（QEMU virt 无 secure world，本周用 virtualization=on 直进 EL2）
@@ -229,7 +241,7 @@ cortex-a57(v8.0) 无 CNTV 陷阱位（guest 直写物理），泵以切换对齐
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（28 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（31 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + vmrun 0 异步 → **后台 banner [vm0] 前缀（陷阱 TX
 整行冲刷判据）** + **RX 唤醒链（入环→直通 runnable→FR 命中→prompt
@@ -241,5 +253,5 @@ token 双回显（RX 路由判据）+ spin 3G 前后 preempts 差 >=2（纯计�
 全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
 恢复判据）+ vmkill 拒绝路径，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物），shell help 内置
-28 步手动走查清单。
+31 步手动走查清单。
 CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。
