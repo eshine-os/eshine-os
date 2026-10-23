@@ -3,6 +3,6 @@
 #ifndef ESHINE_PANIC_H
 #define ESHINE_PANIC_H
 
-void panic(const char *msg);
+void panic(const char *msg) __attribute__((noreturn));
 
 #endif /* ESHINE_PANIC_H */

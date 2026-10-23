@@ -51,7 +51,11 @@ trap_resume:                          /* x0 = vcpu */
     msr     elr_el2, x1
     ldr     x1, [x0, #264]
     msr     spsr_el2, x1
-    ldp     x1, x2,  [x0, #8]
+    /* x1 不随对装载:x0 的 eret 尾要用"自加载"(x0 兼任地址/目标),
+     * 若仍以 x1 中转 x0,会把 gprs[0] 灌回 x1 —— 第六站 MMIO 回填
+     * 任意 SRT,SRT=1 时 guest x1 被 x0 的赎金覆盖(HVC 时代只回 x0,
+     * 三站未引爆)。x1 与 x0 同批最后回填,互不搭桥。 */
+    ldr     x2, [x0, #16]
     ldp     x3, x4,  [x0, #24]
     ldp     x5, x6,  [x0, #40]
     ldp     x7, x8,  [x0, #56]
@@ -66,8 +70,8 @@ trap_resume:                          /* x0 = vcpu */
     ldp     x25, x26, [x0, #200]
     ldp     x27, x28, [x0, #216]
     ldp     x29, x30, [x0, #232]
-    ldr     x1, [x0]                  /* guest x0 最后回填 */
-    mov     x0, x1
+    ldr     x1, [x0, #8]              /* guest x1(先于 x0) */
+    ldr     x0, [x0]                  /* guest x0 最后:自加载,免中转 */
     eret
 
 /* ---- 进入 guest:存宿主现场 -> 复用帧加载 -> eret(noreturn)

@@ -90,9 +90,9 @@ int vm_create(u32 id)
     vm->mem[0].attr = S2_ATTR_NORMAL;
     vm->n_dev = 1;
     vm->devices[0].ipa  = VM_UART_IPA;
-    vm->devices[0].pa   = VM_UART_PA;
+    vm->devices[0].pa   = 0;                /* 仿真设备无 PA:不映射,只有窗口 */
     vm->devices[0].size = VM_UART_SIZE;
-    vm->devices[0].attr = S2_ATTR_DEVICE;   /* 第六站 Task2 起切 EMULATED 走陷阱 */
+    vm->devices[0].attr = S2_ATTR_EMULATED; /* 撤直通:访问即 data abort 陷阱 */
     vuart_init(&vm->vu);
     vm->vcpus[0].pc = VM_RAM_IPA;              /* 帧即真相:新跑=初始化帧 */
     vm->vcpus[0].sp = 0x40200000UL;            /* guest 自会重设 */
@@ -167,6 +167,17 @@ static void vm_finish(u32 id, u64 reason)
 struct vcpu *vm_vcpu(u32 id)
 {
     return &vm_table[id].vcpus[0];
+}
+
+/* vcpu -> 所属 VM(mmio_dispatch 用;2 槽全表扫,表外=内部不变量破坏) */
+struct eshine_vm *vm_of_vcpu(struct vcpu *v)
+{
+    u32 id;
+
+    for (id = 0; id < ESHINE_MAX_VMS; id++)
+        if (&vm_table[id].vcpus[0] == v)
+            return &vm_table[id];
+    panic("vm_of_vcpu: vcpu not in vm_table");
 }
 
 /* 单等待者:全表扫 WAIT 态(单等待者假设下的 O(2))。27 到点时 cur_vcpu

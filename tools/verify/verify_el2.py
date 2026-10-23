@@ -172,6 +172,7 @@ def main():
             s.sendall(b"vmconsole 0\n")
             buf = read_until(s, buf, b"console -> vm", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"eshine-guest VM0 @EL1", time.time() + 20, start=pos)
+            s.sendall(b"\n")   # prompt 在 vuart 行缓冲(后台无换行不冲):空行触发冲刷+重打
             buf = read_until(s, buf, b"vm0> ", time.time() + 20, start=pos)
             print("  [7/22] vmrun 0 (async) + vmconsole 0 -> vm0 banner/prompt")
 
@@ -207,6 +208,7 @@ def main():
             s.sendall(b"vmconsole 1\n")
             buf = read_until(s, buf, b"console -> vm", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"eshine-guest VM1 @EL1", time.time() + 20, start=pos)
+            s.sendall(b"\n")   # 同 [7]:prompt 在行缓冲,空行触发冲刷+重打
             buf = read_until(s, buf, b"vm1> ", time.time() + 20, start=pos)
             pos2 = len(buf)
             s.sendall(b"host\n")           # 前台交还 RX

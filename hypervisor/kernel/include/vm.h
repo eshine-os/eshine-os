@@ -46,6 +46,7 @@ void vm_state_demo(void);
 int  vm_create(u32 id);
 int  vm_start(u32 id);           /* 异步启动:置 RUNNING 立即回 */
 struct vcpu *vm_vcpu(u32 id);         /* id -> vcpu(console owner 用) */
+struct eshine_vm *vm_of_vcpu(struct vcpu *v);   /* vcpu -> 所属 VM(mmio 分发用) */
 int  vm_kill(u32 id);
 void vm_list(void);
 

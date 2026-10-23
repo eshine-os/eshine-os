@@ -4,6 +4,7 @@
 #include "drivers/include/pl011.h"
 #include "drivers/include/timer.h"
 #include "kernel/include/console.h"
+#include "kernel/include/mmio.h"
 #include "kernel/include/sched.h"
 #include "kernel/include/types.h"
 #include "kernel/include/vcpu.h"
@@ -99,8 +100,7 @@ void el2_unexpected(void)
  * PREEMPT 弃帧走 vcpu_exit(帧已在 el1_trap 存好,无需转写)。
  * getc 轮询风暴下 tick 多落宿主态,slice 递减在 el2_irq_host,
  * PREEMPT 的扳机就位在这里——两处合起来量子才真正闭合。 */
-static void resume_or_preempt(struct vcpu *v) __attribute__((noreturn));
-static void resume_or_preempt(struct vcpu *v)
+void resume_or_preempt(struct vcpu *v)
 {
     if (v->slice_left == 0UL) {
         v->exit_reason = VCPU_PREEMPT;
@@ -108,6 +108,39 @@ static void resume_or_preempt(struct vcpu *v)
         vcpu_exit();
     }
     trap_resume(v);
+}
+
+/* guest fault 诊断与隔离死:读陷阱帧展示野访问现场(第三站),
+ * 第六站补 HPFAR_EL2——stage-2 fault 的 IPA 权威来源,亦是活探针
+ * (仿真窗口未命中时的地面真值)。 */
+void guest_fault(struct vcpu *v, u64 esr) __attribute__((noreturn));
+void guest_fault(struct vcpu *v, u64 esr)
+{
+    u64 far, hpfar;
+
+    v->exit_reason = VCPU_FAULT;
+    __asm__ volatile("mrs %0, far_el2" : "=r"(far));
+    __asm__ volatile("mrs %0, hpfar_el2" : "=r"(hpfar));
+    console_puts("fault: ESR=0x");
+    console_puthex(esr);
+    console_puts(" FAR=0x");
+    console_puthex(far);
+    console_puts(" HPFAR=0x");
+    console_puthex(hpfar);
+    console_puts(" pc=0x");
+    console_puthex(v->pc);
+    console_puts(" sp=0x");
+    console_puthex(v->sp);
+    console_puts(" x0=0x");
+    console_puthex(v->gprs[0]);
+    console_puts(" x1=0x");
+    console_puthex(v->gprs[1]);
+    console_puts(" x2=0x");
+    console_puthex(v->gprs[2]);
+    console_puts(" x3=0x");
+    console_puthex(v->gprs[3]);
+    console_puts("\n");
+    vcpu_exit();
 }
 
 void el1_sync(struct vcpu *v) __attribute__((noreturn));
@@ -146,31 +179,13 @@ void el1_sync(struct vcpu *v)
             console_puts("console -> host\n");
         }
         resume_or_preempt(v);
+    } else if (ec == 0x24) {               /* data abort(EL1):仿真窗口分发 */
+        mmio_dispatch(v, esr);             /* 命中 EMULATED 设备则仿真续跑,
+                                           * 无窗/无现场回落 guest_fault */
     } else if (ec == 0x01 && (imm & 1) == 0) {  /* HCR.TWI:guest WFI -> 等待态 */
         v->exit_reason = VCPU_WAIT;
         vcpu_exit();
     } else {                                /* guest fault:诊断 -> VM 隔离死 */
-        u64 far;
-
-        v->exit_reason = VCPU_FAULT;
-        __asm__ volatile("mrs %0, far_el2" : "=r"(far));
-        console_puts("fault: ESR=0x");
-        console_puthex(esr);
-        console_puts(" FAR=0x");
-        console_puthex(far);
-        console_puts(" pc=0x");
-        console_puthex(v->pc);
-        console_puts(" sp=0x");
-        console_puthex(v->sp);
-        console_puts(" x0=0x");
-        console_puthex(v->gprs[0]);
-        console_puts(" x1=0x");
-        console_puthex(v->gprs[1]);
-        console_puts(" x2=0x");
-        console_puthex(v->gprs[2]);
-        console_puts(" x3=0x");
-        console_puthex(v->gprs[3]);
-        console_puts("\n");
-        vcpu_exit();
+        guest_fault(v, esr);
     }
 }
