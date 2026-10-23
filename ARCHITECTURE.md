@@ -84,8 +84,8 @@
 |---|---|---|
 | current-EL sync | 打印 ESR_EL2/FAR_EL2 -> WFI（宿主自身异常仍 panic，默认拒绝） | 已实 |
 | current-EL irq  | el2_trap → el2_irq：26=宿主 tick（重装后 EOIR+DIR）；27=vtimer（注入 LR 后只降优先级）；spurious 不动 EOIR | 已实 |
-| lower-EL sync   | el1_trap 保存帧 → el1_sync：HVC #0/#1/#2 + WFI 陷阱（EC=0x01 → VCPU_WAIT）；其余 = guest fault → 帧诊断 + VM 隔离死 | 已实 |
-| lower-EL irq    | el2_trap：guest 运行中的物理中断（宿主 tick 等）宿主栈处理后 eret 回 guest 现场 | 已实 |
+| lower-EL sync   | el1_trap 保存帧 → el1_sync：HVC #0/#1/#2/#3/#4 + WFI 陷阱（EC=0x01 → VCPU_WAIT）；HVC 出口经 resume_or_preempt 查量子（尽则 PREEMPT 弃帧）；其余 = guest fault → 帧诊断 + VM 隔离死 | 已实 |
+| lower-EL irq    | el2_trap_guest：guest 态物理中断宿主栈处理；tick 递减其量子，耗尽置 need_resched；出口查标志 → preempt_save_frame 帧转写 → vcpu_exit（抢占切走） | 已实 |
 | fiq / serror / 其余 lower-EL 槽 | 默认拒绝 panic + ESR | 占位 |
 
 ## Guest fault 隔离（27.04 第三站）
@@ -119,6 +119,8 @@ excp-stack 舞步会覆盖活栈、切到从未初始化的 SP_EL0=0，导致 ER
 | 0   | putc：guest 控制台 | 入：字符；出：0 | x1-x17 易失（EL2 可自由使用）；x18-x30 由陷阱帧全量保存恢复（第三站兑现） |
 | 1   | exit：guest 主动退出 → VM 层 TEARDOWN→DEAD | - | 同上 |
 | 2   | yield：主动让出 → VM 层 RUNNING→PAUSED，返回点即续跑断点 | 入 0/出 0 | 同上；返回 = 从断点继续 |
+| 3   | getc：RX 代理（按 console owner 路由） | 出：>=0 字符 / -1（owner 暂无输入）/ -2（无输入权，guest 应 WFI 让位） | 同上 |
+| 4   | host：前台 guest 主动交还 RX（宿主置 owner=NULL） | - | 同上 |
 
 guest 内联 asm 必须声明 x1-x17 clobber；跨超调用的活跃值落 x18-x30
 （selftest 实证 x19/x30），由帧保存恢复。
@@ -138,21 +140,56 @@ guest 内联 asm 必须声明 x1-x17 clobber；跨超调用的活跃值落 x18-x
 
 中断数据观：未知 intid 记账 EOI 不 panic（同 fault 隔离哲学）；spurious(1023) 不动 EOIR。
 
+## 调度（27.04 第五站：时间片抢占轮转）
+
+双 VM 首次真并行；shell 是最高优先级任务，命令即原子段，泵只在
+等输入处跑（宿主权威）：
+
+    sched_pump()：轮转游标遍历 vm_table，每个 RUNNING 且非 WAIT 的
+    VM 各跑一个量子（SCHED_QUANTUM_TICKS=1，即 1s）→ vcpu_run →
+    cur_vcpu=NULL → 按原因码迁移（PREEMPT 计数续转 / WAIT 让位 /
+    YIELD/EXIT/FAULT 走 vm_finish 善后 + RX 回收）
+    vmrun <id>：异步——CREATED/PAUSED→RUNNING 即回 shell
+
+抢占链两个扳机点（参考实现 "trap 退出即查" 的最小形态）：
+
+    ① guest 态 tick：el2_irq_guest 递减 slice_left，耗尽置
+      need_resched；lower-EL IRQ 出口查标志 → preempt_save_frame
+      把 excp_stack 帧逐项转写进陷阱帧（asm，偏移契约见 vcpu.h）
+      → vcpu_exit 弃帧（与 HVC 退出同构）
+    ② HVC 出口：getc 轮询风暴的 tick 多落宿主段，el2_irq_host 对
+      cur_vcpu 代计入量子；resume_or_preempt —— 量子尽则 PREEMPT
+      弃帧走 vcpu_exit（HVC 出口帧已在 el1_trap 存好，无需转写）
+
+RX 所有权（`sched_console_owner` = vcpu 指针，NULL=宿主）：前台模式
+泵只跑 owner VM（免双 guest 抢输入，后台模式全轮转）；HVC #3 三态
+代理（-2=无输入权 → guest WFI 让位，TWI 陷阱化）；HVC #4 主动交还；
+WAIT/退场自动归还。
+
+WAIT/WOKE（单等待者）：WFI 陷阱 → VCPU_WAIT → 泵置 wait_state=1 +
+pc+=4（代完成）；27 到点（宿主或 guest 段皆可）→ sched_waiter()
+全表扫到等待者置 WOKE + vgic_wake_waiter（关 CNTV 线，只降优先级
+不 DIR）；LR 注入延迟到泵 —— per-pCPU 单 LR 通道，预挂会被在跑的
+别家串台消费。前台 VM 进等待即归还 RX（否则宿主读不到回收命令，
+泵又被 owner 挡住别家，死等 WOKE）。
+
 ## 路线注记（范围外，记录归属）
 
 - 真板阶段：EL3/ATF 启动链（QEMU virt 无 secure world，本周用 virtualization=on 直进 EL2）
-- LR 满兜底（maint PPI 25+UIE+ring）、per-vCPU vtimer_ctx（CNTVOFF/CTL/CVAL）、
-  vCPU 调度（多 vCPU/抢占，yield/WAIT 语义升级为调度点）、分配器
+- LR 满兜底（maint PPI 25+UIE+ring）、per-vCPU vtimer_ctx（CNTVOFF/CTL/CVAL，
+  多等待者）、vCPU>1/VM、优先级/实时策略（当前为轮转+前台独占）、分配器
   （vm_space/vcpu 由内嵌换动态）、VM0=RTOS 管理 VM / VM1=Linux guest
 - 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（20 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（22 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
-空表 + vmcreate + VM0 selftest（寄存器跨 100 HVC）+ token +
-yield→PAUSED + vmls + 断点续跑 + guest sleep（WFI 陷阱→宿主陪睡→
-vtimer 注入→slept，虚拟中断全链判据）+ exit/VM_DEAD + VM1 banner +
-fault 隔离（诊断+VM_DEAD+宿主活）+ 全 DEAD + 宿主完整性复验 +
-guest 退场后 tick 仍增长（HCR/DAIF 恢复判据）+ vmkill 拒绝路径，
-静态 marker 不算）。CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。
+空表 + vmcreate + vmrun 异步 + vmconsole 前台交互 + VM0 selftest
+（寄存器跨 100 HVC）+ preempts>0（tick 抢占活）+ 双 RUNNING +
+双 VM 交错 token 双回显（RX 路由判据）+ spin 3G 前后 preempts 差
+>=2（纯计算负载跨量子，帧转写无损判据）+ WAIT 公平（vm0 睡时宿主/
+vm1 活）+ 后台醒（WOKE→泵注入）+ exit/VM_DEAD + fault 隔离 +
+全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
+恢复判据）+ vmkill 拒绝路径，静态 marker 不算；连续 2 轮全绿才真绿）。
+CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。
