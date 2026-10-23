@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 #include "arch/arm64/include/mm.h"     /* mem_region/vm_device/vm_space */
+#include "drivers/include/vuart.h"     /* per-VM 仿真串口(第六站) */
 #include "kernel/include/types.h"
 #include "kernel/include/vcpu.h"
 
@@ -32,6 +33,7 @@ struct eshine_vm {
     struct vcpu       vcpus[ESHINE_MAX_VCPUS];
     struct mem_region mem[ESHINE_MAX_MEM];
     struct vm_device  devices[ESHINE_MAX_DEV];
+    struct vuart      vu;                    /* 仿真串口实例(EMULATED 设备的模型态) */
     struct vm_space   space;
 };
 

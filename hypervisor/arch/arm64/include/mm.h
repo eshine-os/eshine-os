@@ -12,6 +12,9 @@
 /* stage-2 描述符 MemAttr 编码(ARM DDI 0487) */
 #define S2_ATTR_NORMAL   0xFUL   /* S1 关时按 Normal WB 处理 */
 #define S2_ATTR_DEVICE   0x1UL   /* nGnRE */
+/* 第六站:仿真设备标志——不进 stage-2 映射,访问即 data abort 陷阱,
+ * 由 kernel/mmio.c 按 IPA 窗口分发(值取非 attr 域,防误编码) */
+#define S2_ATTR_EMULATED 0xDEUL
 
 /* ---- 27.04 第二站:per-VM stage-2(类型在 mm.h,避免 vm.h↔mm.h 循环) ---- */
 

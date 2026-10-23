@@ -92,7 +92,8 @@ int vm_create(u32 id)
     vm->devices[0].ipa  = VM_UART_IPA;
     vm->devices[0].pa   = VM_UART_PA;
     vm->devices[0].size = VM_UART_SIZE;
-    vm->devices[0].attr = S2_ATTR_DEVICE;
+    vm->devices[0].attr = S2_ATTR_DEVICE;   /* 第六站 Task2 起切 EMULATED 走陷阱 */
+    vuart_init(&vm->vu);
     vm->vcpus[0].pc = VM_RAM_IPA;              /* 帧即真相:新跑=初始化帧 */
     vm->vcpus[0].sp = 0x40200000UL;            /* guest 自会重设 */
     vm->vcpus[0].pstate = 0x3C5UL;            /* EL1h + DAIF 全掩 */

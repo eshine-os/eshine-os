@@ -216,6 +216,8 @@ def main():
             buf = read_until(s, buf, b"[0] VM_RUNNING", time.time() + 10, start=pos2)
             buf = read_until(s, buf, b"[1] VM_RUNNING", time.time() + 10, start=pos2)
             buf = read_until(s, buf, b"preempts: ", time.time() + 10, start=pos2)
+            i2 = buf.index(b"preempts: ", pos2) + len(b"preempts: ")
+            buf = read_until(s, buf, b"\n", time.time() + 10, start=i2)
             m = re.search(rb"preempts: (\d+)", buf[pos2:])
             if not m:
                 raise AssertionError("vmstat preempts line missing: %r" % buf[pos2:][-120:])

@@ -55,10 +55,14 @@ int stage2_build(struct vm_space *sp, u64 vmid,
         const struct vm_device *d = &dev[i];
         u64 l2i = d->ipa >> 21;
 
-        if (d->size != PG_4K || (d->ipa & (PG_4K - 1)) || (d->pa & (PG_4K - 1)))
+        if (d->size != PG_4K || (d->ipa & (PG_4K - 1)))
             return -1;
         if (d->ipa >= 0x40000000UL)
             return -1;                       /* 设备段必须在 IPA 0-1GB 内 */
+        if (d->attr == S2_ATTR_EMULATED)
+            continue;   /* 仿真设备:不建映射,访问即 data abort 陷阱(第六站) */
+        if (d->pa & (PG_4K - 1))
+            return -1;
         sp->l2_dev[l2i] = DSC_TABLE(sp->l3_dev);
         sp->l3_dev[(d->ipa >> 12) & 0x1FF] = DSC_PAGE(d->pa, d->attr) | DSC_XN;
     }
