@@ -7,9 +7,11 @@
 
 #include "kernel/include/types.h"
 
-/* 调度站常量:量子=1 tick(1s,QEMU 演示节奏);owner=0xFF 表示宿主持有 RX */
+struct vcpu;
+
+/* 调度站常量:量子=1 tick(1s,QEMU 演示节奏)。
+ * console owner = 持有 UART RX 的 vcpu 指针;NULL = 宿主 shell 独占。 */
 #define SCHED_QUANTUM_TICKS 1UL
-#define SCHED_OWNER_HOST    0xFFU
 
 /* pump 选中 VM 时重置配额(直接字段写:vm->vcpus[0].slice_left=QUANTUM
  * + sched_need_resched=0);guest 态 tick 的配额递减在 el2_irq_guest,
@@ -22,6 +24,8 @@ bool sched_pump(void);
 
 extern volatile unsigned long sched_need_resched;  /* asm 桩出口检查 */
 extern unsigned long sched_preempts;               /* 抢占计数(vmstat 判据) */
-extern u32 sched_console_owner;                    /* UART RX 所有权 */
+extern struct vcpu *sched_console_owner;           /* UART RX 所有权(NULL=host) */
+
+struct vcpu *sched_waiter(void);   /* 找 WAIT 态 vcpu(单等待者;无=NULL) */
 
 #endif /* ESHINE_SCHED_H */

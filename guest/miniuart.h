@@ -4,8 +4,8 @@
 #define GUEST_MINIUART_H
 
 /* QEMU virt PL011。guest 走纯 stage-2(SCTLR_EL1.M=0),VA 即 IPA:
- * 0x09000000 由 hypervisor 的 stage-2 设备页(nGnRE + XN)放行,
- * 不经 HVC、不经 EL1 stage-1,直接命中真硬件。 */
+ * 0x09000000 由 hypervisor 的 stage-2 设备页(nGnRE + XN)放行。
+ * TX 直访真硬件;RX 走 HVC #3 代理(输入所有权,见 uart_getc)。 */
 #define UART0_BASE 0x09000000UL
 
 #define UART_DR   0x00u
@@ -27,11 +27,18 @@ static inline void uart_putc(char c)
     *uart_reg(UART_DR) = (unsigned char)c;
 }
 
+#include "hvc.h"
+
+/* RX 经 HVC #3 代理(宿主按 console owner 路由):双 guest 直读 DR 会
+ * 互抢输入,后台模式还会吃掉宿主命令。TX(putc)保持直访。 */
 static inline char uart_getc(void)
 {
-    while (*uart_reg(UART_FR) & FR_RXFE)
-        ;
-    return (char)*uart_reg(UART_DR);
+    long c;
+
+    do {
+        c = hvc_getc();
+    } while (c < 0);
+    return (char)c;
 }
 
 #endif /* GUEST_MINIUART_H */

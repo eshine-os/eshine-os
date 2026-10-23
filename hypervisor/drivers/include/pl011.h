@@ -8,5 +8,6 @@
 void pl011_init(void);
 void pl011_putc(char c);
 char pl011_getc(void);
+int  pl011_getc_poll(void);   /* 非阻塞:-1=无输入 */
 
 #endif /* ESHINE_PL011_H */

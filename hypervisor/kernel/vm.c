@@ -114,10 +114,10 @@ int vm_create(u32 id)
     return 0;
 }
 
-int vm_run(u32 id)
+/* 异步启动:置 RUNNING 立即回 shell,跑动交给调度泵(shell 等输入处)。 */
+int vm_start(u32 id)
 {
     struct eshine_vm *vm;
-    u64 reason;
     bool resumed;
 
     if (id >= ESHINE_MAX_VMS) {
@@ -138,41 +138,91 @@ int vm_run(u32 id)
         console_puts("resumed (breakpoint)\n");
     else
         console_puts("entering EL1 via stage-2 (non-identity map)\n");
-    do {
-        vm->vcpus[0].slice_left = SCHED_QUANTUM_TICKS;   /* 过渡期:泵化后由泵置 */
-        sched_need_resched = 0;
-        reason = vcpu_run(&vm->vcpus[0], vm->space.vttbr);
-        if (reason == VCPU_WAIT) {
-            __asm__ volatile("wfi");   /* 宿主陪睡:滴答/vtimer 到点唤醒 */
-            vm->vcpus[0].pc += 4;      /* WFI 陷阱不 retire:代其"完成",guest
-                                          * 醒后自查唤醒条件(vtimer 标志) */
-            if (vm->vcpus[0].wait_state == 0UL)     /* 仅首次进等待置 WAIT:
-                                                     * wfi 循环反复醒睡不得抹掉
-                                                     * 27 已置的 WOKE */
-                vm->vcpus[0].wait_state = 1UL;
-            if (vm->vcpus[0].wait_state == 2UL) {   /* WOKE:泵化前的过渡内联,
-                                                     * Task 2 由泵收编注入点 */
-                vgic_inject_vtimer();
-                vm->vcpus[0].wait_state = 0UL;
-            }
-        }
-        /* PREEMPT:量子耗尽被出口切走;阻塞语义下继续跑自己,
-         * 调度泵接手后此分支消失(让位给下一 VM)。 */
-    } while (reason == VCPU_WAIT || reason == VCPU_PREEMPT);
+    return 0;
+}
+
+/* 退场善后:yield 暂停/死亡,两者都回收 RX 所有权(guest 不再读线)。 */
+static void vm_finish(u32 id, u64 reason)
+{
+    struct eshine_vm *vm = &vm_table[id];
+
     if (reason == VCPU_YIELD) {
         vm_transition(vm, VM_PAUSED);
         vm_id_label(id);
         console_puts("yielded -> PAUSED (vmrun to resume)\n");
-        return 0;
+    } else {
+        vm_transition(vm, VM_TEARDOWN);
+        vm_transition(vm, VM_DEAD);
+        vm_id_label(id);
+        if (reason == VCPU_FAULT)
+            console_puts("faulted -> VM_DEAD\n");
+        else
+            console_puts("VM_DEAD\n");
     }
-    vm_transition(vm, VM_TEARDOWN);
-    vm_transition(vm, VM_DEAD);
-    vm_id_label(id);
-    if (reason == VCPU_FAULT)
-        console_puts("faulted -> VM_DEAD\n");
-    else
-        console_puts("VM_DEAD\n");
-    return 0;
+    sched_console_owner = NULL;   /* guest 不再读线,RX 归还宿主 */
+}
+
+struct vcpu *vm_vcpu(u32 id)
+{
+    return &vm_table[id].vcpus[0];
+}
+
+/* 单等待者:全表扫 WAIT 态(单等待者假设下的 O(2))。27 到点时 cur_vcpu
+ * 可能是别的在跑 VM,WOKE 必须归等待者,否则串台。 */
+struct vcpu *sched_waiter(void)
+{
+    u32 id;
+
+    for (id = 0; id < ESHINE_MAX_VMS; id++)
+        if (vm_table[id].state == VM_RUNNING &&
+            vm_table[id].vcpus[0].wait_state == 1UL)
+            return &vm_table[id].vcpus[0];
+    return NULL;
+}
+
+/* 调度泵:轮转游标遍历,每 VM 一个量子;宿主权威在 shell(命令即原子段,
+ * 泵只在 shell 等输入处被调)。前台模式(owner 非空)只跑 owner VM——
+ * console 独占,双 guest 并行仅在后台模式(owner=NULL)。 */
+bool sched_pump(void)
+{
+    static u32 rr_next;
+    bool progressed = false;
+    u32 n;
+
+    for (n = 0; n < ESHINE_MAX_VMS; n++) {
+        u32 id = (rr_next + n) % ESHINE_MAX_VMS;
+        struct eshine_vm *vm = &vm_table[id];
+        struct vcpu *v = &vm->vcpus[0];
+        u64 reason;
+
+        if (vm->state != VM_RUNNING || v->wait_state == 1UL)
+            continue;                     /* 非就绪或 WAIT 让位 */
+        if (sched_console_owner && sched_console_owner != v)
+            continue;                     /* 前台模式:console 独占,免 RX 竞争 */
+        rr_next = (id + 1) % ESHINE_MAX_VMS;
+        v->slice_left = SCHED_QUANTUM_TICKS;
+        sched_need_resched = 0;
+        if (v->wait_state == 2UL) {        /* WOKE:泵注入点(per-pCPU 单 LR
+                                            * 只能在此挂,防在跑 VM 串台) */
+            vgic_inject_vtimer();
+            v->wait_state = 0UL;
+        }
+        reason = vcpu_run(v, vm->space.vttbr);
+        progressed = true;
+        if (reason == VCPU_PREEMPT) {
+            sched_preempts++;             /* 量子耗尽:下一 VM */
+        } else if (reason == VCPU_WAIT) {
+            v->pc += 4;                   /* WFI 不 retire:代完成,醒后自查 */
+            v->wait_state = 1UL;
+            if (sched_console_owner == v)
+                sched_console_owner = NULL;   /* 前台 VM 进等待:RX 还宿主——
+                                                 * 否则宿主读不到回收命令,泵又
+                                                 * 被 owner 挡住别 VM,死等 WOKE */
+        } else {
+            vm_finish(id, reason);        /* YIELD/EXIT/FAULT */
+        }
+    }
+    return progressed;
 }
 
 int vm_kill(u32 id)

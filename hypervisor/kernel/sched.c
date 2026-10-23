@@ -7,4 +7,4 @@
 
 volatile unsigned long sched_need_resched;   /* asm 桩出口检查(置帧转写) */
 unsigned long sched_preempts;                 /* 抢占计数(vmstat 判据) */
-u32 sched_console_owner = SCHED_OWNER_HOST;   /* UART RX 所有权 */
+struct vcpu *sched_console_owner;              /* UART RX 所有权(NULL=host) */

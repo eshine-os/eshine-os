@@ -57,3 +57,10 @@ char pl011_getc(void)
         ;
     return (char)(rd(UART_DR) & 0xff);
 }
+
+int pl011_getc_poll(void)
+{
+    if (rd(UART_FR) & FR_RXFE)
+        return -1;                      /* 无输入:泵跑 guest(shell 权威) */
+    return (int)(rd(UART_DR) & 0xff);
+}

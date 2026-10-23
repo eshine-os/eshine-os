@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "kernel/include/console.h"
+#include "kernel/include/sched.h"
 #include "kernel/include/shell.h"
 #include "kernel/include/types.h"
 #include "kernel/include/util.h"
@@ -15,7 +16,8 @@ static char linebuf[SHELL_BUF_MAX];
 
 static void cmd_help(void)
 {
-    console_puts("commands: help version echo <text> state tick vmls vmcreate <id> vmrun <id> vmkill <id>\n");
+    console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
+    console_puts("          vmrun <id> vmconsole <id|host> vmstat vmkill <id>\n");
 }
 
 static void cmd_version(void)
@@ -40,6 +42,16 @@ static void cmd_state(void)
 static void cmd_tick(void)
 {
     console_puts("ticks: ");
+    util_putdec((u32)timer_ticks());
+    console_puts("\n");
+}
+
+static void cmd_vmstat(void)
+{
+    vm_list();
+    console_puts("preempts: ");
+    util_putdec((u32)sched_preempts);
+    console_puts("  ticks: ");
     util_putdec((u32)timer_ticks());
     console_puts("\n");
 }
@@ -95,9 +107,27 @@ static void dispatch(char *line)
         u32 id = parse_id(args, &ok);
 
         if (ok)
-            vm_run(id);
+            vm_start(id);               /* 异步:置 RUNNING 立即回,泵接管 */
         else
             console_puts("usage: vmrun <id>\n");
+    } else if (strncmp(line, "vmconsole", 64) == 0) {
+        if (strncmp(args, "host", 64) == 0) {
+            sched_console_owner = NULL;
+            console_puts("console -> host\n");
+        } else {
+            bool ok;
+            u32 id = parse_id(args, &ok);
+
+            if (ok && id < ESHINE_MAX_VMS) {
+                /* 死/暂停的 guest 由善后路径自动回收 owner */
+                sched_console_owner = vm_vcpu(id);
+                console_puts("console -> vm\n");
+            } else {
+                console_puts("usage: vmconsole <id|host>\n");
+            }
+        }
+    } else if (strncmp(line, "vmstat", 64) == 0) {
+        cmd_vmstat();
     } else if (strncmp(line, "vmkill", 64) == 0) {
         bool ok;
         u32 id = parse_id(args, &ok);
@@ -113,26 +143,36 @@ static void dispatch(char *line)
     }
 }
 
+/* 泵主循环:shell 即最高优先级任务——有输入则处理(命令=原子段,泵停摆),
+ * 无输入则泵一轮(每个就绪 VM 一个量子);owner 让渡给 guest 时宿主不读
+ * RX,纯泵。命令之间的输入响应性=泵的量子粒度。 */
 void shell_run(void)
 {
     u32 idx = 0;
 
     console_puts("eshine> ");
     for (;;) {
-        char c = pl011_getc();
+        int ch = (sched_console_owner == NULL)
+                     ? pl011_getc_poll() : -1;
 
-        if (c == '\r' || c == '\n') {
-            console_putc('\n');
-            linebuf[idx] = '\0';
-            dispatch(linebuf);
-            idx = 0;
-            console_puts("eshine> ");
-        } else if ((c == 0x7f || c == '\b') && idx > 0) {
-            idx--;
-            console_puts("\b \b");
-        } else if (idx < SHELL_BUF_MAX - 1) {
-            linebuf[idx++] = c;
-            console_putc(c);
+        if (ch >= 0) {
+            char c = (char)ch;
+
+            if (c == '\r' || c == '\n') {
+                console_putc('\n');
+                linebuf[idx] = '\0';
+                dispatch(linebuf);
+                idx = 0;
+                console_puts("eshine> ");
+            } else if ((c == 0x7f || c == '\b') && idx > 0) {
+                idx--;
+                console_puts("\b \b");
+            } else if (idx < SHELL_BUF_MAX - 1) {
+                linebuf[idx++] = c;
+                console_putc(c);
+            }
+            continue;
         }
+        (void)sched_pump();
     }
 }

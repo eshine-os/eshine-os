@@ -42,7 +42,8 @@ void vm_state_demo(void);
 /* 生命周期 API(命令层):用户错误礼貌拒绝(打消息返回 -1),
  * vm_transition 内部表外转换仍 panic(默认拒绝核心不变)。 */
 int  vm_create(u32 id);
-int  vm_run(u32 id);
+int  vm_start(u32 id);           /* 异步启动:置 RUNNING 立即回 */
+struct vcpu *vm_vcpu(u32 id);         /* id -> vcpu(console owner 用) */
 int  vm_kill(u32 id);
 void vm_list(void);
 

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "drivers/include/gicv3.h"
+#include "drivers/include/pl011.h"
 #include "drivers/include/timer.h"
 #include "kernel/include/console.h"
 #include "kernel/include/sched.h"
@@ -37,8 +38,10 @@ void el2_irq_host(void)
         timer_handler();
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
-        if (cur_vcpu && cur_vcpu->wait_state == 1UL)
-            cur_vcpu->wait_state = 2UL;   /* WOKE:泵给它注入并复位跑 */
+        struct vcpu *w = sched_waiter();   /* 单等待者:27 归等待者,
+                                             * cur_vcpu 可能是别的在跑 VM */
+        if (w)
+            w->wait_state = 2UL;           /* WOKE:泵给它注入并复位跑 */
         vgic_wake_waiter();
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
@@ -62,7 +65,10 @@ void el2_irq_guest(void)
         }
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
-        cur_vcpu->wait_state = 2UL;       /* WOKE:本轮被切走,泵注入后醒 */
+        struct vcpu *w = sched_waiter();   /* 串台防护:guest 态到点时,
+                                             * cur_vcpu 未必是等待者 */
+        if (w)
+            w->wait_state = 2UL;          /* WOKE:泵轮到它时注入后醒 */
         vgic_wake_waiter();
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
@@ -104,6 +110,17 @@ void el1_sync(struct vcpu *v)
     } else if (ec == 0x16 && imm == 2) {    /* HVC #2 yield */
         v->exit_reason = VCPU_YIELD;
         vcpu_exit();
+    } else if (ec == 0x16 && imm == 3) {    /* HVC #3 getc:RX 所有权路由,
+                                             * owner 是本 vCPU 则代读真硬件,
+                                             * 否则恒 -1(后台/前台他人=无输入) */
+        if (cur_vcpu == sched_console_owner) {
+            int ch = pl011_getc_poll();
+
+            v->gprs[0] = (ch >= 0) ? (u64)(u32)ch : 0xFFFFFFFFUL;
+        } else {
+            v->gprs[0] = 0xFFFFFFFFUL;
+        }
+        trap_resume(v);
     } else if (ec == 0x01 && (imm & 1) == 0) {  /* HCR.TWI:guest WFI -> 等待态 */
         v->exit_reason = VCPU_WAIT;
         vcpu_exit();

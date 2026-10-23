@@ -27,6 +27,17 @@ static inline void hvc_yield(void)
     (void)x0;
 }
 
+/* HVC #3 getc:宿主代读 RX 并按 console owner 路由(owner 是本 VM 返回
+ * 真字符,否则恒 -1=无输入)。返回 u64:-1 无输入,0..255 字符。
+ * TX(putc)仍直访真硬件,仅 RX 走代理——双 guest 直读 DR 会互抢输入。 */
+static inline long hvc_getc(void)
+{
+    register u64 x0 __asm__("x0") = 0;
+
+    __asm__ volatile("hvc #3" : "+r"(x0) :: "memory", HVC_CLOBBERS);
+    return (long)x0;
+}
+
 static inline void hvc_exit(void)
 {
     __asm__ volatile("hvc #1" ::: "memory");
