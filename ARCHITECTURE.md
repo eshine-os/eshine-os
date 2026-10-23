@@ -168,13 +168,16 @@ RX 所有权（`sched_console_owner` = vcpu 指针，NULL=宿主）：前台模�
 代理（-2=无输入权 → guest WFI 让位，TWI 陷阱化）；HVC #4 主动交还；
 WAIT/退场自动归还。
 
-WAIT/WOKE（第六站起两源）：WFI 陷阱 → VCPU_WAIT → 泵置 wait_state=1
-+pc+=4（代完成）+ **wait_reason 判定**（cntv_ctl 武装=TIMER，否则
-RX）；TIMER 等待者的 27 到点经 sched_waiter（按 reason 找人）置
-WOKE → 泵注 LR（per-pCPU 单 LR 只能泵挂）；RX 等待者由 shell 输入
-入环**直通唤醒**（wait_state=0，不经 WOKE——两源零串台）。
-**RX 等待持 owner**（输入即唤醒源，前台的意义），**TIMER 等待才
-归还**（宿主睡期间要能敲命令；回收出口 = guest 的 host 命令 HVC #4）。
+WAIT/WOKE（两源，第六-八站三段演化）：WFI 陷阱 → VCPU_WAIT → 泵置
+wait_state=1 +pc+=4（代完成）+ **wait_reason 判定**（切出保存的本人
+vtimer ctx 武装=TIMER，否则 RX）。TIMER 到点两路：物理 27（ctx 装载
+者）与**每拍到期扫描**（第七站 sched_vtimer_sweep：物理恒为"当前客"
+的，别家错过由扫描兜住；27 与扫描共用同一 cval 过期归属谓词——表序
+找人在双等待者下会归错，实测）；WOKE → 泵注 LR0。RX 唤醒（第八站）：
+shell 入环置 RIS → RXIM 使能即泵注 LR1（vSPI 33）→ guest handler
+排空 DR 入软环 → getc 续取；泵内对仍有数据的 RX 等待者再唤醒兜底。
+**RX 等待持 owner**（输入即唤醒源），**TIMER 等待才归还**（宿主睡期间
+要能敲命令；回收出口 = guest 的 host 命令 HVC #4）。
 
 ## 设备仿真（27.04 第六站：vuart/MMIO 陷阱）
 
@@ -198,25 +201,35 @@ retire，否则 ERET 原地重执行成陷阱环；**eret 尾 x0 自加载**—�
 trap_resume 的 x0 最后回填不可用 x1 中转（三站暗雷：MMIO 回填任意
 SRT 时 gprs[0] 会灌回 x1），x1 与 x0 同批最后回填。
 
-vuart 模型（per-VM 实例内嵌 eshine_vm）：DR 读弹 RX 环（64B，宿主
-shell 生产/guest 消费）/写走 TX（128B 行缓冲：后台行按 `[vmN] `
-前缀整行冲、前台裸透传、owner 切换与退场冲尾不吞半行）；FR 回
-RXFE=环空、TXFF 恒 0（宿主即时排空，guest TX 轮询不自旋）。RX 路由
-= shell 恒排空真 UART 按 owner 入环（宿主即仲裁者）。UART IRQ 不
-注入（guest 轮询+WFI；SPI 注入留站后，偏差 #13）。
+vuart 模型（per-VM 实例内嵌 eshine_vm）：DR 读弹 RX 环（64B；读后按
+"仍有数据"重评定 RIS——多发注入的续注基础）/写走 TX（128B 行缓冲：
+后台行按 `[vmN] ` 前缀整行冲、前台裸透传、owner 切换与退场冲尾不吞
+半行）；FR 回 RXFE=环空、TXFF 恒 0。RX 路由 = shell 恒排空真 UART
+按 owner 入环（宿主即仲裁者）。第八站增中断面：IMSC（仅 RXIM）/
+RIS/MIS/ICR，RX 入环置 RIS，RXIM 使能即泵注 **LR1 纯虚拟 vSPI 33**
+（Group+State(pending) 两位置足，**HW 位不置**——HW LR 挂起跟随
+物理线；ICH_LR 真实位号 bit60=Group/bit61=HW/bit62=State，注释与
+实现自此正名），guest handler 排空 DR 入软环，getc 中断驱动（FR
+轮询路径退役）。guest 访存器全走 volatile asm 访问器：形式保证
+ISV=1 可综合症（GCC 会合并出 post-index 回写型，宿主拿不到值）。
+
+vtimer ctx（第七站）：per-VM ctl/cval 内嵌帧尾（@400/@408）；
+cortex-a57(v8.0) 无 CNTV 陷阱位（guest 直写物理），泵以切换对齐：
+切入还本人 ctx、切出即存（全出口），物理恒为"当前客"的；CNTVOFF
+共享 0（双 guest 同墙钟）。
 
 ## 路线注记（范围外，记录归属）
 
 - 真板阶段：EL3/ATF 启动链（QEMU virt 无 secure world，本周用 virtualization=on 直进 EL2）
-- LR 满兜底（maint PPI 25+UIE+ring）、per-vCPU vtimer_ctx（CNTVOFF/CTL/CVAL，
-  多等待者）、UART IRQ 注入（当前轮询+WFI，SPI 留站后）、多仿真设备表
-  （当前 vuart 单设备）、vCPU>1/VM、优先级/实时策略、分配器
+- LR 满兜底（maint PPI 25+UIE+ring）、UART IRQ 优先级/多中断源精细
+  调度（当前单 RXIM）、多仿真设备表（当前 vuart 单设备）、CNTVOFF
+  per-VM（当前共享 0）、vCPU>1/VM、优先级/实时策略、分配器
   （vm_space/vcpu 由内嵌换动态）、VM0=RTOS 管理 VM / VM1=Linux guest
 - 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（24 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（28 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + vmrun 0 异步 → **后台 banner [vm0] 前缀（陷阱 TX
 整行冲刷判据）** + **RX 唤醒链（入环→直通 runnable→FR 命中→prompt
@@ -227,4 +240,6 @@ token 双回显（RX 路由判据）+ spin 3G 前后 preempts 差 >=2（纯计�
 后台醒（WOKE→泵注入）+ exit/VM_DEAD + fault 隔离（窗口外默认拒绝）+
 全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
 恢复判据）+ vmkill 拒绝路径，静态 marker 不算；连续 2 轮全绿才真绿）。
+make run 与 make verify 同构（同一构建产物），shell help 内置
+28 步手动走查清单。
 CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。
