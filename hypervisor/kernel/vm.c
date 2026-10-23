@@ -7,6 +7,7 @@
 #include "kernel/include/util.h"
 #include "kernel/include/vcpu.h"
 #include "drivers/include/gicv3.h"
+#include "drivers/include/timer.h"
 #include "kernel/include/sched.h"
 #include "kernel/include/vm.h"
 
@@ -208,9 +209,11 @@ bool sched_pump(void)
             v->wait_state = 0UL;
         }
         reason = vcpu_run(v, vm->space.vttbr);
+        cur_vcpu = NULL;                /* 宿主语境:shell 命令期 tick 不误
+                                          * 计入 guest 量子(27 分支已独立查) */
         progressed = true;
         if (reason == VCPU_PREEMPT) {
-            sched_preempts++;             /* 量子耗尽:下一 VM */
+            sched_preempts++;             /* 量子耗尽:出口已转写帧,下一 VM */
         } else if (reason == VCPU_WAIT) {
             v->pc += 4;                   /* WFI 不 retire:代完成,醒后自查 */
             v->wait_state = 1UL;

@@ -30,13 +30,17 @@ static inline void uart_putc(char c)
 #include "hvc.h"
 
 /* RX 经 HVC #3 代理(宿主按 console owner 路由):双 guest 直读 DR 会
- * 互抢输入,后台模式还会吃掉宿主命令。TX(putc)保持直访。 */
+ * 互抢输入,后台模式还会吃掉宿主命令。TX(putc)保持直访。
+ * 三态:-2=无输入权(后台)——WFI 让位,TWI 陷阱化下宿主泵去跑别家,
+ * 免得空转 HVC 风暴;-1=有输入权暂无字符(前台轮询);>=0=字符。 */
 static inline char uart_getc(void)
 {
     long c;
 
     do {
         c = hvc_getc();
+        if (c == -2)
+            __asm__ volatile("wfi");
     } while (c < 0);
     return (char)c;
 }

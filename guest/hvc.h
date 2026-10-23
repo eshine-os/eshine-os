@@ -38,6 +38,17 @@ static inline long hvc_getc(void)
     return (long)x0;
 }
 
+/* HVC #4 host:前台 guest 主动交还 RX(宿主置 owner=NULL 并广播)。
+ * 前台模式下宿主命令进不来——宿主让开 RX 就是这个语义的代价,
+ * guest 交还后回轮询态(再 getc 时 -2 -> WFI 让位)。 */
+static inline void hvc_host(void)
+{
+    register u64 x0 __asm__("x0") = 0;
+
+    __asm__ volatile("hvc #4" : "+r"(x0) :: "memory", HVC_CLOBBERS);
+    (void)x0;
+}
+
 static inline void hvc_exit(void)
 {
     __asm__ volatile("hvc #1" ::: "memory");

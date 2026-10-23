@@ -113,6 +113,24 @@ void guest_main(void)
                     __asm__ volatile("wfi" ::: "memory");
                 wake_count = 0;
                 puts_uart("slept (vtimer irq)\n");
+            } else if (streq(linebuf, "host")) {
+                puts_uart("releasing console...\n");
+                hvc_host();                  /* 交还 RX;此后 -2 -> WFI 让位 */
+            } else if (streq(linebuf, "spin")) {
+                /* 迭代忙循环:不可让出负载。宿主 tick 在任意指令边界把本
+                 * vCPU 抢占切走再无损续跑——计数器的存活性与最终输出即
+                 * 转写正确性判据。3G 迭代(TCG 实测 ~0.4G 迭代/s,
+                 * 约 8s)跨约 8 个量子,preempts 前后差为门禁判据。
+                 * (时基版曾在 PREEMPT 边界下观察到 mrs 计数循环不退,
+                 * QEMU helper 交互疑点,已改纯迭代,见 devlog 05。) */
+                u64 cnt = 3000000000ULL;
+
+                puts_uart("spinning...\n");
+                while (cnt > 0) {
+                    cnt--;
+                    __asm__ volatile("" ::: "memory");
+                }
+                puts_uart("spun 3G iters (preempted ok)\n");
             } else if (streq(linebuf, "fault")) {
                 puts_uart("triggering unmapped read...\n");
                 (void)*(volatile u64 *)0x30000000UL;   /* 永不返回:VM 隔离死 */
@@ -121,7 +139,7 @@ void guest_main(void)
                 puts_uart(linebuf + 5);
                 puts_uart("\n");
             } else if (linebuf[0]) {
-                puts_uart("guest: try echo <text> | sleep | exit\n");
+                puts_uart("guest: try echo <text> | sleep | spin | host | exit\n");
             }
             idx = 0;
             puts_uart(PROMPT);

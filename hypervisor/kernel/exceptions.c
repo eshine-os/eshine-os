@@ -36,6 +36,10 @@ void el2_irq_host(void)
 
     if (intid == GIC_PPI_HPTIMER) {
         timer_handler();
+        /* HVC 风暴的宿主段也是 guest 活负载:计入其量子。
+         * PREEMPT 的扳机在 HVC 出口(resume_or_preempt)。 */
+        if (cur_vcpu && cur_vcpu->slice_left > 0)
+            cur_vcpu->slice_left--;
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
         struct vcpu *w = sched_waiter();   /* 单等待者:27 归等待者,
@@ -91,6 +95,21 @@ void el2_unexpected(void)
 /* lower-EL AArch64 sync:asm 桩(el1_trap)保存 guest 帧后调入,x0=vcpu。
  * HVC #0/#1/#2 分派;非 HVC = guest fault -> 诊断+VM 隔离死亡(Task 3)。
  * 帧内改值即改 guest 现场,trap_resume 按帧续跑。 */
+/* HVC 出口的集中调度点(参考实现形态:guest trap 退出即查):量子尽则
+ * PREEMPT 弃帧走 vcpu_exit(帧已在 el1_trap 存好,无需转写)。
+ * getc 轮询风暴下 tick 多落宿主态,slice 递减在 el2_irq_host,
+ * PREEMPT 的扳机就位在这里——两处合起来量子才真正闭合。 */
+static void resume_or_preempt(struct vcpu *v) __attribute__((noreturn));
+static void resume_or_preempt(struct vcpu *v)
+{
+    if (v->slice_left == 0UL) {
+        v->exit_reason = VCPU_PREEMPT;
+        sched_preempts++;
+        vcpu_exit();
+    }
+    trap_resume(v);
+}
+
 void el1_sync(struct vcpu *v) __attribute__((noreturn));
 void el1_sync(struct vcpu *v)
 {
@@ -103,7 +122,7 @@ void el1_sync(struct vcpu *v)
     if (ec == 0x16 && imm == 0) {           /* HVC #0 putc:帧内 x0 in/out */
         console_putc((char)v->gprs[0]);
         v->gprs[0] = 0;
-        trap_resume(v);
+        resume_or_preempt(v);
     } else if (ec == 0x16 && imm == 1) {    /* HVC #1 exit */
         v->exit_reason = VCPU_EXIT;
         vcpu_exit();
@@ -116,11 +135,17 @@ void el1_sync(struct vcpu *v)
         if (cur_vcpu == sched_console_owner) {
             int ch = pl011_getc_poll();
 
-            v->gprs[0] = (ch >= 0) ? (u64)(u32)ch : 0xFFFFFFFFUL;
+            v->gprs[0] = (ch >= 0) ? (u64)(u32)ch : ~0UL;   /* -1:前台暂无字符 */
         } else {
-            v->gprs[0] = 0xFFFFFFFFUL;
+            v->gprs[0] = ~1UL;                              /* -2:无输入权,WFI 让位 */
         }
-        trap_resume(v);
+        resume_or_preempt(v);
+    } else if (ec == 0x16 && imm == 4) {    /* HVC #4 host:前台交还 RX */
+        if (cur_vcpu == sched_console_owner) {
+            sched_console_owner = NULL;
+            console_puts("console -> host\n");
+        }
+        resume_or_preempt(v);
     } else if (ec == 0x01 && (imm & 1) == 0) {  /* HCR.TWI:guest WFI -> 等待态 */
         v->exit_reason = VCPU_WAIT;
         vcpu_exit();

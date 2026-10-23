@@ -119,8 +119,12 @@ static void dispatch(char *line)
             u32 id = parse_id(args, &ok);
 
             if (ok && id < ESHINE_MAX_VMS) {
-                /* 死/暂停的 guest 由善后路径自动回收 owner */
+                /* 死/暂停的 guest 由善后路径自动回收 owner。
+                 * 新 owner 若因无输入权 WFI 让位睡去(WAIT),此处唤醒它
+                 * 回轮询——前台 = 有权轮询,后台 = 无权让位。 */
                 sched_console_owner = vm_vcpu(id);
+                if (sched_console_owner->wait_state == 1UL)
+                    sched_console_owner->wait_state = 0UL;
                 console_puts("console -> vm\n");
             } else {
                 console_puts("usage: vmconsole <id|host>\n");
