@@ -68,9 +68,9 @@ void gicv3_init(void)
 /* ---- B 相:虚拟 CPU interface(ICH_*),guest 经 ICV 视图消费 ---- */
 
 #define ICH_VMCR_VENG1   (1UL << 1)      /* 虚拟 Group1 使能(guest 的 IGRPEN1 镜像) */
-#define ICH_LR_GROUP1    (1UL << 60)
-#define ICH_LR_PENDING   (1UL << 61)
-#define ICH_LR_HW        (1UL << 62)
+#define ICH_LR_GROUP1    (1UL << 60)     /* vINTID 组 */
+#define ICH_LR_HW        (1UL << 61)     /* HW 映射:vINTID 挂起跟随物理线 */
+#define ICH_LR_PENDING   (1UL << 62)     /* State[1]:挂起(缺此位=LR 无效,QEMU 弃投) */
 
 void vgic_enable(void)
 {
@@ -93,13 +93,26 @@ void vgic_wake_waiter(void)
 
 void vgic_inject_vtimer(void)
 {
-    /* HW 映射:vINTID=27(guest CNTV 视角),pINTID=27(物理同号线)。
-     * guest 虚 EOI(EOIR) -> 硬件撤销物理 27 的 active;
-     * 宿主对物理 27 只降优先级不 DIR,期间电平线被 active 压住不再重挂起。 */
+    /* HW 映射:vINTID=27(guest CNTV 视角),pINTID=27(物理同号线);
+     * Group+HW+pending 三位全置——HW LR 的挂起语义由物理线驱动,EOI
+     * 联动撤线。第八站位号正名:bit61=HW,bit62=State(pending),
+     * 缺状态位即 LR 无效(QEMU 弃投,实测 uart 首版只置 61 的教训)。 */
     u64 lr = GIC_PPI_VTIMER | (GIC_PPI_VTIMER << 32)   /* [31:0]v / [47:32]p */
            | ICH_LR_GROUP1 | ICH_LR_PENDING | ICH_LR_HW;
 
     __asm__ volatile("msr ich_lr0_el2, %0" :: "r"(lr));
+    __asm__ volatile("isb");
+}
+
+void vgic_inject_uart(void)
+{
+    /* 纯虚拟 SPI(无 HW 位——HW LR 的挂起跟随物理线,物理侧无源即
+     * 永不投递,HW 试探版实测教训):Group+State(pending) 两位置足,
+     * bit61(HW)不置。guest 虚 EOI 即撤,无物理线联动。LR1 与 LR0
+     * (vtimer HW)分通道,泵注入纪律不变。 */
+    u64 lr = GIC_SPI_UART | ICH_LR_GROUP1 | ICH_LR_PENDING;
+
+    __asm__ volatile("msr ich_lr1_el2, %0" :: "r"(lr));
     __asm__ volatile("isb");
 }
 

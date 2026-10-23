@@ -9,7 +9,7 @@
  * gprs[31]@0(x0@0...x30@240) sp@248 pc@256 pstate@264
  * host_ctx@272(x19@272...x28@344,sp@352,lr@360) exit_reason@368
  * wait_state@376 slice_left@384 wait_reason@392
- * vtimer_ctl@400 vtimer_cval@408(第五/六/七站尾部扩展,asm 不触及) */
+ * vtimer_ctl@400 vtimer_cval@408(第五-八站尾扩,asm 不触及) */
 struct vcpu {
     u64 gprs[31];              /* x0-x30:陷阱入口全量保存,EL2 可自由用寄存器 */
     u64 sp;                     /* SP_EL1 */

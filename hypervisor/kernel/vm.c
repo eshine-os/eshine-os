@@ -99,6 +99,12 @@ int vm_create(u32 id)
     vm->vcpus[0].pstate = 0x3C5UL;            /* EL1h + DAIF 全掩 */
     memset(vm->vcpus[0].gprs, 0, sizeof(vm->vcpus[0].gprs));
     vm->vcpus[0].exit_reason = VCPU_EXIT;
+    /* 帧尾复位(第五-八站字段):DEAD->INIT 槽位复用时不许带出旧值
+     * (wait_state 残 1 则新客永不被泵,潜在雷实测前修) */
+    vm->vcpus[0].wait_state = 0UL;
+    vm->vcpus[0].wait_reason = 0UL;
+    vm->vcpus[0].vtimer_ctl = 0UL;
+    vm->vcpus[0].vtimer_cval = 0UL;
 
     if (stage2_build(&vm->space, vm->vmid, vm->mem, vm->n_mem,
                      vm->devices, vm->n_dev) != 0) {
@@ -222,8 +228,17 @@ bool sched_pump(void)
         struct vcpu *v = &vm->vcpus[0];
         u64 reason;
 
-        if (vm->state != VM_RUNNING || v->wait_state == 1UL)
-            continue;                     /* 非就绪或 WAIT 让位 */
+        if (vm->state != VM_RUNNING)
+            continue;                     /* 非就绪 */
+        if (v->wait_state == 1UL) {
+            /* RX 等待者仍有待取数据(注入与消费的时序缝隙,多字符
+             * 爆发的兜底网):再唤醒,本轮流到它时注入+消费 */
+            if (v->wait_reason == VCPU_WAIT_RX &&
+                vuart_rx_irq_ready(&vm->vu))
+                v->wait_state = 0UL;
+            else
+                continue;                 /* TIMER 等待/环空:继续让位 */
+        }
         if (sched_console_owner && sched_console_owner != v)
             continue;                     /* 前台模式:console 独占,免 RX 竞争 */
         rr_next = (id + 1) % ESHINE_MAX_VMS;
@@ -236,6 +251,12 @@ bool sched_pump(void)
                 vgic_inject_vtimer();       /* per-pCPU 单 LR 只能泵挂 */
             v->wait_state = 0UL;
             v->wait_reason = 0UL;
+        }
+        if (vuart_rx_irq_ready(&vm->vu)) {  /* 第八站:UART RX 虚拟中断,
+                                             * LR1 通道泵注入(同纪律:防串台)。
+                                             * RIS 在 DR 读时重评定:多字符
+                                             * 爆发每注一发弹一个,续注排空 */
+            vgic_inject_uart();
         }
         /* vtimer ctx 切入对(第七站):cortex-a57(v8.0)无 CNTV 陷阱位,
          * guest 直写物理;泵以切换对齐——切入还本人 ctx,物理 CNTV

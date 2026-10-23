@@ -19,7 +19,7 @@ static void cmd_help(void)
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
     console_puts("          vmrun <id> vmconsole <id|host> vmstat vmkill <id>\n");
     console_puts("guest:    selftest sleep [N] spin echo <text> host exit\n");
-    console_puts("make verify walkthrough (27 步;与 make run 同一构建,可手动过):\n");
+    console_puts("make verify walkthrough (28 步;与 make run 同一构建,可手动过):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [3]\n");
     console_puts("  tick x2             -> ticks 递增             [4]\n");
     console_puts("  vmls / vmcreate 0   -> 空表 / CREATED         [5-6]\n");
@@ -203,11 +203,14 @@ void shell_run(void)
 
             if (sched_console_owner) {
                 struct vcpu *v = sched_console_owner;
+                struct eshine_vm *vm = vm_of_vcpu(v);
 
-                /* 前台 guest 的输入入其 vuart 环;RX 等待者即刻唤醒 */
-                vuart_rx_push(&vm_of_vcpu(v)->vu, c);
+                /* 前台 guest 的输入入其 vuart 环(RIS 置位);RXIM 使能
+                 * 时泵入口见 irq_ready 即注 LR1,无需显式标志。
+                 * RX 等待者即刻直通唤醒。 */
+                vuart_rx_push(&vm->vu, c);
                 if (v->wait_state == 1UL && v->wait_reason == VCPU_WAIT_RX)
-                    v->wait_state = 0UL;    /* 直通 runnable:环内已有数据 */
+                    v->wait_state = 0UL;    /* 直通 runnable:注入即取 */
                 continue;
             }
             if (c == '\r' || c == '\n') {

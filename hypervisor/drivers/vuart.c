@@ -5,10 +5,15 @@
 #include "kernel/include/console.h"
 #include "kernel/include/util.h"
 
-#define UART_DR 0x00UL
-#define UART_FR 0x18UL
-#define FR_RXFE (1u << 4)
-#define FR_TXFF (1u << 5)              /* 恒 0:见 vuart_mmio_read */
+#define UART_DR   0x00UL
+#define UART_FR   0x18UL
+#define UART_IMSC 0x38UL               /* 第八站中断面:仅 RXIM 建模 */
+#define UART_RIS  0x3CUL
+#define UART_MIS  0x40UL
+#define UART_ICR  0x44UL
+#define FR_RXFE   (1u << 4)
+#define FR_TXFF   (1u << 5)            /* 恒 0:见 vuart_mmio_read */
+#define IRQ_RX    (1u << 4)            /* RXIM/RIS 的 RX 位 */
 
 void vuart_init(struct vuart *vu)
 {
@@ -16,6 +21,8 @@ void vuart_init(struct vuart *vu)
     vu->rx_t = 0;
     vu->tx_len = 0;
     vu->tx_tagged = false;
+    vu->imsc = 0;
+    vu->ris = 0;
 }
 
 void vuart_rx_push(struct vuart *vu, char c)
@@ -26,6 +33,7 @@ void vuart_rx_push(struct vuart *vu, char c)
         return;                        /* 环满即丢:64B 对人类敲键是天文数字 */
     vu->rx[vu->rx_h] = c;
     vu->rx_h = n;
+    vu->ris |= IRQ_RX;                 /* 有数据到:原始挂起(真 PL011 同律) */
 }
 
 bool vuart_rx_has_data(const struct vuart *vu)
@@ -61,8 +69,20 @@ static void vuart_tx_emit(struct vuart *vu, u32 vmid)
 u64 vuart_mmio_read(struct vuart *vu, u64 off)
 {
     switch (off) {
-    case UART_DR:
-        return vuart_rx_has_data(vu) ? vuart_rx_pop(vu) : 0UL;
+    case UART_DR: {
+        u64 v = vuart_rx_has_data(vu) ? vuart_rx_pop(vu) : 0UL;
+
+        /* 读 DR 重评 RX 挂起(真 PL011 同律:环内仍有数据则保持)——
+         * 多字符爆发:每注一发弹一个,泵入口见 irq_ready 续注直至排空 */
+        vu->ris = vuart_rx_has_data(vu) ? IRQ_RX : 0u;
+        return v;
+    }
+    case UART_IMSC:
+        return vu->imsc;
+    case UART_RIS:
+        return vu->ris;
+    case UART_MIS:
+        return vu->ris & vu->imsc;
     case UART_FR:
         /* RXFE=环空;TXFF=0(宿主即时排空);BUSY=0 */
         return vuart_rx_has_data(vu) ? 0UL : FR_RXFE;
@@ -75,6 +95,14 @@ void vuart_mmio_write(struct vuart *vu, u32 vmid, u64 off, u64 val, bool fg)
 {
     char c = (char)val;
 
+    if (off == UART_IMSC) {
+        vu->imsc = (u32)val & IRQ_RX;  /* 仅 RXIM 建模:其余位写入忽略 */
+        return;
+    }
+    if (off == UART_ICR) {
+        vu->ris &= ~((u32)val & IRQ_RX);
+        return;
+    }
     if (off != UART_DR)
         return;                        /* FR/CR 等写忽略 */
     if (fg) {
@@ -93,4 +121,9 @@ void vuart_mmio_write(struct vuart *vu, u32 vmid, u64 off, u64 val, bool fg)
 void vuart_tx_flush(struct vuart *vu, u32 vmid)
 {
     vuart_tx_emit(vu, vmid);
+}
+
+bool vuart_rx_irq_ready(const struct vuart *vu)
+{
+    return (vu->imsc & vu->ris & IRQ_RX) != 0u;
 }

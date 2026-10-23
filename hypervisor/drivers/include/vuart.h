@@ -22,6 +22,8 @@ struct vuart {
     char tx[VUART_TX_SIZE];
     u32  tx_len;                     /* 行缓冲长度(0=空行缓冲) */
     bool tx_tagged;                  /* 行首定 tag:后台积累的行冲刷时带前缀 */
+    u32  imsc;                       /* 中断屏蔽:仅 RXIM(bit4)建模 */
+    u32  ris;                        /* 原始挂起:RX(bit4),读 DR 自动清 */
 };
 
 void vuart_init(struct vuart *vu);
@@ -35,5 +37,8 @@ u64  vuart_mmio_read(struct vuart *vu, u64 off);
 void vuart_mmio_write(struct vuart *vu, u32 vmid, u64 off, u64 val, bool fg);
 
 void vuart_tx_flush(struct vuart *vu, u32 vmid);   /* owner 切换/退场:冲尾不吞半行 */
+
+/* RX 中断就绪 = RXIM 使能且有挂起:宿主据此置泵注入标志(第八站) */
+bool vuart_rx_irq_ready(const struct vuart *vu);
 
 #endif /* ESHINE_VUART_H */

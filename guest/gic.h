@@ -9,6 +9,7 @@ typedef unsigned long long u64;   /* 与 hvc.h 同型,C11 允许重复定义 */
  * 代码按普通 GIC 语义写,重定向由硬件完成。本板 CNTV 虚拟定时器=INTID 27
  * (宿主 HW-LR 注入同号 vINTID)。EOImode 用复位默认 0:EOIR 一发即降+撤。 */
 #define GUEST_INTID_VTIMER   27UL
+#define GUEST_INTID_UART     33UL   /* 宿主 vuart 虚注(QEMU virt PL011 线) */
 #define GUEST_INTID_SPURIOUS 1023UL
 
 static inline void gic_guest_enable(void)

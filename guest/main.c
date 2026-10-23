@@ -36,8 +36,11 @@ void guest_irq_c(void)
         vtimer_disable();
         wake_count++;
     }
+    if (iar == GUEST_INTID_UART) {
+        uart_rx_isr();               /* 读 DR 入软环(虚 EOI 即撤,无物理线) */
+    }
     if (iar != GUEST_INTID_SPURIOUS)
-        gic_eoir(iar);   /* 虚 EOI:硬件联动撤销宿主物理线(HW-LR) */
+        gic_eoir(iar);   /* 虚 EOI:vtimer 经 HW-LR 联动物理线,uart 纯虚拟直撤 */
 }
 
 static void puts_uart(const char *s)
@@ -71,7 +74,9 @@ void guest_main(void)
     unsigned int idx = 0;
 
     gic_guest_enable();              /* ICV 面就绪并解 IRQ 后才可碰定时器 */
+    uart_irq_enable();              /* 第八站:RXIM 使能,宿主入环即虚注 33 */
     puts_uart(BANNER);              /* 第六站:全输出面经 vuart 陷阱仿真 */
+    puts_uart("uart irq on\n");     /* 中断驱动模式的显式判据(门禁 needle) */
     puts_uart(PROMPT);
 
     for (;;) {
