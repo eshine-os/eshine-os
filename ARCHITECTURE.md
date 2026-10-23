@@ -64,7 +64,9 @@
 
     struct vcpu = gprs[31](x0-x30) + sp + pc + pstate   ← 陷阱帧（asm 契约偏移）
                  + host_ctx(x19-x28 + sp + lr)          ← 宿主现场
-                 + exit_reason(EXIT/YIELD/FAULT)
+                 + exit_reason(EXIT/YIELD/FAULT/WAIT/PREEMPT)
+                 + wait_state/wait_reason/slice_left(第五/六站尾部扩展,
+                   asm 转写只到 pstate,不触及)
     el1_trap:    向量槽入口,停 x0 于 excp_stack → 全 GPR+SP_EL1/ELR/SPSR 入帧
                  → SP_EL2 归位栈顶 → el1_sync(x0=vcpu)
     trap_resume: 帧加载尾部(x0 最后回填)→ eret
@@ -84,7 +86,7 @@
 |---|---|---|
 | current-EL sync | 打印 ESR_EL2/FAR_EL2 -> WFI（宿主自身异常仍 panic，默认拒绝） | 已实 |
 | current-EL irq  | el2_trap → el2_irq：26=宿主 tick（重装后 EOIR+DIR）；27=vtimer（注入 LR 后只降优先级）；spurious 不动 EOIR | 已实 |
-| lower-EL sync   | el1_trap 保存帧 → el1_sync：HVC #0/#1/#2/#3/#4 + WFI 陷阱（EC=0x01 → VCPU_WAIT）；HVC 出口经 resume_or_preempt 查量子（尽则 PREEMPT 弃帧）；其余 = guest fault → 帧诊断 + VM 隔离死 | 已实 |
+| lower-EL sync   | el1_trap 保存帧 → el1_sync：HVC #1/#2/#4（控制类；#0/#3 第六站退役，未知 imm 默认拒绝）+ data abort（EC=0x24 → mmio_dispatch 仿真窗口分发）+ WFI 陷阱（EC=0x01 → VCPU_WAIT）；HVC/MMIO 出口经 resume_or_preempt 查量子（尽则 PREEMPT 弃帧）；其余（含指令中止 EC=0x20）= guest fault → 帧诊断+HPFAR + VM 隔离死 | 已实 |
 | lower-EL irq    | el2_trap_guest：guest 态物理中断宿主栈处理；tick 递减其量子，耗尽置 need_resched；出口查标志 → preempt_save_frame 帧转写 → vcpu_exit（抢占切走） | 已实 |
 | fiq / serror / 其余 lower-EL 槽 | 默认拒绝 panic + ESR | 占位 |
 
@@ -112,18 +114,18 @@ excp-stack 舞步会覆盖活栈、切到从未初始化的 SP_EL0=0，导致 ER
     描述符铁律：AF（bit10）必置位（实测 ESR 0x8200000A 指令中止）；
     RAM MemAttr=0xF，设备=0x1（S1 关闭时），设备页强制 XN
 
-## 超调用 ABI（HVC，三个调用号）
+## 超调用 ABI（HVC，第六站后仅控制类）
 
 | imm | 语义 | x0 | 其余寄存器 |
 |---|---|---|---|
-| 0   | putc：guest 控制台 | 入：字符；出：0 | x1-x17 易失（EL2 可自由使用）；x18-x30 由陷阱帧全量保存恢复（第三站兑现） |
-| 1   | exit：guest 主动退出 → VM 层 TEARDOWN→DEAD | - | 同上 |
+| 1   | exit：guest 主动退出 → VM 层 TEARDOWN→DEAD | - | x1-x17 易失（EL2 可自由使用）；x18-x30 由陷阱帧全量保存恢复（第三站兑现） |
 | 2   | yield：主动让出 → VM 层 RUNNING→PAUSED，返回点即续跑断点 | 入 0/出 0 | 同上；返回 = 从断点继续 |
-| 3   | getc：RX 代理（按 console owner 路由） | 出：>=0 字符 / -1（owner 暂无输入）/ -2（无输入权，guest 应 WFI 让位） | 同上 |
 | 4   | host：前台 guest 主动交还 RX（宿主置 owner=NULL） | - | 同上 |
 
-guest 内联 asm 必须声明 x1-x17 clobber；跨超调用的活跃值落 x18-x30
-（selftest 实证 x19/x30），由帧保存恢复。
+第六站退役：#0 putc / #3 getc——IO 面整体走 vuart MMIO 陷阱仿真
+（见"设备仿真"节），超调用只剩控制类；未列 imm 默认拒绝（guest
+fault 隔离死）。guest 内联 asm 必须声明 x1-x17 clobber；跨超调用的
+活跃值落 x18-x30（selftest 实证 x19/x30），由帧保存恢复。
 
 ## 中断面（27.04 第四站：GICv3 真中断 + 虚拟注入全链）
 
@@ -166,30 +168,63 @@ RX 所有权（`sched_console_owner` = vcpu 指针，NULL=宿主）：前台模�
 代理（-2=无输入权 → guest WFI 让位，TWI 陷阱化）；HVC #4 主动交还；
 WAIT/退场自动归还。
 
-WAIT/WOKE（单等待者）：WFI 陷阱 → VCPU_WAIT → 泵置 wait_state=1 +
-pc+=4（代完成）；27 到点（宿主或 guest 段皆可）→ sched_waiter()
-全表扫到等待者置 WOKE + vgic_wake_waiter（关 CNTV 线，只降优先级
-不 DIR）；LR 注入延迟到泵 —— per-pCPU 单 LR 通道，预挂会被在跑的
-别家串台消费。前台 VM 进等待即归还 RX（否则宿主读不到回收命令，
-泵又被 owner 挡住别家，死等 WOKE）。
+WAIT/WOKE（第六站起两源）：WFI 陷阱 → VCPU_WAIT → 泵置 wait_state=1
++pc+=4（代完成）+ **wait_reason 判定**（cntv_ctl 武装=TIMER，否则
+RX）；TIMER 等待者的 27 到点经 sched_waiter（按 reason 找人）置
+WOKE → 泵注 LR（per-pCPU 单 LR 只能泵挂）；RX 等待者由 shell 输入
+入环**直通唤醒**（wait_state=0，不经 WOKE——两源零串台）。
+**RX 等待持 owner**（输入即唤醒源，前台的意义），**TIMER 等待才
+归还**（宿主睡期间要能敲命令；回收出口 = guest 的 host 命令 HVC #4）。
+
+## 设备仿真（27.04 第六站：vuart/MMIO 陷阱）
+
+guest 的 UART 撤出 stage-2 映射（`S2_ATTR_EMULATED`，不建表项）——
+DR/FR 访问即 stage-2 translation fault（DFSC=6），全部陷阱化：
+
+    EC=0x24 → el1_trap 存帧 → mmio_dispatch：
+      ISS 解码（ISV/SAS/SRT/WnR）
+      IPA 重建：HPFAR_EL2<<8 | FAR[11:0]
+        （QEMU 8.2.2 实测 HPFAR = IPA>>8：guest fault 探针
+         0x30000000→HPFAR=0x300000；FAR 对 S2 fault 页地址无效、
+         页内偏移有效——不信的是那半边）
+      EMULATED 窗口匹配（默认拒绝：窗口外=guest fault 隔离死）
+      → vuart_mmio_read/write（DR/FR 子集，u32 语义）
+      → gprs[SRT] 回填（SRT=31=xzr 不回填）
+      → pc+=4 代 retire → resume_or_preempt（量子契约不破）
+
+关键不变量两条：**data abort 不退休**——ELR 指向 faulting 指令
+（HVC/WFI 是"已完成"语义，ELR 指下条；两副面孔），仿真完必须代
+retire，否则 ERET 原地重执行成陷阱环；**eret 尾 x0 自加载**——
+trap_resume 的 x0 最后回填不可用 x1 中转（三站暗雷：MMIO 回填任意
+SRT 时 gprs[0] 会灌回 x1），x1 与 x0 同批最后回填。
+
+vuart 模型（per-VM 实例内嵌 eshine_vm）：DR 读弹 RX 环（64B，宿主
+shell 生产/guest 消费）/写走 TX（128B 行缓冲：后台行按 `[vmN] `
+前缀整行冲、前台裸透传、owner 切换与退场冲尾不吞半行）；FR 回
+RXFE=环空、TXFF 恒 0（宿主即时排空，guest TX 轮询不自旋）。RX 路由
+= shell 恒排空真 UART 按 owner 入环（宿主即仲裁者）。UART IRQ 不
+注入（guest 轮询+WFI；SPI 注入留站后，偏差 #13）。
 
 ## 路线注记（范围外，记录归属）
 
 - 真板阶段：EL3/ATF 启动链（QEMU virt 无 secure world，本周用 virtualization=on 直进 EL2）
 - LR 满兜底（maint PPI 25+UIE+ring）、per-vCPU vtimer_ctx（CNTVOFF/CTL/CVAL，
-  多等待者）、vCPU>1/VM、优先级/实时策略（当前为轮转+前台独占）、分配器
+  多等待者）、UART IRQ 注入（当前轮询+WFI，SPI 留站后）、多仿真设备表
+  （当前 vuart 单设备）、vCPU>1/VM、优先级/实时策略、分配器
   （vm_space/vcpu 由内嵌换动态）、VM0=RTOS 管理 VM / VM1=Linux guest
 - 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（22 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（24 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
-空表 + vmcreate + vmrun 异步 + vmconsole 前台交互 + VM0 selftest
-（寄存器跨 100 HVC）+ preempts>0（tick 抢占活）+ 双 RUNNING +
-双 VM 交错 token 双回显（RX 路由判据）+ spin 3G 前后 preempts 差
->=2（纯计算负载跨量子，帧转写无损判据）+ WAIT 公平（vm0 睡时宿主/
-vm1 活）+ 后台醒（WOKE→泵注入）+ exit/VM_DEAD + fault 隔离 +
+空表 + vmcreate + vmrun 0 异步 → **后台 banner [vm0] 前缀（陷阱 TX
+整行冲刷判据）** + **RX 唤醒链（入环→直通 runnable→FR 命中→prompt
+重打）** + VM0 selftest（寄存器跨 100 MMIO 陷阱）+ HVC#4 交还 +
+vmstat 可读 + vm1 同律（[vm1] 前缀）+ 双 RUNNING + 双 VM 交错
+token 双回显（RX 路由判据）+ spin 3G 前后 preempts 差 >=2（纯计算
+负载跨量子，帧转写无损判据）+ WAIT 公平（vm0 睡时宿主/vm1 活）+
+后台醒（WOKE→泵注入）+ exit/VM_DEAD + fault 隔离（窗口外默认拒绝）+
 全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
 恢复判据）+ vmkill 拒绝路径，静态 marker 不算；连续 2 轮全绿才真绿）。
 CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。
