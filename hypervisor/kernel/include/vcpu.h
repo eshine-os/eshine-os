@@ -46,7 +46,7 @@ void guest_fault(struct vcpu *v, u64 esr) __attribute__((noreturn));
 
 /* 等待源(第六站):WAIT 入口由泵判定,WOKE 后泵按此走分支 */
 #define VCPU_WAIT_TIMER 1UL     /* vtimer 武装着睡:唤醒走注 LR + vtimer 链 */
-#define VCPU_WAIT_RX    2UL     /* 设备中断等待(串口 RX/vblk 完成等非
+#define VCPU_WAIT_RX    2UL     /* 设备中断等待(串口 RX/virtio 完成等非
                                  * TIMER 源):事件就绪经泵注入即醒 */
 
 /* vcpu_entry.S */

@@ -47,9 +47,9 @@ run: $(TARGET) guest1.bin guest2.bin
 verify: $(TARGET) guest1.bin guest2.bin
 	python3 tools/verify/verify_el2.py
 
-guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/blk.h
+guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/virtio.h
 	$(CC) $(CFLAGS) -DGUEST_ID=0 -c -o $@ $<
-guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/blk.h
+guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/virtio.h
 	$(CC) $(CFLAGS) -DGUEST_ID=1 -c -o $@ $<
 
 guest1.elf: guest/start.o guest/vec.o guest/main0.o guest/linker.ld

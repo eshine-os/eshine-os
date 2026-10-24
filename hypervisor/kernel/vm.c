@@ -94,13 +94,13 @@ int vm_create(u32 id)
     vm->devices[0].size = VM_UART_SIZE;
     vm->devices[0].attr = S2_ATTR_EMULATED; /* 撤直通:访问即 data abort 陷阱 */
     vm->devices[0].dev  = VM_DEV_VUART;
-    vm->devices[1].ipa  = VBLK_BASE;        /* 第九站:RAM 磁盘窗口 */
+    vm->devices[1].ipa  = VIRTIO_BASE;     /* 第十站:virtio-mmio 窗口(承接 vblk 槽位) */
     vm->devices[1].pa   = 0;
     vm->devices[1].size = 0x1000UL;
     vm->devices[1].attr = S2_ATTR_EMULATED;
-    vm->devices[1].dev  = VM_DEV_VBLK;
+    vm->devices[1].dev  = VM_DEV_VIRTIO;
     vuart_init(&vm->vu);
-    memset(&vm->vb, 0, sizeof(vm->vb));    /* regs 复位;磁盘数据不在生命周期内 */
+    memset(&vm->virtio, 0, sizeof(vm->virtio));  /* regs 复位;磁盘数据不在生命周期内 */
     vm->vcpus[0].pc = VM_RAM_IPA;              /* 帧即真相:新跑=初始化帧 */
     vm->vcpus[0].sp = 0x40200000UL;            /* guest 自会重设 */
     vm->vcpus[0].pstate = 0x3C5UL;            /* EL1h + DAIF 全掩 */
@@ -194,7 +194,7 @@ struct eshine_vm *vm_of_vcpu(struct vcpu *v)
     panic("vm_of_vcpu: vcpu not in vm_table");
 }
 
-/* 静态翻译(第九站 vblk 数据面):IPA 落 mem[] 区且全尺寸含 → PA,
+/* 静态翻译(第九站建/第十站 virtio 数据面):IPA 落 mem[] 区且全尺寸含 → PA,
  * 否则 0(调用方按设备错处理,默认拒绝不杀 guest)。
  * EL2 恒等映射,PA 即宿主可直接访存的地址。 */
 u64 vm_ipa_to_pa(struct eshine_vm *vm, u64 ipa, u64 size)
@@ -254,11 +254,11 @@ bool sched_pump(void)
         if (vm->state != VM_RUNNING)
             continue;                     /* 非就绪 */
         if (v->wait_state == 1UL) {
-            /* 设备中断等待者(RX/vblk 完成等非 TIMER 源)仍有待取
+            /* 设备中断等待者(RX/virtio 完成等非 TIMER 源)仍有待取
              * 事件(注入与消费的时序缝隙的兜底网):再唤醒,本轮流到
              * 它时注入+消费;TIMER 睡眠与无事件者继续让位 */
             if (v->wait_reason != VCPU_WAIT_TIMER &&
-                (vuart_rx_irq_ready(&vm->vu) || vblk_irq_ready(vm)))
+                (vuart_rx_irq_ready(&vm->vu) || virtio_irq_ready(vm)))
                 v->wait_state = 0UL;
             else
                 continue;
@@ -282,8 +282,8 @@ bool sched_pump(void)
                                              * 爆发每注一发弹一个,续注排空 */
             vgic_inject_uart();
         }
-        if (vblk_irq_ready(vm)) {          /* 第九站:vblk 完成中断(LR2) */
-            vgic_inject_blk();
+        if (virtio_irq_ready(vm)) {        /* 第十站:virtio 完成中断(LR3) */
+            vgic_inject_virtio();
         }
         /* vtimer ctx 切入对(第七站):cortex-a57(v8.0)无 CNTV 陷阱位,
          * guest 直写物理;泵以切换对齐——切入还本人 ctx,物理 CNTV

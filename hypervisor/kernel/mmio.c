@@ -4,7 +4,7 @@
  * HPFAR_EL2 是 stage-2 fault 的 IPA 权威来源(FAR_EL2 对 S2 fault 无效,
  * 不信;QEMU 8.2.2 实现,落地经 guest fault 诊断打点活探针复核)。 */
 #include "arch/arm64/include/mm.h"       /* S2_ATTR_EMULATED */
-#include "drivers/include/vblk.h"
+#include "drivers/include/virtio.h"
 #include "drivers/include/vuart.h"
 #include "kernel/include/console.h"
 #include "kernel/include/mmio.h"
@@ -55,13 +55,13 @@ void mmio_dispatch(struct vcpu *v, u64 esr)
                 else if (srt != 31)      /* SRT=31 -> xzr,不回填 */
                     v->gprs[srt] = vuart_mmio_read(&vm->vu, ipa - d->ipa);
                 break;
-            case VM_DEV_VBLK:
+            case VM_DEV_VIRTIO:
                 if (wnr)
-                    vblk_mmio_write(vm, (u32)vm->vmid, ipa - d->ipa,
-                                    v->gprs[srt]);
+                    virtio_mmio_write(vm, (u32)vm->vmid, ipa - d->ipa,
+                                      v->gprs[srt]);
                 else if (srt != 31)
-                    v->gprs[srt] = vblk_mmio_read(vm, (u32)vm->vmid,
-                                                  ipa - d->ipa);
+                    v->gprs[srt] = virtio_mmio_read(vm, (u32)vm->vmid,
+                                                    ipa - d->ipa);
                 break;
             default:
                 guest_fault(v, esr);      /* 表内未知设备:不变量破坏 */

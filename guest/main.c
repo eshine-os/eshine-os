@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
-#include "blk.h"
+#include "virtio.h"
 #include "gic.h"
 #include "hvc.h"
 #include "miniuart.h"
@@ -25,7 +25,7 @@
 
 static char linebuf[GBUF_MAX];
 static volatile unsigned int wake_count;   /* vtimer IRQ 计数(sleep 唤醒判据) */
-volatile unsigned int blk_done_count;       /* vblk 完成计数(dwrite/dread 判据) */
+/* virtio 完成计数在 virtio.h(virtio_done) */
 
 /* guest 自己的 IRQ 处理:认领走 ICV 视图(HCR.IMO 重定向,EL2 的
  * vgic_inject_vtimer 已把 vINTID 27 挂上)。关定时器在 EOI 前:
@@ -41,8 +41,8 @@ void guest_irq_c(void)
     if (iar == GUEST_INTID_UART) {
         uart_rx_isr();               /* 读 DR 入软环(虚 EOI 即撤,无物理线) */
     }
-    if (iar == GUEST_INTID_BLK) {
-        blk_isr();                   /* 读 STATUS 清挂起(第九站完成中断) */
+    if (iar == GUEST_INTID_VIRTIO) {
+        virtio_isr();                /* 读 InterruptStatus/ACK 清挂起(第十站) */
     }
     if (iar != GUEST_INTID_SPURIOUS)
         gic_eoir(iar);   /* 虚 EOI:vtimer 经 HW-LR 联动物理线,uart 纯虚拟直撤 */
@@ -80,10 +80,10 @@ void guest_main(void)
 
     gic_guest_enable();              /* ICV 面就绪并解 IRQ 后才可碰定时器 */
     uart_irq_enable();              /* 第八站:RXIM 使能,宿主入环即虚注 33 */
-    blk_irq_enable();               /* 第九站:完成中断使能,宿主虚注 34 */
+    virtio_blk_init();               /* 第十站:probe+Status 步进+队列+DRIVER_OK */
     puts_uart(BANNER);              /* 第六站:全输出面经 vuart 陷阱仿真 */
     puts_uart("uart irq on\n");     /* 中断驱动模式的显式判据(门禁 needle) */
-    puts_uart("blk irq on\n");     /* 块设备中断面判据(第九站 needle) */
+    puts_uart("virtio blk on\n");   /* virtio 就绪判据(第十站 needle,probe 三验+DRIVER_OK) */
     puts_uart(PROMPT);
 
     for (;;) {
@@ -148,20 +148,21 @@ void guest_main(void)
                 }
                 puts_uart("spun 3G iters (preempted ok)\n");
             } else if (streq(linebuf, "dwrite")) {
-                /* 块设备写全链:模式串入缓冲 -> 门铃 -> WFI ->
-                 * 完成中断(34) -> ISR 清挂起 -> 醒来回报 */
-                char *p = blk_buf;
+                /* virtio-blk 写全链:三描述符链(header/data/status)
+                 * -> avail 入队 -> 门铃 -> WFI -> 完成中断(35) ->
+                 * ISR 清挂起 -> 醒来回报 */
+                char *p = g_data;
                 const char *msg = "ESHINE-BLK-persist";
 
                 while (*msg)
                     *p++ = *msg++;
-                blk_do(BLK_OP_WRITE);
+                virtio_blk_do(1);
                 puts_uart("blk wrote\n");
             } else if (streq(linebuf, "dread")) {
-                blk_buf[0] = 0;
-                blk_do(BLK_OP_READ);
+                g_data[0] = 0;
+                virtio_blk_do(0);
                 puts_uart("blk read: ");
-                puts_uart(blk_buf);
+                puts_uart(g_data);
                 puts_uart("\n");
             } else if (streq(linebuf, "fault")) {
                 puts_uart("triggering unmapped read...\n");

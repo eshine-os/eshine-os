@@ -195,10 +195,10 @@ def main():
                              start=pos)
             print("  [9/31] guest enabled RXIM -> uart irq mode (vSPI 33 path)")
 
-            # ---- vblk 中断面(第九站):guest 使能完成中断后自报 ----
-            buf = read_until(s, buf, b"[vm0] blk irq on", time.time() + 10,
+            # ---- virtio 就绪(第十站):probe 三验+队列+DRIVER_OK 自报 ----
+            buf = read_until(s, buf, b"[vm0] virtio blk on", time.time() + 10,
                              start=pos)
-            print("  [10/31] guest enabled blk IMSC -> vblk completion IRQ (vSPI 34)")
+            print("  [10/31] virtio probe + DRIVER_OK -> virtio blk on (vSPI 35 path)")
 
             # ---- RX 唤醒链:前台化,空行入环 -> 直通唤醒 -> FR 命中 ----
             pos = len(buf)
@@ -278,7 +278,7 @@ def main():
             buf = read_until(s, buf, b"console -> host", time.time() + 10, start=pos2)
             print("  [16/31] vm0 echo double-echo ok (foreground)")
 
-            # ---- vblk 读写全链(第九站):门铃->服务->完成中断->ISR ----
+            # ---- virtio 读写全链(第十站):三描述符链->门铃->服务->完成中断->ISR ----
             pos = len(buf)
             s.sendall(b"vmconsole 0\n")
             buf = read_until(s, buf, b"console -> vm", time.time() + 10, start=pos)
@@ -295,7 +295,7 @@ def main():
             pos2 = len(buf)
             s.sendall(b"host\n")
             buf = read_until(s, buf, b"console -> host", time.time() + 10, start=pos2)
-            print("  [17/31] vblk write/read + completion IRQ (doorbell -> vSPI 34)")
+            print("  [17/31] virtio write/read + completion IRQ (3-desc chain -> vSPI 35)")
 
             pos = len(buf)
             s.sendall(b"vmconsole 1\n")
@@ -435,7 +435,7 @@ def main():
             p = len(buf)
             s.sendall(b"exit\n")
             buf = read_until(s, buf, b"vm0: VM_DEAD", time.time() + 15, start=p)
-            print("  [25/31] vblk persistence: data survives destroy+recreate")
+            print("  [25/31] virtio persistence: data survives destroy+recreate")
 
             pos = len(buf)
             s.sendall(b"vmconsole 1\n")
