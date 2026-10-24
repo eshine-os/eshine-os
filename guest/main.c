@@ -5,6 +5,7 @@
 #include "hvc.h"
 #include "miniuart.h"
 #include "timer.h"
+#include "fdt.h"
 
 /* 同源双镜像:-DGUEST_ID=0/1,身份仅差 banner 与提示符(spec §5) */
 #ifndef GUEST_ID
@@ -48,12 +49,6 @@ void guest_irq_c(void)
         gic_eoir(iar);   /* 虚 EOI:vtimer 经 HW-LR 联动物理线,uart 纯虚拟直撤 */
 }
 
-static void puts_uart(const char *s)
-{
-    while (*s)
-        uart_putc(*s++);
-}
-
 static int streq(const char *a, const char *b)
 {
     while (*a && *a == *b) {
@@ -82,6 +77,7 @@ void guest_main(void)
     uart_irq_enable();              /* 第八站:RXIM 使能,宿主入环即虚注 33 */
     virtio_blk_init();               /* 第十站:probe+Status 步进+队列+DRIVER_OK */
     puts_uart(BANNER);              /* 第六站:全输出面经 vuart 陷阱仿真 */
+    fdt_check();                    /* 第十一站:硬件自描述自查(门禁 [9-11]) */
     puts_uart("uart irq on\n");     /* 中断驱动模式的显式判据(门禁 needle) */
     puts_uart("virtio blk on\n");   /* virtio 就绪判据(第十站 needle,probe 三验+DRIVER_OK) */
     puts_uart(PROMPT);

@@ -1,0 +1,81 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (c) 2026 Julian Chu */
+/*
+ * eshine-os 最小诚实设备树(第十一站:DTB 注入)
+ *
+ * 底稿(QEMU 8.2.2 真描述,裁剪非重写——保留节点保持 QEMU 原形):
+ *   qemu-system-aarch64 -M virt,dumpdtb=qemu-virt.dtb \
+ *       virtualization=on,gic-version=3 -cpu cortex-a57 -m 512
+ *   dtc -I dtb -O dts qemu-virt.dts   (dtc 1.7.0)
+ *
+ * 裁剪原则:只描述我们提供的设备;中断三元组沿用 GIC 语义
+ * (SPI N = INTID 32+N,PPI N = INTID 16+N):
+ *   保留: memory(尺寸补丁 512MB->16MB) / cpus(cpu@0 a57) /
+ *         timer(只留虚拟定时器 PPI 11 = INTID 27) /
+ *         virtio_mmio@a000000(SPI 3 = INTID 35,第十站通道,单槽) /
+ *         pl011@9000000(SPI 1 = INTID 33,第八站通道) /
+ *         chosen / apb-pclk(pl011 驱动同形)
+ *   删除: psci(未实现) / fw-cfg / platform-bus / 其余 31 virtio 槽 /
+ *         pl061 / pcie / pl031 / pmu / intc+its(GICD/GICR 尚未仿真,
+ *         登记即说谎——GICD 仿真站落地再请回) / flash / rng-seed
+ *
+ * 双 VM 共树:树描述 IPA 空间,两 guest IPA 硬件一致;per-VM 差异
+ * (model 串等)等真实分歧出现再上(YAGNI)。
+ */
+/dts-v1/;
+
+/ {
+	model = "eshine-os,vm";
+	#size-cells = <0x02>;
+	#address-cells = <0x02>;
+	compatible = "eshine-os,vm";
+
+	memory@40000000 {
+		reg = <0x00 0x40000000 0x00 0x1000000>;	/* 裁剪补丁:512MB -> 16MB */
+		device_type = "memory";
+	};
+
+	cpus {
+		#size-cells = <0x00>;
+		#address-cells = <0x01>;
+
+		cpu@0 {
+			reg = <0x00>;
+			compatible = "arm,cortex-a57";
+			device_type = "cpu";
+		};
+	};
+
+	timer {
+		interrupts = <0x01 0x0b 0x04>;	/* 只留虚拟定时器 PPI 11 = INTID 27 */
+		always-on;
+		compatible = "arm,armv8-timer";
+	};
+
+	virtio_mmio@a000000 {
+		dma-coherent;
+		interrupts = <0x00 0x03 0x04>;	/* 补丁:SPI 16 -> SPI 3 = INTID 35 */
+		reg = <0x00 0xa000000 0x00 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	pl011@9000000 {
+		clock-names = "uartclk\0apb_pclk";
+		clocks = <0x01 0x01>;
+		interrupts = <0x00 0x01 0x04>;	/* SPI 1 = INTID 33,vuart RX */
+		reg = <0x00 0x9000000 0x00 0x1000>;
+		compatible = "arm,pl011\0arm,primecell";
+	};
+
+	chosen {
+		stdout-path = "/pl011@9000000";
+	};
+
+	apb-pclk {
+		phandle = <0x01>;
+		clock-output-names = "clk24mhz";
+		clock-frequency = <0x16e3600>;
+		#clock-cells = <0x00>;
+		compatible = "fixed-clock";
+	};
+};

@@ -3,6 +3,7 @@
 /* VM 抽象:静态双槽 + 配置驱动;表驱动状态机,表外 panic(默认拒绝) */
 #include "arch/arm64/include/mm.h"
 #include "kernel/include/console.h"
+#include "kernel/include/dtb.h"
 #include "kernel/include/panic.h"
 #include "kernel/include/util.h"
 #include "kernel/include/vcpu.h"
@@ -20,6 +21,8 @@ static struct eshine_vm vm_table[ESHINE_MAX_VMS];
 #define VM_UART_IPA   0x09000000UL
 #define VM_UART_PA    0x09000000UL
 #define VM_UART_SIZE  0x1000UL
+#define VM_DTB_OFF    0xF00000UL      /* 第十一站:DTB 固定偏移,guest 视角 0x4F000000 */
+#define VM_DTB_BUDGET 0x10000UL        /* 64KB 预算 */
 
 static const u64 vm_ram_pa[ESHINE_MAX_VMS] = { 0x50000000UL, 0x51000000UL };
 
@@ -99,6 +102,24 @@ int vm_create(u32 id)
     vm->devices[1].size = 0x1000UL;
     vm->devices[1].attr = S2_ATTR_EMULATED;
     vm->devices[1].dev  = VM_DEV_VIRTIO;
+
+    /* DTB 注入(第十一站):整树拷进 guest RAM 固定偏移,bootloader 同构。
+     * 头校验(magic+totalsize==实测)+预算检查,坏 blob 默认拒绝 create;
+     * 双 VM 共树(IPA 硬件一致),EL2 恒等映射直写 PA 即可。 */
+    {
+        u64 dtb_size = (u64)(eshine_dtb_end - eshine_dtb);
+        u32 be32_0 = ((u32)eshine_dtb[0] << 24) | ((u32)eshine_dtb[1] << 16) |
+                     ((u32)eshine_dtb[2] << 8) | (u32)eshine_dtb[3];
+        u32 be32_4 = ((u32)eshine_dtb[4] << 24) | ((u32)eshine_dtb[5] << 16) |
+                     ((u32)eshine_dtb[6] << 8) | (u32)eshine_dtb[7];
+        if (be32_0 != 0xd00dfeedUL || be32_4 != dtb_size ||
+            dtb_size > VM_DTB_BUDGET) {
+            vm_id_label(id);
+            console_puts("dtb rejected (bad blob)\n");
+            return -1;
+        }
+        memcpy((void *)(vm_ram_pa[id] + VM_DTB_OFF), eshine_dtb, dtb_size);
+    }
     vuart_init(&vm->vu);
     memset(&vm->virtio, 0, sizeof(vm->virtio));  /* regs 复位;磁盘数据不在生命周期内 */
     vm->vcpus[0].pc = VM_RAM_IPA;              /* 帧即真相:新跑=初始化帧 */

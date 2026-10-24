@@ -114,6 +114,21 @@ excp-stack 舞步会覆盖活栈、切到从未初始化的 SP_EL0=0，导致 ER
     描述符铁律：AF（bit10）必置位（实测 ESR 0x8200000A 指令中止）；
     RAM MemAttr=0xF，设备=0x1（S1 关闭时），设备页强制 XN
 
+## 设备树注入（27.04 第十一站：Linux 前传第一幕）
+
+guest 对世界的认知从硬编码改吃设备树。树源 = QEMU dumpdtb 裁剪补丁
+（tools/dtb/eshine-vm.dts，裁剪规则在文件头：只描述我们提供的设备，
+无 GIC/psci 节点=不说谎）；dtc 编译 blob 随仓提交（构建不依赖 dtc），
+hypervisor `.incbin` 入 .rodata。注入 = vm_create 整拷进 guest RAM
+固定偏移 0xF00000（guest 视角 0x40F00000，bootloader 同构语义；
+预算 64KB，magic/totalsize 头校验，坏 blob 拒绝 create）。双 VM 共树
+（树描述 IPA 空间，两 guest IPA 硬件一致；per-VM 差异待真实分歧出现）。
+guest 引导期走查（guest/fdt.h mini-FDT 只读解析：头校验+路径深度
+匹配+compatible 首串）自报三节点——设备身份从树查出而非硬编码
+（门禁 [9-11]）。保留节点：memory（16MB 补丁）/cpu@0/timer（仅虚拟
+定时器 PPI 11=INTID 27）/virtio_mmio（SPI 3=INTID 35）/pl011
+（SPI 1=INTID 33）/chosen/apb-pclk。
+
 ## 超调用 ABI（HVC，第六站后仅控制类）
 
 | imm | 语义 | x0 | 其余寄存器 |
@@ -247,13 +262,15 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（31 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（34 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] 前缀（陷阱 TX 整行冲刷判据）** + **guest 自报
-uart irq on（RXIM/vSPI 33）** + **guest 自报 virtio blk on（probe 三验
-→DRIVER_OK/vSPI 35）** + **RX 唤醒链（入环→直通 runnable→FR 命中→
-prompt 重打）** + VM0 selftest（寄存器跨 100 MMIO 陷阱）+ HVC#4 交还 +
+fdt ok: cpu/uart/blk 三节点（第十一站 DTB 注入，设备身份从树查出
+非硬编码）** + **guest 自报 uart irq on（RXIM/vSPI 33）** +
+**guest 自报 virtio blk on（probe 三验→DRIVER_OK/vSPI 35）** +
+**RX 唤醒链（入环→直通 runnable→FR 命中→prompt 重打）** +
+VM0 selftest（寄存器跨 100 MMIO 陷阱）+ HVC#4 交还 +
 vmstat 可读 + vm1 同律（[vm1] 前缀）+ 双 RUNNING + 双 VM 交错
 token 双回显（RX 路由判据）+ **dwrite/dread（三描述符链→门铃→
 完成中断判据）** + spin 3G 前后 preempts 差 >=2（纯计算
@@ -264,7 +281,7 @@ token 双回显（RX 路由判据）+ **dwrite/dread（三描述符链→门铃�
 全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
 恢复判据）+ vmkill 拒绝路径，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物），shell help 内置
-31 步手动走查清单。
+34 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出。

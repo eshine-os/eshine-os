@@ -46,6 +46,13 @@ static inline void uart_putc(char c)
     uart_write(UART_DR, (unsigned char)c);
 }
 
+/* 串输出原语(第十一站从 main.c 收编进驱动头:main/fdt 共用) */
+static inline void puts_uart(const char *s)
+{
+    while (*s)
+        uart_putc(*s++);
+}
+
 /* 第八站:RX 改中断驱动。宿主 vuart 入环置 RIS,RXIM 使能即虚注
  * vSPI 33(LR1);handler 读 DR 汇入 guest 软环(读 DR 自动清 RIS),
  * getc 从软环取,空则 WFI——IRQ 填环后同一 WFI 醒来续取。 */

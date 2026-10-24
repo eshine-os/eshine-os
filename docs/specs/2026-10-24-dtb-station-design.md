@@ -53,7 +53,7 @@ virtio 槽、pl061、pcie、pl031、pmu、**intc/its(GICD/GICR 尚未仿真,
 ### 2.2 注入:vm_create 固定偏移拷贝
 
 - 偏移契约:`VM_DTB_OFF = 0xF00000`(guest RAM 16MB 的最后 1MB),
-  guest 视角 IPA 0x4F000000;预算 64KB。
+  guest 视角 IPA 0x40F00000;预算 64KB。
 - `hypervisor/kernel/dtb.c`:`.incbin "tools/dtb/eshine-vm.dtb"` 直入
   .rodata;vm_create 在 stage-2 建立后 memcpy 到
   `vm_ram_pa[id] + VM_DTB_OFF`(EL2 恒等映射直写),totalsize 校验
@@ -94,7 +94,7 @@ ARCHITECTURE 验证节文字同 commit 更新;编辑用整块重写或断言保�
 
 #15(新):设备树注入——参考实现有 DTS 注入地址(per-domain
 manifest,树完整含 GIC 描述)→ 新仓最小诚实树(仅已提供设备,
-无 GIC/PCI/flash 节点),双 VM 共树、固定偏移 0x4F000000、
+无 GIC/PCI/flash 节点),双 VM 共树、固定偏移 0x40F00000、
 mini 走查器只读。参考源:FDT spec(公开)+ QEMU dumpdtb 描述形态。
 
 ## 5. 不做(YAGNI)

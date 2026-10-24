@@ -39,17 +39,23 @@ $(TARGET): $(OBJS) linker.ld
 # VERSION 是注入宏的来源,必须作为先决条件(否则改版本不触发重编,门禁会抓)
 $(OBJS): VERSION
 
+# 第十一站:设备树。blob 由 dts 编译(dtc;无 dtc 时用随仓提交的 .dtb),
+# incbin 在汇编期展开,-MMD 抓不到 -> dtb.o 显式依赖 blob
+tools/dtb/eshine-vm.dtb: tools/dtb/eshine-vm.dts
+	dtc -q -I dts -O dtb -o $@ $<
+hypervisor/kernel/dtb.o: tools/dtb/eshine-vm.dtb
+
 # make run 与 make verify 同构:同一构建产物(含 guest 双镜像),
-# run 走 run_qemu.sh 交互,verify 走 31 步门禁——两者验的是同一个 elf
+# run 走 run_qemu.sh 交互,verify 走 34 步门禁——两者验的是同一个 elf
 run: $(TARGET) guest1.bin guest2.bin
 	./scripts/run_qemu.sh
 
 verify: $(TARGET) guest1.bin guest2.bin
 	python3 tools/verify/verify_el2.py
 
-guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/virtio.h
+guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/virtio.h guest/fdt.h
 	$(CC) $(CFLAGS) -DGUEST_ID=0 -c -o $@ $<
-guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/virtio.h
+guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/virtio.h guest/fdt.h
 	$(CC) $(CFLAGS) -DGUEST_ID=1 -c -o $@ $<
 
 guest1.elf: guest/start.o guest/vec.o guest/main0.o guest/linker.ld
