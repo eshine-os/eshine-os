@@ -38,6 +38,17 @@ static inline void uart_write(unsigned long off, unsigned int v)
 
 #define UART_IMSC 0x38u                 /* 第八站:RXIM 使能 -> 宿主虚注 vSPI 33 */
 #define IRQ_RX    (1u << 4)
+#define UART_IBRD 0x24u                 /* 第十三站:控制族(Linux pl011 同律) */
+#define UART_FBRD 0x28u
+#define UART_LCRH 0x2Cu
+#define UART_CR   0x30u
+#define UART_IFLS 0x34u
+#define UART_DMACR 0x48u
+#define UART_PIDR0 0xFE0u               /* AMBA 身份证:PERIPHID/PCELLID */
+#define UART_CIDR0  0xFF0u
+#define CR_UARTEN 0x001u
+#define CR_TXE    0x100u
+#define CR_RXE    0x200u
 
 static inline void uart_putc(char c)
 {
@@ -60,9 +71,38 @@ static inline void puts_uart(const char *s)
 static char grx[GRX_SIZE];
 static volatile unsigned int grx_h, grx_t;
 
-static inline void uart_irq_enable(void)
+/* 第十三站:Linux pl011 驱动同律 bring-up。
+ * AMBA 身份证自查:PERIPHID 八字节组 AMBA id 0x00141011、PCELLID
+ * 组 0xB105F00D——设备证明自己是谁(总线靠它绑驱动);过则自报,
+ * 败则报 FAIL(门禁必抓)。后接关机->配置->开机三段式:
+ * CR=0(关)→ IBRD=13/FBRD=1(115200@24MHz,无时序只登记)→
+ * LCR_H=8N1+FEN → IFLS/DMACR → IMSC=RXIM → CR=0x301(UARTEN|TXE|RXE)。 */
+static inline void uart_pl011_init(void)
 {
+    unsigned int id, amba_ok, cell_ok;
+
+    id = (uart_read(UART_PIDR0 + 0x0Cu) << 24) | (uart_read(UART_PIDR0 + 0x08u) << 16) |
+         (uart_read(UART_PIDR0 + 0x04u) << 8) | uart_read(UART_PIDR0);
+    amba_ok = (id == 0x00141011u);
+    id = (uart_read(UART_CIDR0 + 0x0Cu) << 24) | (uart_read(UART_CIDR0 + 0x08u) << 16) |
+         (uart_read(UART_CIDR0 + 0x04u) << 8) | uart_read(UART_CIDR0);
+    cell_ok = (id == 0xB105F00Du);
+
+    uart_write(UART_CR, 0u);            /* 关机再配置(Linux 同律) */
+    uart_write(UART_IBRD, 13u);         /* 115200 @ 24MHz */
+    uart_write(UART_FBRD, 1u);
+    uart_write(UART_LCRH, 0x70u);       /* 8N1 + FEN */
+    uart_write(UART_IFLS, 0x12u);
+    uart_write(UART_DMACR, 0u);
     uart_write(UART_IMSC, IRQ_RX);
+    uart_write(UART_CR, CR_UARTEN | CR_TXE | CR_RXE);
+
+    /* 自报在开机后:真 PL011 同律,开机前 DR 写被 CR 门丢弃(本站
+     * 战况——gic 自报曾随开机前输出一起被吞)。FAIL 也要有通道。 */
+    if (amba_ok && cell_ok)
+        puts_uart("pl011 on: amba 00141011\n");
+    else
+        puts_uart("pl011 FAIL: id\n");
 }
 
 static inline void uart_rx_isr(void)      /* IRQ 上下文:排空整批入软环 */

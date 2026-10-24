@@ -73,9 +73,10 @@ void guest_main(void)
 {
     unsigned int idx = 0;
 
-    gic_dist_init();                 /* 第十二站:vGIC 真启动式 bring-up(门禁 [12-13]) */
+    uart_pl011_init();              /* 第十三站:身份证自查+开机(门禁 [12];先开机
+                                      * 才有输出通道——CR 真语义,开机前 DR 写被吞) */
+    gic_dist_init();                 /* 第十二站:vGIC 真启动式 bring-up(门禁 [13-14]) */
     gic_guest_enable();              /* ICV 面就绪并解 IRQ 后才可碰定时器 */
-    uart_irq_enable();              /* 第八站:RXIM 使能,宿主入环即虚注 33 */
     virtio_blk_init();               /* 第十站:probe+Status 步进+队列+DRIVER_OK */
     puts_uart(BANNER);              /* 第六站:全输出面经 vuart 陷阱仿真 */
     fdt_check();                    /* 第十一站:硬件自描述自查(门禁 [9-11]) */

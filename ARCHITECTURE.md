@@ -240,7 +240,13 @@ vuart 模型（per-VM 实例内嵌 eshine_vm）：DR 读弹 RX 环（64B；读�
 后台行按 `[vmN] ` 前缀整行冲、前台裸透传、owner 切换与退场冲尾不吞
 半行）；FR 回 RXFE=环空、TXFF 恒 0。RX 路由 = shell 恒排空真 UART
 按 owner 入环（宿主即仲裁者）。第八站增中断面：IMSC（仅 RXIM）/
-RIS/MIS/ICR，RX 入环置 RIS，RXIM 使能即泵注 **LR1 纯虚拟 vSPI 33**
+RIS/MIS/ICR，RX 入环置 RIS，RXIM 使能即泵注 **LR1 纯虚拟 vSPI 33**。
+第十三站长成 Linux 驱动可绑形态：AMBA 身份证（PERIPHID/PCELLID 只读
+常量，id 0x00141011）+控制族（CR/IBRD/FBRD/LCR_H/IFLS/DMACR 存储
+回读，复位值按真芯片 CR=0x300/IFLS=0x12）+**CR 真语义**（DR 写要
+UARTEN|TXE，RX 中断要 UARTEN|RXE——开机前 DR 写被门丢弃，guest
+自报必须挪到开机后，本站战况）；波特率无时序不仿真。guest 引导按
+Linux pl011 同律：身份证自查→关机→配置→开机→自报（门禁 [12]）
 （Group+State(pending) 两位置足，**HW 位不置**——HW LR 挂起跟随
 物理线；ICH_LR 真实位号 bit60=Group/bit61=HW/bit62=State，注释与
 实现自此正名），guest handler 排空 DR 入软环，getc 中断驱动（FR
@@ -281,12 +287,14 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（36 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（37 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] 前缀（陷阱 TX 整行冲刷判据）** + **guest 自报
 fdt ok: cpu/uart/blk 三节点（第十一站 DTB 注入，设备身份从树查出
-非硬编码）** + **guest 自报 gicd v3 ok / gic on: 27 33 35（第十二站
+非硬编码）** + **guest 自报 pl011 on: amba 00141011（第十三站 PL011
+完整化：AMBA 身份证 PERIPHID/PCELLID 探测 + CR 真语义开机，开机前
+DR 写被门丢弃）** + **guest 自报 gicd v3 ok / gic on: 27 33 35（第十二站
 vGIC：PIDR2 探测 + GICD/GICR 使能路径回读，注入按使能位门控）** +
 **guest 自报 uart irq on（RXIM/vSPI 33）** +
 **guest 自报 virtio blk on（probe 三验→DRIVER_OK/vSPI 35）** +
@@ -302,7 +310,7 @@ token 双回显（RX 路由判据）+ **dwrite/dread（三描述符链→门铃�
 全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
 恢复判据）+ vmkill 拒绝路径，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物），shell help 内置
-36 步手动走查清单。
+37 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出。

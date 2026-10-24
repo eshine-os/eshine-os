@@ -7,13 +7,22 @@
 
 #define UART_DR   0x00UL
 #define UART_FR   0x18UL
+#define UART_IBRD 0x24UL               /* 第十三站:控制族,存储回读 */
+#define UART_FBRD 0x28UL
+#define UART_LCRH 0x2CUL
+#define UART_CR   0x30UL
+#define UART_IFLS 0x34UL
 #define UART_IMSC 0x38UL               /* 第八站中断面:仅 RXIM 建模 */
 #define UART_RIS  0x3CUL
 #define UART_MIS  0x40UL
 #define UART_ICR  0x44UL
+#define UART_DMACR 0x48UL
 #define FR_RXFE   (1u << 4)
 #define FR_TXFF   (1u << 5)            /* 恒 0:见 vuart_mmio_read */
 #define IRQ_RX    (1u << 4)            /* RXIM/RIS 的 RX 位 */
+#define CR_UARTEN 0x001u               /* CR 真语义:开机位 */
+#define CR_TXE    0x100u               /* 发送使能 */
+#define CR_RXE    0x200u               /* 接收使能 */
 
 void vuart_init(struct vuart *vu)
 {
@@ -23,6 +32,12 @@ void vuart_init(struct vuart *vu)
     vu->tx_tagged = false;
     vu->imsc = 0;
     vu->ris = 0;
+    vu->cr = 0x300u;                    /* 真复位值:TXE|RXE,UARTEN=0 */
+    vu->ibrd = 0;
+    vu->fbrd = 0;
+    vu->lcr_h = 0;
+    vu->ifls = 0x12u;                   /* 真复位值:默认 FIFO 水位 */
+    vu->dmacr = 0;
 }
 
 void vuart_rx_push(struct vuart *vu, char c)
@@ -83,11 +98,31 @@ u64 vuart_mmio_read(struct vuart *vu, u64 off)
         return vu->ris;
     case UART_MIS:
         return vu->ris & vu->imsc;
+    case UART_CR:
+        return vu->cr;
+    case UART_IBRD:
+        return vu->ibrd;
+    case UART_FBRD:
+        return vu->fbrd;
+    case UART_LCRH:
+        return vu->lcr_h;
+    case UART_IFLS:
+        return vu->ifls;
+    case UART_DMACR:
+        return vu->dmacr;
     case UART_FR:
         /* RXFE=环空;TXFF=0(宿主即时排空);BUSY=0 */
         return vuart_rx_has_data(vu) ? 0UL : FR_RXFE;
+    case 0xFE0: return 0x11UL;         /* PERIPHID:PL011 id 0x00141011 */
+    case 0xFE4: return 0x10UL;
+    case 0xFE8: return 0x14UL;
+    case 0xFEC: return 0x00UL;
+    case 0xFF0: return 0x0DUL;         /* PCELLID:0xB105F00D */
+    case 0xFF4: return 0xF0UL;
+    case 0xFF8: return 0x05UL;
+    case 0xFFC: return 0xB1UL;
     default:
-        return 0UL;                    /* CR/IBRD/ICR...:读 0 写忽略,不 fault */
+        return 0UL;                    /* RSR/ECR/ILPR 等:读 0 写忽略,不 fault */
     }
 }
 
@@ -103,8 +138,35 @@ void vuart_mmio_write(struct vuart *vu, u32 vmid, u64 off, u64 val, bool fg)
         vu->ris &= ~((u32)val & IRQ_RX);
         return;
     }
+    if (off == UART_CR) {               /* 控制族:存储回读(波特率无时序) */
+        vu->cr = (u32)val;
+        return;
+    }
+    if (off == UART_IBRD) {
+        vu->ibrd = (u32)val;
+        return;
+    }
+    if (off == UART_FBRD) {
+        vu->fbrd = (u32)val;
+        return;
+    }
+    if (off == UART_LCRH) {
+        vu->lcr_h = (u32)val;
+        return;
+    }
+    if (off == UART_IFLS) {
+        vu->ifls = (u32)val;
+        return;
+    }
+    if (off == UART_DMACR) {
+        vu->dmacr = (u32)val;
+        return;
+    }
     if (off != UART_DR)
-        return;                        /* FR/CR 等写忽略 */
+        return;                        /* FR/身份证等写忽略 */
+    /* CR 真语义:关机态/无 TXE 写 DR 无效(真 PL011 同律) */
+    if ((vu->cr & (CR_UARTEN | CR_TXE)) != (CR_UARTEN | CR_TXE))
+        return;
     if (fg) {
         /* 前台裸透传;切前台前若残留后台半行,按其 tag 先冲 */
         vuart_tx_emit(vu, vmid);
@@ -125,5 +187,6 @@ void vuart_tx_flush(struct vuart *vu, u32 vmid)
 
 bool vuart_rx_irq_ready(const struct vuart *vu)
 {
-    return (vu->imsc & vu->ris & IRQ_RX) != 0u;
+    return (vu->cr & (CR_UARTEN | CR_RXE)) == (CR_UARTEN | CR_RXE) &&
+           (vu->imsc & vu->ris & IRQ_RX) != 0u;
 }
