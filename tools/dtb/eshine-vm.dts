@@ -16,8 +16,9 @@
  *         pl011@9000000(SPI 1 = INTID 33,第八站通道) /
  *         chosen / apb-pclk(pl011 驱动同形)
  *   删除: psci(未实现) / fw-cfg / platform-bus / 其余 31 virtio 槽 /
- *         pl061 / pcie / pl031 / pmu / intc+its(GICD/GICR 尚未仿真,
- *         登记即说谎——GICD 仿真站落地再请回) / flash / rng-seed
+ *         pl061 / pcie / pl031 / pmu / its(LPI 未仿真) / flash / rng-seed
+ *   第十二站更新: intc 请回树(GICD/GICR 仿真落地);its 子节点与
+ *         maintenance interrupts 仍不登记(同诚实原则)
  *
  * 双 VM 共树:树描述 IPA 空间,两 guest IPA 硬件一致;per-VM 差异
  * (model 串等)等真实分歧出现再上(YAGNI)。
@@ -29,10 +30,21 @@
 	#size-cells = <0x02>;
 	#address-cells = <0x02>;
 	compatible = "eshine-os,vm";
+	interrupt-parent = <0x02>;
 
 	memory@40000000 {
 		reg = <0x00 0x40000000 0x00 0x1000000>;	/* 裁剪补丁:512MB -> 16MB */
 		device_type = "memory";
+	};
+
+	gic: intc@8000000 {
+		compatible = "arm,gic-v3";
+		#redistributor-regions = <0x01>;
+		#interrupt-cells = <0x03>;
+		interrupt-controller;
+		reg = <0x00 0x8000000 0x00 0x10000	/* GICD */
+		       0x00 0x80a0000 0x00 0x20000>;	/* GICR:RD+SGI 单帧 */
+		phandle = <0x02>;
 	};
 
 	cpus {

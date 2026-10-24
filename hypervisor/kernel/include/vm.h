@@ -7,6 +7,7 @@
 #include "arch/arm64/include/mm.h"     /* mem_region/vm_device/vm_space */
 #include "drivers/include/vuart.h"     /* per-VM 仿真串口(第六站) */
 #include "drivers/include/virtio.h"    /* per-VM virtio-blk(第十站) */
+#include "drivers/include/vgic.h"      /* per-VM vGIC(第十二站) */
 #include "kernel/include/types.h"
 #include "kernel/include/vcpu.h"
 
@@ -18,6 +19,8 @@
 /* 仿真设备类型(设备表化:mmio_dispatch 按 dev 分发) */
 #define VM_DEV_VUART  1UL
 #define VM_DEV_VIRTIO 2UL
+#define VM_DEV_VGICD  3UL             /* 第十二站:vGIC distributor 窗口 */
+#define VM_DEV_VGICR  4UL             /* 第十二站:vGIC redistributor 窗口 */
 
 enum vm_state {
     VM_INIT,
@@ -40,6 +43,7 @@ struct eshine_vm {
     struct vm_device  devices[ESHINE_MAX_DEV];
     struct vuart      vu;                    /* 仿真串口实例(EMULATED 设备的模型态) */
     struct virtio_mmio virtio;               /* virtio-blk regs(磁盘数据在 virtio.c 静态区) */
+    struct vgic       vgic;                  /* vGIC 状态(随 VM 生命周期,不跨 create) */
     struct vm_space   space;
 };
 

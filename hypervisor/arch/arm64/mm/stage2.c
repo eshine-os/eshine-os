@@ -55,12 +55,16 @@ int stage2_build(struct vm_space *sp, u64 vmid,
         const struct vm_device *d = &dev[i];
         u64 l2i = d->ipa >> 21;
 
-        if (d->size != PG_4K || (d->ipa & (PG_4K - 1)))
-            return -1;
+        if (d->size == 0 || (d->ipa & (PG_4K - 1)) || (d->size & (PG_4K - 1)))
+            return -1;                       /* 页对齐 + 4K 整数倍 */
         if (d->ipa >= 0x40000000UL)
             return -1;                       /* 设备段必须在 IPA 0-1GB 内 */
         if (d->attr == S2_ATTR_EMULATED)
-            continue;   /* 仿真设备:不建映射,访问即 data abort 陷阱(第六站) */
+            continue;   /* 仿真设备:不建映射,窗口即陷阱区(第六站);
+                          * 第十二站起允许多页——真实设备布局(vGICD 64KB/
+                          * vGICR RD+SGI 128KB)天然跨页,反正无映射可建 */
+        if (d->size != PG_4K)
+            return -1;                       /* 直映射设备单页(现有 l3 布局) */
         if (d->pa & (PG_4K - 1))
             return -1;
         sp->l2_dev[l2i] = DSC_TABLE(sp->l3_dev);

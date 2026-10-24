@@ -46,7 +46,7 @@ tools/dtb/eshine-vm.dtb: tools/dtb/eshine-vm.dts
 hypervisor/kernel/dtb.o: tools/dtb/eshine-vm.dtb
 
 # make run 与 make verify 同构:同一构建产物(含 guest 双镜像),
-# run 走 run_qemu.sh 交互,verify 走 34 步门禁——两者验的是同一个 elf
+# run 走 run_qemu.sh 交互,verify 走 36 步门禁——两者验的是同一个 elf
 run: $(TARGET) guest1.bin guest2.bin
 	./scripts/run_qemu.sh
 

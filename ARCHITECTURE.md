@@ -157,6 +157,25 @@ fault 隔离死）。guest 内联 asm 必须声明 x1-x17 clobber；跨超调用
 
 中断数据观：未知 intid 记账 EOI 不 panic（同 fault 隔离哲学）；spurious(1023) 不动 EOIR。
 
+### vGIC distributor/redistributor 仿真（27.04 第十二站：中断面 OS 化）
+
+guest 的中断从此有 distributor：vGICD@IPA 0x08000000（0x10000）+
+vGICR@0x080A0000（0x20000，RD+SGI 帧），镜像 QEMU virt 真布局，树里
+intc 节点据此描述（its/maintenance 未仿真不登记）。寄存器分层：探测/
+使能/唤醒路径真语义（PIDR2=0x30 判据、CTLR Enable+RWP 恒 0、WAKER
+存储回读、ISENABLER 写置位/ICENABLER 写清位、TYPER 家族只读），
+纯状态寄存器（挂起/活跃/优先级/配置）存储回读，未知 RAZ/WI（设备级
+默认拒绝）；GICD SPI 寄存器族 0x80 宽分立解码（族基 0x080/0x100/…
+首版共用 (off-0x080)>>2 把 ISENABLER0 算成 n=32 越界静默 WI，guest
+使能回读当场抓获）。**泵注入三通道改按 guest 使能位门控**——vtimer
+PPI 27（GICR_ISENABLER0 bit27）/vuart SPI 33 与 virtio SPI 35
+（GICD_ISENABLER0 bit1/bit3）：distributor 成为注入权威，guest 没
+使能就不注入、不代完成 WFI；再唤醒网同律。MMIO 分发新增 SAS→字节数
+换算（1<<sas，编码值不当字节数传——半字掩码吃 4 字节读的坑记档）。
+guest init 长成真 OS 形态：PIDR2 探测→CTLR/WAKER→SGI 帧 PPI 27→
+GICD SPI 33/35→回读验证自报。EMULATED 窗口自本站允许多页（真实设备
+布局天然跨页；直映射仍单页）。
+
 ## 调度（27.04 第五站：时间片抢占轮转）
 
 双 VM 首次真并行；shell 是最高优先级任务，命令即原子段，泵只在
@@ -262,12 +281,14 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（34 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（36 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] 前缀（陷阱 TX 整行冲刷判据）** + **guest 自报
 fdt ok: cpu/uart/blk 三节点（第十一站 DTB 注入，设备身份从树查出
-非硬编码）** + **guest 自报 uart irq on（RXIM/vSPI 33）** +
+非硬编码）** + **guest 自报 gicd v3 ok / gic on: 27 33 35（第十二站
+vGIC：PIDR2 探测 + GICD/GICR 使能路径回读，注入按使能位门控）** +
+**guest 自报 uart irq on（RXIM/vSPI 33）** +
 **guest 自报 virtio blk on（probe 三验→DRIVER_OK/vSPI 35）** +
 **RX 唤醒链（入环→直通 runnable→FR 命中→prompt 重打）** +
 VM0 selftest（寄存器跨 100 MMIO 陷阱）+ HVC#4 交还 +
@@ -281,7 +302,7 @@ token 双回显（RX 路由判据）+ **dwrite/dread（三描述符链→门铃�
 全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
 恢复判据）+ vmkill 拒绝路径，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物），shell help 内置
-34 步手动走查清单。
+36 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出。

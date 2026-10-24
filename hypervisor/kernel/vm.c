@@ -91,7 +91,6 @@ int vm_create(u32 id)
     vm->mem[0].pa   = vm_ram_pa[id];
     vm->mem[0].size = VM_RAM_SIZE;
     vm->mem[0].attr = S2_ATTR_NORMAL;
-    vm->n_dev = 2;
     vm->devices[0].ipa  = VM_UART_IPA;
     vm->devices[0].pa   = 0;                /* 仿真设备无 PA:不映射,只有窗口 */
     vm->devices[0].size = VM_UART_SIZE;
@@ -122,6 +121,21 @@ int vm_create(u32 id)
     }
     vuart_init(&vm->vu);
     memset(&vm->virtio, 0, sizeof(vm->virtio));  /* regs 复位;磁盘数据不在生命周期内 */
+    vgic_reset(&vm->vgic);                /* 第十二站:distributor 随 VM 生命周期 */
+
+    /* vGIC 窗口(第十二站):镜像 QEMU virt 真布局,树里 intc 节点据此描述。
+     * ESHINE_MAX_DEV=4 恰好满编:vuart/virtio/vgicd/vgicr。 */
+    vm->devices[2].ipa  = 0x08000000UL;
+    vm->devices[2].pa   = 0;
+    vm->devices[2].size = 0x10000UL;
+    vm->devices[2].attr = S2_ATTR_EMULATED;
+    vm->devices[2].dev  = VM_DEV_VGICD;
+    vm->devices[3].ipa  = 0x080A0000UL;
+    vm->devices[3].pa   = 0;
+    vm->devices[3].size = 0x20000UL;     /* RD 帧 + SGI 帧(单 vCPU 一帧) */
+    vm->devices[3].attr = S2_ATTR_EMULATED;
+    vm->devices[3].dev  = VM_DEV_VGICR;
+    vm->n_dev = 4;                     /* 四设备满编 */
     vm->vcpus[0].pc = VM_RAM_IPA;              /* 帧即真相:新跑=初始化帧 */
     vm->vcpus[0].sp = 0x40200000UL;            /* guest 自会重设 */
     vm->vcpus[0].pstate = 0x3C5UL;            /* EL1h + DAIF 全掩 */
@@ -277,9 +291,13 @@ bool sched_pump(void)
         if (v->wait_state == 1UL) {
             /* 设备中断等待者(RX/virtio 完成等非 TIMER 源)仍有待取
              * 事件(注入与消费的时序缝隙的兜底网):再唤醒,本轮流到
-             * 它时注入+消费;TIMER 睡眠与无事件者继续让位 */
+             * 它时注入+消费;TIMER 睡眠与无事件者继续让位。
+             * 第十二站:再唤醒同律过门控(guest 使能了才算"待取") */
             if (v->wait_reason != VCPU_WAIT_TIMER &&
-                (vuart_rx_irq_ready(&vm->vu) || virtio_irq_ready(vm)))
+                ((vuart_rx_irq_ready(&vm->vu) &&
+                  vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) ||
+                 (virtio_irq_ready(vm) &&
+                  vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO))))
                 v->wait_state = 0UL;
             else
                 continue;
@@ -292,18 +310,27 @@ bool sched_pump(void)
         if (v->wait_state == 2UL) {        /* WOKE 专属 vtimer(27/扫描经
                                             * ctx 表定位;RX 走直通 runnable
                                             * 不经 WOKE——两源零串台) */
-            if (v->wait_reason == VCPU_WAIT_TIMER)
-                vgic_inject_vtimer();       /* per-pCPU 单 LR 只能泵挂 */
+            if (v->wait_reason == VCPU_WAIT_TIMER) {
+                /* 第十二站:注入过门控——guest 没使能 PPI 27 就不注入,
+                 * 也不代完成(它自己的配置自己负责;隔离面哲学) */
+                if (vgic_ppi_enabled(&vm->vgic, GIC_PPI_VTIMER))
+                    vgic_inject_vtimer();   /* per-pCPU 单 LR 只能泵挂 */
+            }
             v->wait_state = 0UL;
             v->wait_reason = 0UL;
         }
-        if (vuart_rx_irq_ready(&vm->vu)) {  /* 第八站:UART RX 虚拟中断,
-                                             * LR1 通道泵注入(同纪律:防串台)。
-                                             * RIS 在 DR 读时重评定:多字符
-                                             * 爆发每注一发弹一个,续注排空 */
+        /* 注入门控(第十二站):distributor 成为权威——guest 使能了
+         * 对应 SPI 才注 LR。通道不变:vtimer 27(HW)/vuart 33(LR1)/
+         * virtio 35(LR3)。 */
+        if (vuart_rx_irq_ready(&vm->vu) &&
+            vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) {
+            /* 第八站:UART RX 虚拟中断,LR1 通道泵注入(同纪律:防串台)。
+             * RIS 在 DR 读时重评定:多字符爆发每注一发弹一个,续注排空 */
             vgic_inject_uart();
         }
-        if (virtio_irq_ready(vm)) {        /* 第十站:virtio 完成中断(LR3) */
+        if (virtio_irq_ready(vm) &&
+            vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO)) {
+            /* 第十站:virtio 完成中断(LR3) */
             vgic_inject_virtio();
         }
         /* vtimer ctx 切入对(第七站):cortex-a57(v8.0)无 CNTV 陷阱位,

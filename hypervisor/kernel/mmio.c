@@ -6,6 +6,7 @@
 #include "arch/arm64/include/mm.h"       /* S2_ATTR_EMULATED */
 #include "drivers/include/virtio.h"
 #include "drivers/include/vuart.h"
+#include "drivers/include/vgic.h"
 #include "kernel/include/console.h"
 #include "kernel/include/mmio.h"
 #include "kernel/include/sched.h"        /* sched_console_owner */
@@ -45,6 +46,10 @@ void mmio_dispatch(struct vcpu *v, u64 esr)
          * 必须代 retire(pc+=4),否则 ERET 原地重执行->无穷陷阱环。 */
         {
             u32 srt = (u32)((iss >> 16) & 0x1FUL);
+            u32 sas = (u32)((iss >> 22) & 0x3UL);   /* SAS 编码:0/1/2/3 */
+            u32 size = 1u << sas;                  /* 字节数:1/2/4/8(别把
+                                                     * 编码值当字节数传——
+                                                     * 半字掩码吃掉 4 字节读) */
             bool wnr = ((iss >> 6) & 1UL) != 0;
 
             switch (d->dev) {
@@ -62,6 +67,24 @@ void mmio_dispatch(struct vcpu *v, u64 esr)
                 else if (srt != 31)
                     v->gprs[srt] = virtio_mmio_read(vm, (u32)vm->vmid,
                                                     ipa - d->ipa);
+                break;
+            case VM_DEV_VGICD:           /* 第十二站:vGIC distributor 面 */
+                if (wnr)
+                    vgic_dist_mmio_write(&vm->vgic, (u32)(ipa - d->ipa),
+                                         v->gprs[srt], size);
+                else if (srt != 31)
+                    v->gprs[srt] = vgic_dist_mmio_read(&vm->vgic,
+                                                        (u32)(ipa - d->ipa),
+                                                        size);
+                break;
+            case VM_DEV_VGICR:           /* vGIC redistributor 面(RD+SGI 帧) */
+                if (wnr)
+                    vgic_redist_mmio_write(&vm->vgic, (u32)(ipa - d->ipa),
+                                           v->gprs[srt], size);
+                else if (srt != 31)
+                    v->gprs[srt] = vgic_redist_mmio_read(&vm->vgic,
+                                                         (u32)(ipa - d->ipa),
+                                                         size);
                 break;
             default:
                 guest_fault(v, esr);      /* 表内未知设备:不变量破坏 */
