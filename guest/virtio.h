@@ -21,6 +21,7 @@ typedef unsigned char u8;
 #define VR_DEV_FEATURES   0x10u
 #define VR_DRV_FEATURES   0x20u
 #define VR_QUEUE_NUM      0x38u
+#define VR_QUEUE_ALIGN    0x3Cu        /* legacy:used 环对齐(4096) */
 #define VR_QUEUE_PFN      0x40u
 #define VR_QUEUE_NOTIFY   0x50u
 #define VR_INT_STATUS     0x60u
@@ -28,7 +29,7 @@ typedef unsigned char u8;
 #define VR_STATUS         0x70u
 
 #define VIRTIO_MAGIC     0x74726976u
-#define VIRTIO_VERSION   2u
+#define VIRTIO_VERSION   1u              /* v1=legacy 接口(第十四站修正) */
 #define VIRTIO_DEVID_BLK 2u
 
 #define ST_ACKNOWLEDGE 0x01u
@@ -114,6 +115,7 @@ static inline void virtio_blk_init(void)
 
     vr_write(VR_DRV_FEATURES, 0);           /* 零特性:读写已够 */
     vr_write(VR_QUEUE_NUM, VRING_NUM);
+    vr_write(VR_QUEUE_ALIGN, 4096u);       /* legacy 契约:先对齐后基址 */
     /* QueuePFN = 队列区基址页号(desc 起;used 由布局公式导出) */
     vr_write(VR_QUEUE_PFN, (u32)((unsigned long)g_vq >> 12));
 

@@ -91,13 +91,16 @@ void vgic_wake_waiter(void)
     gicv3_eoi_drop(GIC_PPI_VTIMER);
 }
 
-void vgic_inject_vtimer(void)
+void vgic_inject_vtimer(u8 prio)
 {
     /* HW 映射:vINTID=27(guest CNTV 视角),pINTID=27(物理同号线);
      * Group+HW+pending 三位全置——HW LR 的挂起语义由物理线驱动,EOI
      * 联动撤线。第八站位号正名:bit61=HW,bit62=State(pending),
-     * 缺状态位即 LR 无效(QEMU 弃投,实测 uart 首版只置 61 的教训)。 */
+     * 缺状态位即 LR 无效(QEMU 弃投,实测 uart 首版只置 61 的教训)。
+     * 站十四:[55:48] 优先级随 guest 自配(IPRIORITYR 镜像),
+     * 硬 0x00 会落进 Linux pseudo-NMI 阈值把 tick 走成 NMI 路径。 */
     u64 lr = GIC_PPI_VTIMER | (GIC_PPI_VTIMER << 32)   /* [31:0]v / [47:32]p */
+           | ((u64)(prio & 0xFFu) << 48)              /* [55:48] 优先级 */
            | ICH_LR_GROUP1 | ICH_LR_PENDING | ICH_LR_HW;
 
     __asm__ volatile("msr ich_lr0_el2, %0" :: "r"(lr));

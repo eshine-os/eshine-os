@@ -57,5 +57,6 @@ void vgic_redist_mmio_write(struct vgic *g, u32 off, u64 val, u32 size);
 /* 泵注入门控:distributor 是权威(guest 使能了才注入) */
 bool vgic_spi_enabled(const struct vgic *g, u32 intid);   /* INTID 32-63 */
 bool vgic_ppi_enabled(const struct vgic *g, u32 intid);   /* INTID 0-31 */
+u8    vgic_ppi_prio(const struct vgic *g, u32 intid);     /* 注入 LR 优先级镜像 */
 
 #endif /* ESHINE_VGIC_H */

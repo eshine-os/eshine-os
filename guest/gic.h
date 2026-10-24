@@ -44,8 +44,11 @@ static inline void gic_eoir(u64 intid)
 
 #define GICD_CTLR       0x000u
 #define GICD_TYPER      0x004u
-#define GICD_IGROUPR0   0x080u            /* SPI 面:寄存器 0 覆盖 INTID 32-63 */
-#define GICD_ISENABLER0 0x100u
+/* 站十四规范对齐(IHI0069):GICD 家族 word0(INTID 0-31)属重分发器
+ * 银行视图,guest 不从 GICD 动;SPI 32-63 在 word1——旧站曾以
+ * "寄存器 0 覆盖 32-63"自造约定,与宿主 vgic 译码同步对齐规范。 */
+#define GICD_IGROUPR1   0x084u            /* SPI 32-63 组 */
+#define GICD_ISENABLER1 0x104u            /* SPI 32-63 使能 */
 #define GICD_PIDR2      0xFFE8u
 
 #define GICR_RD_CTLR    0x000u
@@ -113,15 +116,15 @@ static void gic_dist_init(void)
 
     vgicr_write(GICR_SGI + GICR_IGROUPR0, 0xFFFFFFFFu);   /* 全组 1 */
     vgicr_write(GICR_SGI + GICR_ISENABLER0, 1u << 27);    /* PPI 27 vtimer */
-    vgicd_write(GICD_IGROUPR0, 0xFFFFFFFFu);
-    vgicd_write(GICD_ISENABLER0, (1u << 1) | (1u << 3));  /* SPI 33+35 */
+    vgicd_write(GICD_IGROUPR1, 0xFFFFFFFFu);
+    vgicd_write(GICD_ISENABLER1, (1u << 1) | (1u << 3)); /* SPI 33+35 */
 
     /* 回读验证:写经陷阱入模型,读再经陷阱出模型——使能真的落了地 */
     if ((vgicr_read(GICR_SGI + GICR_ISENABLER0) & (1u << 27)) == 0u) {
         puts_uart("gic FAIL: ppi27\n");
         return;
     }
-    if (vgicd_read(GICD_ISENABLER0) != ((1u << 1) | (1u << 3))) {
+    if (vgicd_read(GICD_ISENABLER1) != ((1u << 1) | (1u << 3))) {
         puts_uart("gic FAIL: spi\n");
         return;
     }

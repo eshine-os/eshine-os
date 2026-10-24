@@ -138,6 +138,13 @@ void virtio_mmio_write(struct eshine_vm *vm, u32 vmid, u64 off, u64 val)
         else
             vt->status |= VIRTIO_STATUS_FAILED;
         return;
+    case VIRTIO_REG_QUEUE_ALIGN:           /* legacy:布局公式按 4096 固化,
+                                             * 他值即 FAILED(诚实拒绝) */
+        if ((u32)val == 4096u)
+            vt->queue_align = (u32)val;
+        else
+            vt->status |= VIRTIO_STATUS_FAILED;
+        return;
     case VIRTIO_REG_QUEUE_PFN:
         vt->queue_pfn = (u32)val;
         vt->last_avail = 0;                 /* 新队列:消费点归零 */
@@ -166,7 +173,7 @@ u64 virtio_mmio_read(struct eshine_vm *vm, u32 vmid, u64 off)
     case VIRTIO_REG_MAGIC:
         return 0x74726976UL;                /* 'v','i','r','t' */
     case VIRTIO_REG_VERSION:
-        return 2UL;                         /* legacy */
+        return 1UL;                         /* legacy 接口(v1 真身) */
     case VIRTIO_REG_DEVICE_ID:
         return 2UL;                         /* block */
     case VIRTIO_REG_VENDOR_ID:
@@ -185,7 +192,15 @@ u64 virtio_mmio_read(struct eshine_vm *vm, u32 vmid, u64 off)
         return vt->int_pend & 1UL;
     case VIRTIO_REG_STATUS:
         return vt->status;
+    case VIRTIO_REG_QUEUE_ALIGN:
+        return vt->queue_align;
     default:
+        if (off >= VIRTIO_REG_CONFIG && off < VIRTIO_REG_CONFIG + 8) {
+            /* virtio-blk 配置区:capacity(u64 LE,扇区数)。
+             * 越界读移出,防 shift>=64 UB */
+            u64 cap = VIRTIO_SECTORS;
+            return cap >> ((off - VIRTIO_REG_CONFIG) * 8);
+        }
         return 0UL;
     }
 }

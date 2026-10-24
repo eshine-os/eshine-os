@@ -25,10 +25,12 @@ _start:
     msr     vbar_el2, x0
     isb
 
-    /* 归一 SP bank:QEMU 直启 EL2 复位 SPSel=1(栈写进了 SP_EL2)。
-     * 规范:宿主 C 世界跑 SP_EL0(SPSel=0);SP_EL2 专用作异常进入栈
-     * (硬件:异常入 EL2 强制 SPSel=1),boot 后由 vcpu_init() 装载。 */
-    msr     spsel, #0
+    /* SP bank 规范(站十四修正):宿主 C 世界驻 SP_EL2(SPSel=1,与复位
+     * 同值);SP_EL0 全 EL 共享,归还 guest——arm64 内核在 EL1 以它存
+     * current(enter_from_kernel_mode 直读),宿主若借作栈,每次 eret
+     * 都把 .stack 指针灌给 guest,首个碰 current 的点即塌(Linux 实测
+     * 6M/秒向量自陷风暴;裸机客不读 SP_EL0,十三站无感)。 */
+    msr     spsel, #1
     ldr     x0, =__stack_top
     mov     sp, x0
 

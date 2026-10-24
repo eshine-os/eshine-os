@@ -96,16 +96,21 @@
 现场）→ vcpu_exit retire → vm_run `faulted -> VM_DEAD`。**坏 guest 杀不死
 hypervisor**；宿主自身异常仍是 panic+WFI（边界反转之处）。
 
-## SP bank 归一（27.04，gdb 实证后固化）
+## SP bank 归一（27.04 第十四站定型：全 EL 共享寄存器归还 guest）
 
-    _start: msr spsel,#0        宿主 C 世界 -> SP_EL0
-    vcpu_init(): SP_EL2 = excp_stack   异常进入专用栈
+    _start: msr spsel,#1        宿主 C 世界 -> SP_EL2（与复位同值）
     异常入 EL2: 硬件强制 SPSel=1 -> SP_EL2（任意时刻都有真栈）
-    guest@EL1h: SPSel=1 -> SP_EL1（与宿主 bank 无交集）
+    guest@EL1h: SPSel=1 -> SP_EL1；SP_EL0 = guest 的 current
+    陷阱帧: sp_el0@416（el1_trap/el2_trap 转写存，trap_resume 还，
+           vm_create 清零）——全 EL 共享寄存器随帧走
 
-QEMU 直启 EL2 复位 SPSel=1，宿主曾整体跑在 SP_EL2 上：vcpu_run 的
-excp-stack 舞步会覆盖活栈、切到从未初始化的 SP_EL0=0，导致 ERET 前
-宿主帧全为 flash 垃圾（host_ctx={0x20,0}，ret x17 落在 PA 0）。
+早期形态宿主 C 世界跑 SP_EL0：QEMU 复位 SPSel=1 下 excp_stack 舞步
+踩活栈的旧账（vcpu_init 预载撤销，桩自置栈顶）；更深的账是 Linux
+实测暴露的——arm64 内核在 EL1 以 **SP_EL0 存 current**（init_cpu_task
+写入），宿主借作栈则每次 ERET 把 .stack 指针灌给 guest 当 current，
+首个触碰点即无声向量自陷风暴（enter_from_kernel_mode 连环读，
+printk 亦需 current 故 Oops 无声）。SP_EL2 世界 + sp_el0 入帧后，
+该寄存器回到架构本义：guest 的。
 
 ## Stage-2 IPA 布局（两 VM 同构，仅 RAM 输出物理不同）
 
@@ -152,7 +157,7 @@ fault 隔离死）。guest 内联 asm 必须声明 x1-x17 clobber；跨超调用
 | PPI 接线 | 活体探针定案（不抄 DTB 槽位序） | CNTHP（宿主 tick）=INTID 26；CNTV（guest vtimer）=27；均为电平触发（不碰 ICFGR） |
 | HCR_EL2 | 宿主 0x10（IMO bit4）；guest 0x80002011（RW\|VM\|IMO\|TWI） | QEMU target_el_table rw=1 列：IMO 位是 EL2 物理 IRQ 回 EL2 的路由门；参考实现 sysregs.h 同值互证；vcpu_exit 恢复宿主值且 daifclr（异常进入自带掩码） |
 | EL2 IRQ 入口 | el2_trap 平衡桩（两组当前 EL 槽 + lower-EL 槽同接） | 单一入口,eret 直用 ELR/SPSR;guest 运行中的物理 tick 断入后原样回 guest |
-| 虚拟注入 | vgic_enable（ICH_VMCR=VPMR 全放行+VENG1、ICH_HCR En）+ vgic_inject_vtimer（LR0 = vINTID27\|pINTID27<<32\|G1\|pending\|HW） | 宿主对物理 27 只 EOIR 降优先级不 DIR；guest 虚 EOI（ICV 视图,EOIR 一发降+撤）经 HW-LR 硬件联动撤销物理线，电平线不重挂起 |
+| 虚拟注入 | vgic_enable（ICH_VMCR=VPMR 全放行+VENG1、ICH_HCR En）+ vgic_inject_vtimer（LR0 = vINTID27\|pINTID27<<32\|**优先级=guest 自配 IPRIORITYR 镜像**\|G1\|pending\|HW） | **站十四两路分治**：跑动客路径禁碰 CNTV、不熄 ctx，仅 EOIR 降物理优先级——Linux timer handler 轮询 ISTATUS 才认账、自 IMASK 落线、自装填下一拍，宿主越权代关即 jiffies 冻死（实测）；睡客路径（el2_irq_host）关线+熄火不变（WAIT 中无人替它落线）。LR 硬 0x00 优先级会落 Linux pseudo-NMI 阈值，故镜像 guest 配置 |
 | WFI 陷阱 | HCR.TWI → EC=0x01（ISS.TI=0）→ VCPU_WAIT | WFI 陷阱不 retire：宿主陪睡（EL2 wfi,滴答/vtimer 唤醒）后代其完成（vm_run 内 PC+4），guest 醒后自查 vtimer 标志（TWI 下 wfi() 永不"返回"） |
 
 中断数据观：未知 intid 记账 EOI 不 panic（同 fault 隔离哲学）；spurious(1023) 不动 EOIR。
@@ -282,12 +287,14 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 - LR 满兜底（maint PPI 25+UIE+ring）、UART IRQ 优先级/多中断源精细
   调度（当前单 RXIM）、多仿真设备表（当前 vuart 单设备）、CNTVOFF
   per-VM（当前共享 0）、vCPU>1/VM、优先级/实时策略、分配器
-  （vm_space/vcpu 由内嵌换动态）、VM0=RTOS 管理 VM / VM1=Linux guest
+  （vm_space/vcpu 由内嵌换动态）、VM0/VM1=裸机测试 guest / **VM2=Linux
+  guest（第十四站：6.6 LTS，Image 外置构建、stage-2 非恒等映射、
+  per-VM 诚实 DTB、端点=无 rootfs 的 VFS panic）**
 - 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（37 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（45 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] 前缀（陷阱 TX 整行冲刷判据）** + **guest 自报
@@ -308,9 +315,17 @@ token 双回显（RX 路由判据）+ **dwrite/dread（三描述符链→门铃�
 判据）** + **双醒后双活** + exit/VM_DEAD + **virtio 持久化（销毁→
 重建→旧数据仍在）** + fault 隔离（窗口外默认拒绝）+
 全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
-恢复判据）+ vmkill 拒绝路径，静态 marker 不算；连续 2 轮全绿才真绿）。
+恢复判据）+ vmkill 拒绝路径 + **Linux bring-up（第十四站：vmcreate 2/
+vmrun 2 → Booting Linux @CPU0（stage-2 非恒等映射 + DTB x0 启动协议）→
+Machine model: eshine-os,vm（诚实树）→ arch_timer virt 62.50MHz +
+arch_sys_counter clocksource（vtimer interrupt-names 接线 + 站十四注入
+不越权修复）→ GICv3 redistributor 探测（站十四 GICD 家族译码规范
+对齐：SPI 32-63 落 word1=0x104）→ ttyAMA0 enabled（第十三站 PL011
+全驱动交接）→ vda 128 blocks（virtio legacy 队列 + 完成中断链）→
+VFS panic 无 rootfs 端点 → 宿主完整（vmkill 拒 + tick 递增）**，
+静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物），shell help 内置
-37 步手动走查清单。
+45 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出。

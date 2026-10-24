@@ -112,7 +112,14 @@ u64 vgic_dist_mmio_read(struct vgic *g, u32 off, u32 size)
     base = dist_family_base(off);
     if (base == 0xFFFFFFFFu || (off & 3UL) != 0)
         return 0;                        /* 未知:RAZ */
+    /* 站十四规范对齐:家族内 word0 = INTID 0-31 银行视图(GICv3 属当前
+     * CPU 重分发器面,guest 不应从 GICD 动——RAZ 诚实拒绝);word1 起
+     * = SPI 32-63(Linux 按 IHI0069 写 ISENABLER1=0x104,旧译码把这
+     * 发丢在 n>=VGIC_SPI_WORDS 里,guest 的 SPI 从未使能,gate 实测)。 */
     n = (off - base) >> 2;
+    if (n == 0u)
+        return 0;                        /* 银行 word:RAZ */
+    n -= 1u;
     if (n >= VGIC_SPI_WORDS)
         return 0;
     switch (base) {
@@ -150,7 +157,12 @@ void vgic_dist_mmio_write(struct vgic *g, u32 off, u64 val, u32 size)
     base = dist_family_base(off);
     if (base == 0xFFFFFFFFu || (off & 3UL) != 0)
         return;                           /* 未知:WI */
+    /* 同读侧:word0 = 银行视图 WI(SGI/PPI 请走 GICR SGI 帧),
+     * word1 起 = SPI 面(Linux 写 0x104/0x184/... 落此)。 */
     n = (off - base) >> 2;
+    if (n == 0u)
+        return;
+    n -= 1u;
     if (n >= VGIC_SPI_WORDS)
         return;
     if (base == 0x080u) {                /* IGROUPR:直写 */
@@ -187,6 +199,11 @@ void vgic_dist_mmio_write(struct vgic *g, u32 off, u64 val, u32 size)
 
 u64 vgic_redist_mmio_read(struct vgic *g, u32 off, u32 size)
 {
+    if (off == 0xFFE8u)                  /* PIDR2:GICv3 判据位 [7:4]=3——RD 帧
+                                          * 身份证;Linux gic_iterate_rdists
+                                          * 先验它再谈 TYPER(本站战况:漏配
+                                          * 它 ="No redistributor present") */
+        return 0x30u;
     if (off == 0x008u)                   /* TYPER:亲和全 0,ProcessorNumber=0,
                                           * Last(bit4)=1:单帧单核 */
         return word_read(0x10u, off, size);
@@ -278,4 +295,14 @@ bool vgic_ppi_enabled(const struct vgic *g, u32 intid)
     if (intid >= 32u)
         return false;
     return (g->sgi_isenabler0 >> intid) & 1u;
+}
+
+/* 站十四:guest 自配的 PPI 优先级(IPRIORITYR SGI 帧镜像)。
+ * 注入 LR 的优先级随它——硬编码 0x00 会落进 Linux pseudo-NMI
+ * 阈值内,把 tick 走成 NMI 路径;guest 配了什么就用什么。 */
+u8 vgic_ppi_prio(const struct vgic *g, u32 intid)
+{
+    if (intid >= 32u)
+        return 0u;
+    return g->sgi_ipriorityr[intid];
 }

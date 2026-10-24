@@ -17,6 +17,7 @@
  *   [24] ISV(寄存器现场有效) [23:22] SAS(访问宽) [21:16] SRT(寄存器号)
  *   [6] WnR(1=写) [5:0] DFSC */
 void mmio_dispatch(struct vcpu *v, u64 esr) __attribute__((noreturn));
+
 void mmio_dispatch(struct vcpu *v, u64 esr)
 {
     u64 iss = esr & 0x1FFFFFFUL;

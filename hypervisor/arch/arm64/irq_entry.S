@@ -70,6 +70,14 @@ el2_trap_guest:
     ldr     x1, [x0]
     cbz     x1, 9f
     bl      preempt_save_frame           /* 帧 -> cur_vcpu 陷阱帧 */
+    /* PREEMPT 转写出口归位 SP(el1_trap 同款哲学,站十四战况:此口曾
+     * 不还,vcpu_exit noreturn 后续跑泵链,SP 棘轮每发 guest-tick 净泄
+     * 256B——裸机站 tick 节奏无感,Linux 全程 RUNNING,16s 碾穿 4KB
+     * 栈底踩进 .data,cur_vcpu 遭灾成 guest 内核 VA,宿主崩于 EL2)。 */
+    adrp    x0, excp_stack
+    add     x0, x0, :lo12:excp_stack
+    add     x0, x0, #0x1000             /* 栈顶 = excp_stack + 512*8 */
+    mov     sp, x0
     bl      vcpu_exit                   /* noreturn:PREEMPT 让位 */
 9:
     ldp     x0, x1,  [sp, #16]
@@ -131,6 +139,8 @@ preempt_save_frame:
     str     x0, [x29, #224]             /* guest x28 */
     mrs     x0, sp_el1
     str     x0, [x29, #248]
+    mrs     x0, sp_el0                /* 站十四:guest current 随帧转写 */
+    str     x0, [x29, #416]
     mrs     x0, elr_el2
     str     x0, [x29, #256]
     mrs     x0, spsr_el2

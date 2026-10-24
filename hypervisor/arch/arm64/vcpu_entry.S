@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 /* vCPU 出入口。偏移契约见 vcpu.h:gprs[31]@0 sp@248 pc@256 pstate@264
- * host_ctx@272(x19..x28@272-344,sp@352,lr@360)。 */
+ * host_ctx@272(x19..x28@272-344,sp@352,lr@360) sp_el0@416。 */
 .section .text
 
 /* ---- 陷阱入口:lower-EL sync 向量槽 b 进来,SPSel=1(sp=SP_EL2=excp_stack)
@@ -30,6 +30,8 @@ el1_trap:
     str     x1, [x0]
     mrs     x1, sp_el1
     str     x1, [x0, #248]
+    mrs     x1, sp_el0                /* 站十四:guest current,逐陷阱入帧 */
+    str     x1, [x0, #416]
     mrs     x1, elr_el2
     str     x1, [x0, #256]
     mrs     x1, spsr_el2
@@ -47,6 +49,8 @@ el1_trap:
 trap_resume:                          /* x0 = vcpu */
     ldr     x1, [x0, #248]
     msr     sp_el1, x1
+    ldr     x1, [x0, #416]             /* 站十四:还原 guest current */
+    msr     sp_el0, x1
     ldr     x1, [x0, #256]
     msr     elr_el2, x1
     ldr     x1, [x0, #264]
@@ -97,6 +101,5 @@ vcpu_return_host:                     /* x0 = vcpu */
     ldp     x25, x26, [x0, #320]
     ldp     x27, x28, [x0, #336]
     ldp     x16, x17, [x0, #352]
-    msr     spsel, #0
-    mov     sp, x16
+    mov     sp, x16                   /* 宿主 C 世界同驻 SP_EL2,免切 */
     ret     x17

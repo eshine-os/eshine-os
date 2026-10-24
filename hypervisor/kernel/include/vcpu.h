@@ -5,11 +5,13 @@
 
 #include "kernel/include/types.h"
 
-/* 陷阱帧:guest 完整现场。偏移即 asm 契约(vcpu_entry.S):
+/* 陷阱帧:guest 完整现场。偏移即 asm 契约(vcpu_entry.S/irq_entry.S):
  * gprs[31]@0(x0@0...x30@240) sp@248 pc@256 pstate@264
  * host_ctx@272(x19@272...x28@344,sp@352,lr@360) exit_reason@368
  * wait_state@376 slice_left@384 wait_reason@392
- * vtimer_ctl@400 vtimer_cval@408(第五-八站尾扩,asm 不触及) */
+ * vtimer_ctl@400 vtimer_cval@408(第五-八站尾扩,asm 不触及)
+ * sp_el0@416(第十四站:SP_EL0 全 EL 共享,EL1 内核以它存 current,
+ * 宿主 EL2 栈改驻 SP_EL2 后仍须逐陷阱存还,多 VM 共享硬件最后一份) */
 struct vcpu {
     u64 gprs[31];              /* x0-x30:陷阱入口全量保存,EL2 可自由用寄存器 */
     u64 sp;                     /* SP_EL1 */
@@ -27,6 +29,7 @@ struct vcpu {
     u64 vtimer_ctl;             /* 第七站 per-VM vtimer ctx:cortex-a57 无 CNTV
                                  * 陷阱位(guest 直写物理),泵切出存/切入还 */
     u64 vtimer_cval;
+    u64 sp_el0;                 /* guest SP_EL0(arm64 内核 current;第十四站) */
 };
 
 /* 退回宿主的原因码(vcpu_run 返回值) */

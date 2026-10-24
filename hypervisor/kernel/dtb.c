@@ -9,4 +9,9 @@ asm(".section .rodata\n"
     "eshine_dtb:\n"
     ".incbin \"tools/dtb/eshine-vm.dtb\"\n"
     ".global eshine_dtb_end\n"
-    "eshine_dtb_end:\n");
+    "eshine_dtb_end:\n"
+    ".global eshine_linux_dtb\n"
+    "eshine_linux_dtb:\n"
+    ".incbin \"tools/dtb/eshine-linux.dtb\"\n"
+    ".global eshine_linux_dtb_end\n"
+    "eshine_linux_dtb_end:\n");

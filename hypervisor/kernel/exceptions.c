@@ -7,6 +7,7 @@
 #include "kernel/include/sched.h"
 #include "kernel/include/types.h"
 #include "kernel/include/vcpu.h"
+#include "kernel/include/vm.h"           /* vm_of_vcpu(探针) */
 
 void el2_sync(void)
 {
@@ -71,15 +72,46 @@ void el2_irq_guest(void)
         sched_vtimer_sweep();               /* 每拍表扫:多等待者到期判定 */
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
-        /* 第七站不变量:物理 CNTV 恒为"当前客"的——guest 态 27 即
-         * 其本人到点。直注 LR0(eret 后自认领,无串台:主人就是它),
-         * 同步熄火 ctx;关线+降优先级与第四站醒路径同构。 */
-        cur_vcpu->vtimer_ctl = 0UL;         /* ctx 熄火 */
-        vgic_wake_waiter();
-        vgic_inject_vtimer();
+        /* 站十四:此路 guest 在跑,其 timer_handler 是轮询式
+         * (读 CNTV ISTATUS 才认账)——关线/熄火会让它读到 0 而
+         * IRQ_NONE 丢 tick,Linux 实测 jiffies 冻死、整靴停在首个
+         * msleep。正确姿势:不许动 CNTV(guest 的 handler 自会
+         * IMASK 落线+重装下一拍),ctx 也不熄(泵切出时保存的才是
+         * 真相);关线+熄火只属于睡客路径(el2_irq_host:WAIT 中
+         * 没人替它落线)。电平重挂窗口=guest 进 handler 的几条
+         * 指令,陷阱间恒前进,自限。EOI-drop 照做:claim 抬起的
+         * 物理 RPR 不还,后续 26/27 全哑(物理 active 位不撤无妨,
+         * active+pending 照常可投)。 */
+        gicv3_eoi_drop(GIC_PPI_VTIMER);
+        vgic_inject_vtimer(vgic_ppi_prio(&vm_of_vcpu(cur_vcpu)->vgic,
+                                         GIC_PPI_VTIMER));
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
     }
+}
+
+void el2_unexpected(void);
+
+/* lower-EL 物理 SError(AMO 路由,第十四站):guest 侧不可修复的异步错,
+ * 现场全打 + 隔离死——诊断期首要取证口。 */
+void el1_serror(void)
+{
+    u64 esr, far, elr;
+
+    __asm__ volatile("mrs %0, esr_el2" : "=r"(esr));
+    __asm__ volatile("mrs %0, far_el2" : "=r"(far));
+    __asm__ volatile("mrs %0, elr_el2" : "=r"(elr));
+    console_puts("[SERROR-from-EL1] ESR=");
+    console_puthex(esr);
+    console_puts(" FAR=");
+    console_puthex(far);
+    console_puts(" ELR=");
+    console_puthex(elr);
+    console_puts("\n");
+    if (cur_vcpu) {
+        guest_fault(cur_vcpu, esr);   /* 隔离死:同 fault 哲学 */
+    }
+    el2_unexpected();
 }
 
 void el2_unexpected(void)

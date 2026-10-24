@@ -164,8 +164,11 @@ void vuart_mmio_write(struct vuart *vu, u32 vmid, u64 off, u64 val, bool fg)
     }
     if (off != UART_DR)
         return;                        /* FR/身份证等写忽略 */
-    /* CR 真语义:关机态/无 TXE 写 DR 无效(真 PL011 同律) */
-    if ((vu->cr & (CR_UARTEN | CR_TXE)) != (CR_UARTEN | CR_TXE))
+    /* CR 语义:TX 门 = TXE(第十四站放宽:内核 pl011 earlycon 只挂
+     * write 回调直写 DR,不置 UARTEN——Linux 6.6 源码实证;真芯片此处
+     * TRM 有模糊区,QEMU 亦不关门。仿真器务实主义:门在配置面(TXE),
+     * 不在开关面(UARTEN)。RX 中断门保留 UARTEN|RXE 双条件不动。 */
+    if ((vu->cr & CR_TXE) == 0u)
         return;
     if (fg) {
         /* 前台裸透传;切前台前若残留后台半行,按其 tag 先冲 */

@@ -11,7 +11,7 @@
 #include "kernel/include/types.h"
 #include "kernel/include/vcpu.h"
 
-#define ESHINE_MAX_VMS    2
+#define ESHINE_MAX_VMS    3           /* 槽 0/1 裸机双客;槽 2 Linux(第十四站) */
 #define ESHINE_MAX_VCPUS  1           /* 本站每 VM 1 vCPU */
 #define ESHINE_MAX_MEM    4
 #define ESHINE_MAX_DEV    4

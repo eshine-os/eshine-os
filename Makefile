@@ -41,12 +41,13 @@ $(OBJS): VERSION
 
 # 第十一站:设备树。blob 由 dts 编译(dtc;无 dtc 时用随仓提交的 .dtb),
 # incbin 在汇编期展开,-MMD 抓不到 -> dtb.o 显式依赖 blob
-tools/dtb/eshine-vm.dtb: tools/dtb/eshine-vm.dts
-	dtc -q -I dts -O dtb -o $@ $<
-hypervisor/kernel/dtb.o: tools/dtb/eshine-vm.dtb
+tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb: tools/dtb/eshine-vm.dts tools/dtb/eshine-linux.dts
+	dtc -q -I dts -O dtb -o tools/dtb/eshine-vm.dtb tools/dtb/eshine-vm.dts
+	dtc -q -I dts -O dtb -o tools/dtb/eshine-linux.dtb tools/dtb/eshine-linux.dts
+hypervisor/kernel/dtb.o: tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb
 
 # make run 与 make verify 同构:同一构建产物(含 guest 双镜像),
-# run 走 run_qemu.sh 交互,verify 走 37 步门禁——两者验的是同一个 elf
+# run 走 run_qemu.sh 交互,verify 走 45 步门禁——两者验的是同一个 elf
 run: $(TARGET) guest1.bin guest2.bin
 	./scripts/run_qemu.sh
 

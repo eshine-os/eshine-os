@@ -14,17 +14,34 @@
 
 static struct eshine_vm vm_table[ESHINE_MAX_VMS];
 
-/* 预定义配置:RAM 窗口不重叠 —— VM0 0x50000000/16MB, VM1 0x51000000/16MB,
- * 同 IPA 0x40000000 不同 PA,隔离由映射层保证(物理事实,非约定)。 */
+/* 预定义配置(第十四站几何表化):RAM 窗口不重叠 —— VM0 0x50000000/16MB,
+ * VM1 0x51000000/16MB,VM2(Linux)0x58000000/128MB(恰占满 QEMU 512MB 顶,
+ * 与 0/1 槽有安全距离);同 IPA 0x40000000 不同 PA,隔离由映射层保证
+ * (物理事实,非约定)。入口与 x0(DTB 指针,Linux 入口协议)随槽几何化。 */
 #define VM_RAM_IPA    0x40000000UL
-#define VM_RAM_SIZE   0x1000000UL     /* 16MB = 8 个 2MB block */
 #define VM_UART_IPA   0x09000000UL
 #define VM_UART_PA    0x09000000UL
 #define VM_UART_SIZE  0x1000UL
-#define VM_DTB_OFF    0xF00000UL      /* 第十一站:DTB 固定偏移,guest 视角 0x4F000000 */
+#define VM_DTB_IPA    0x40F00000UL    /* guest 视角 DTB 指针(= RAM_IPA + 0xF00000) */
+#define VM_DTB_OFF    0xF00000UL      /* 第十一站:固定偏移,bootloader 同构 */
 #define VM_DTB_BUDGET 0x10000UL        /* 64KB 预算 */
 
-static const u64 vm_ram_pa[ESHINE_MAX_VMS] = { 0x50000000UL, 0x51000000UL };
+struct vm_geometry {
+    u64 ram_pa;
+    u64 ram_size;
+    u64 entry;                     /* IPA 入口:裸机=RAM 基,Linux=+0x80000(text_offset) */
+    const unsigned char *dtb;      /* per-slot 树(第十四站:裸机/Linux 两树) */
+    const unsigned char *dtb_end;
+};
+
+static const struct vm_geometry vm_geo[ESHINE_MAX_VMS] = {
+    [0] = { 0x50000000UL, 0x1000000UL, 0x40000000UL,
+            eshine_dtb, eshine_dtb_end },
+    [1] = { 0x51000000UL, 0x1000000UL, 0x40000000UL,
+            eshine_dtb, eshine_dtb_end },
+    [2] = { 0x58000000UL, 0x8000000UL, 0x40080000UL,   /* Linux:128MB,Image@+0x80000 */
+            eshine_linux_dtb, eshine_linux_dtb_end },
+};
 
 static void vm_id_label(u32 id)
 {
@@ -88,8 +105,8 @@ int vm_create(u32 id)
     vm->vmid = id;
     vm->n_mem = 1;
     vm->mem[0].ipa  = VM_RAM_IPA;
-    vm->mem[0].pa   = vm_ram_pa[id];
-    vm->mem[0].size = VM_RAM_SIZE;
+    vm->mem[0].pa   = vm_geo[id].ram_pa;
+    vm->mem[0].size = vm_geo[id].ram_size;
     vm->mem[0].attr = S2_ATTR_NORMAL;
     vm->devices[0].ipa  = VM_UART_IPA;
     vm->devices[0].pa   = 0;                /* 仿真设备无 PA:不映射,只有窗口 */
@@ -106,18 +123,19 @@ int vm_create(u32 id)
      * 头校验(magic+totalsize==实测)+预算检查,坏 blob 默认拒绝 create;
      * 双 VM 共树(IPA 硬件一致),EL2 恒等映射直写 PA 即可。 */
     {
-        u64 dtb_size = (u64)(eshine_dtb_end - eshine_dtb);
-        u32 be32_0 = ((u32)eshine_dtb[0] << 24) | ((u32)eshine_dtb[1] << 16) |
-                     ((u32)eshine_dtb[2] << 8) | (u32)eshine_dtb[3];
-        u32 be32_4 = ((u32)eshine_dtb[4] << 24) | ((u32)eshine_dtb[5] << 16) |
-                     ((u32)eshine_dtb[6] << 8) | (u32)eshine_dtb[7];
+        const unsigned char *blob = vm_geo[id].dtb;
+        u64 dtb_size = (u64)(vm_geo[id].dtb_end - blob);
+        u32 be32_0 = ((u32)blob[0] << 24) | ((u32)blob[1] << 16) |
+                     ((u32)blob[2] << 8) | (u32)blob[3];
+        u32 be32_4 = ((u32)blob[4] << 24) | ((u32)blob[5] << 16) |
+                     ((u32)blob[6] << 8) | (u32)blob[7];
         if (be32_0 != 0xd00dfeedUL || be32_4 != dtb_size ||
             dtb_size > VM_DTB_BUDGET) {
             vm_id_label(id);
             console_puts("dtb rejected (bad blob)\n");
             return -1;
         }
-        memcpy((void *)(vm_ram_pa[id] + VM_DTB_OFF), eshine_dtb, dtb_size);
+        memcpy((void *)(vm_geo[id].ram_pa + VM_DTB_OFF), blob, dtb_size);
     }
     vuart_init(&vm->vu);
     memset(&vm->virtio, 0, sizeof(vm->virtio));  /* regs 复位;磁盘数据不在生命周期内 */
@@ -136,10 +154,12 @@ int vm_create(u32 id)
     vm->devices[3].attr = S2_ATTR_EMULATED;
     vm->devices[3].dev  = VM_DEV_VGICR;
     vm->n_dev = 4;                     /* 四设备满编 */
-    vm->vcpus[0].pc = VM_RAM_IPA;              /* 帧即真相:新跑=初始化帧 */
+    vm->vcpus[0].pc = vm_geo[id].entry;        /* 帧即真相:新跑=初始化帧 */
     vm->vcpus[0].sp = 0x40200000UL;            /* guest 自会重设 */
     vm->vcpus[0].pstate = 0x3C5UL;            /* EL1h + DAIF 全掩 */
     memset(vm->vcpus[0].gprs, 0, sizeof(vm->vcpus[0].gprs));
+    vm->vcpus[0].gprs[0] = VM_DTB_IPA;         /* x0=DTB 指针(bootloader 义务;
+                                                 * 裸机 guest 不读,Linux 入口协议) */
     vm->vcpus[0].exit_reason = VCPU_EXIT;
     /* 帧尾复位(第五-八站字段):DEAD->INIT 槽位复用时不许带出旧值
      * (wait_state 残 1 则新客永不被泵,潜在雷实测前修) */
@@ -147,6 +167,9 @@ int vm_create(u32 id)
     vm->vcpus[0].wait_reason = 0UL;
     vm->vcpus[0].vtimer_ctl = 0UL;
     vm->vcpus[0].vtimer_cval = 0UL;
+    vm->vcpus[0].sp_el0 = 0UL;        /* 站十四:guest current 槽清零起步
+                                       * (Linux primary 早期 init_cpu_task
+                                       * 自会写入 init_task) */
 
     if (stage2_build(&vm->space, vm->vmid, vm->mem, vm->n_mem,
                      vm->devices, vm->n_dev) != 0) {
@@ -182,6 +205,16 @@ int vm_start(u32 id)
         vm_id_label(id);
         console_puts("denied: vmcreate first\n");
         return -1;
+    }
+    if (!resumed) {
+        /* VM 出生即清 stage-1(第十四站从 vcpu_run 收编至此:进场不许
+         * 碰 guest 的 SCTLR_EL1,出生清一次防上一位 guest 的陈旧页表
+         * 泄给新客;Linux 随后自会置 M 走两级翻译)。 */
+        u64 sctlr;
+
+        __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
+        sctlr &= ~1UL;
+        __asm__ volatile("msr sctlr_el1, %0" :: "r"(sctlr));
     }
     vm_id_label(id);
     if (resumed)
@@ -313,8 +346,10 @@ bool sched_pump(void)
             if (v->wait_reason == VCPU_WAIT_TIMER) {
                 /* 第十二站:注入过门控——guest 没使能 PPI 27 就不注入,
                  * 也不代完成(它自己的配置自己负责;隔离面哲学) */
-                if (vgic_ppi_enabled(&vm->vgic, GIC_PPI_VTIMER))
-                    vgic_inject_vtimer();   /* per-pCPU 单 LR 只能泵挂 */
+                if (vgic_ppi_enabled(&vm->vgic, GIC_PPI_VTIMER)) {
+                    vgic_inject_vtimer(vgic_ppi_prio(&vm->vgic,
+                                                     GIC_PPI_VTIMER));/* per-pCPU 单 LR 只能泵挂 */
+                }
             }
             v->wait_state = 0UL;
             v->wait_reason = 0UL;
@@ -375,15 +410,25 @@ int vm_kill(u32 id)
         return -1;
     }
     vm = &vm_table[id];
-    if (vm->state != VM_CREATED && vm->state != VM_PAUSED) {
+    /* 站十四:RUNNING 也入列——宿主对僵尸客的绝对处决权。ARM 单核
+     * 无 EL2 级不可屏蔽抢占(DAIF 关尽的死循环客把 PPI26 也挡掉,
+     * Linux panic 后实测 shell 冻结),管理面处决是唯一解;无异步
+     * 问题:shell 命令即原子段,执行时泵必不在跑,帧为静态槽位。
+     * 死客(INIT/DEAD)拒绝:无事可做,防误报。 */
+    if (vm->state != VM_CREATED && vm->state != VM_PAUSED &&
+        vm->state != VM_RUNNING) {
         vm_id_label(id);
-        console_puts("kill denied (CREATED/PAUSED only, no async kill)\n");
+        console_puts("kill denied (dead or never created)\n");
         return -1;
+    }
+    if (sched_console_owner == &vm->vcpus[0]) {
+        sched_console_owner = NULL;         /* 管理面接管输入路由 */
+        console_puts("console -> host\n");
     }
     vm_transition(vm, VM_TEARDOWN);
     vm_transition(vm, VM_DEAD);
     vm_id_label(id);
-    console_puts("killed before run\n");
+    console_puts("killed (host authority)\n");
     return 0;
 }
 

@@ -60,6 +60,8 @@
 
 	timer {
 		interrupts = <0x01 0x0b 0x04>;	/* 只留虚拟定时器 PPI 11 = INTID 27 */
+		interrupt-names = "virt";	/* 稀疏接线声明:Linux 按名映射到 virt 槽
+						 (按 index 会错落 sec-phys 槽) */
 		always-on;
 		compatible = "arm,armv8-timer";
 	};

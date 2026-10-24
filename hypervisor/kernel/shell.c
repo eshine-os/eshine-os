@@ -19,7 +19,7 @@ static void cmd_help(void)
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
     console_puts("          vmrun <id> vmconsole <id|host> vmstat vmkill <id>\n");
     console_puts("guest:    selftest sleep [N] spin dwrite dread fault echo <text> host exit\n");
-    console_puts("make verify walkthrough (37 步;与 make run 同一构建,可手动过):\n");
+    console_puts("make verify walkthrough (45 步;与 make run 同一构建,可手动过):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [3]\n");
     console_puts("  tick x2             -> ticks 递增             [4]\n");
     console_puts("  vmls / vmcreate 0   -> 空表 / CREATED         [5-6]\n");
@@ -52,6 +52,15 @@ static void cmd_help(void)
     console_puts("  vmconsole 1+回车 / fault   -> 隔离死          [32]\n");
     console_puts("  vmls / echo 复验 / tick x2 -> 双 DEAD/仍递增   [33-35]\n");
     console_puts("  vmkill 1 / vmstat   -> denied / 收尾          [36-37]\n");
+    console_puts("  vmcreate 2 / vmrun 2 -> Booting Linux @CPU0    [38]\n");
+    console_puts("    (stage-2 非恒等 + DTB x0 boot 协议)\n");
+    console_puts("  Machine model       -> eshine-os,vm(诚实树)  [39]\n");
+    console_puts("  arch_timer (virt)   -> 62.50MHz + clocksource [40]\n");
+    console_puts("  GICv3 redistributor -> vGICD/vGICR 规范译码   [41]\n");
+    console_puts("  ttyAMA0 enabled     -> PL011 全驱动交接       [42]\n");
+    console_puts("  vda 128 blocks      -> virtio 完成中断链      [43]\n");
+    console_puts("  VFS panic           -> 无 rootfs 端点         [44]\n");
+    console_puts("  vmkill 2 / tick     -> 僵尸处决,宿主完整     [45]\n");
 }
 
 static void cmd_version(void)
@@ -59,7 +68,7 @@ static void cmd_version(void)
     console_puts(ESHINE_BANNER "\n");
     console_puts("  hypervisor:  " ESHINE_VERSION_STR "\n");
     console_puts("  rtos:        not-yet (VM0 management domain, planned)\n");
-    console_puts("  guest-linux: not-yet (upstream LTS pinned per release)\n");
+    console_puts("  guest-linux: Linux 6.6 LTS boots to VFS panic (slot 2)\n");
 }
 
 static void cmd_echo(const char *args)
