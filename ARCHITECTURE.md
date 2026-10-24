@@ -249,15 +249,23 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 真绿门禁：`python3 tools/verify/verify_el2.py`（31 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
-空表 + vmcreate + vmrun 0 异步 → **后台 banner [vm0] 前缀（陷阱 TX
-整行冲刷判据）** + **RX 唤醒链（入环→直通 runnable→FR 命中→prompt
-重打）** + VM0 selftest（寄存器跨 100 MMIO 陷阱）+ HVC#4 交还 +
+空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
+**后台 banner [vm0] 前缀（陷阱 TX 整行冲刷判据）** + **guest 自报
+uart irq on（RXIM/vSPI 33）** + **guest 自报 virtio blk on（probe 三验
+→DRIVER_OK/vSPI 35）** + **RX 唤醒链（入环→直通 runnable→FR 命中→
+prompt 重打）** + VM0 selftest（寄存器跨 100 MMIO 陷阱）+ HVC#4 交还 +
 vmstat 可读 + vm1 同律（[vm1] 前缀）+ 双 RUNNING + 双 VM 交错
-token 双回显（RX 路由判据）+ spin 3G 前后 preempts 差 >=2（纯计算
+token 双回显（RX 路由判据）+ **dwrite/dread（三描述符链→门铃→
+完成中断判据）** + spin 3G 前后 preempts 差 >=2（纯计算
 负载跨量子，帧转写无损判据）+ WAIT 公平（vm0 睡时宿主/vm1 活）+
-后台醒（WOKE→泵注入）+ exit/VM_DEAD + fault 隔离（窗口外默认拒绝）+
+后台醒（WOKE→泵注入）+ **双睡定序（后武装者先醒，min-deadline
+判据）** + **双醒后双活** + exit/VM_DEAD + **virtio 持久化（销毁→
+重建→旧数据仍在）** + fault 隔离（窗口外默认拒绝）+
 全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
 恢复判据）+ vmkill 拒绝路径，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物），shell help 内置
 31 步手动走查清单。
+**同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
+verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
+——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出。
 CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。
