@@ -218,17 +218,23 @@ cortex-a57(v8.0) 无 CNTV 陷阱位（guest 直写物理），泵以切换对齐
 切入还本人 ctx、切出即存（全出口），物理恒为"当前客"的；CNTVOFF
 共享 0（双 guest 同墙钟）。
 
-设备表化与 vblk（第九站）：vm_device 增 dev 字段，窗口命中按
-VM_DEV_VUART/VM_DEV_VBLK 分发。vblk = RAM 磁盘块设备：**内存即
-传输面，寄存器即门铃**（virtqueue 种子）——数据缓冲在 guest 自有
-RAM，宿主经 vm_ipa_to_pa（mem[] 静态映射）首次直访 guest 物理内存；
-MMIO 只承载 CMD 门铃/ADDR/STATUS/CAP/IMSC；服务在门铃陷阱内同步
-完成，**异步的只有完成中断**（ris+imsc → 泵注 LR2 vSPI 34 →
-guest ISR 读 STATUS 清挂起）——请求→服务→完成→ISR 的完整设备
-生命周期。参数越界置 err 照常完成（设备级默认拒绝，不杀 guest）。
-**持久化=结构保证**：静态磁盘数组不经 vm_create 复位，销毁重建
-数据仍在。中断通道编号化：LR0=vtimer(HW)/LR1=vuart/LR2=vblk
-（a57 四槽）。
+设备表化（第九站起）：vm_device 增 dev 字段，窗口命中按
+VM_DEV_VUART/VM_DEV_VIRTIO 分发。
+
+virtio（第十站）：**virtio-mmio legacy + split virtqueue +
+virtio-blk**——第九站 vblk 的"virtqueue 种子"长成行业标准设备，
+自制协议退役、同一静态磁盘移交（迁移即结构连续）。寄存器最小集
+（magic 0x74726976/version 2/DeviceID 2/QueueSel/QueueNumMax=8/
+QueuePFN/QueueNotify 门铃/InterruptStatus-ACK/Status，**DRIVER_OK
+兼任中断使能**）；split virtqueue legacy 布局公式（desc 16N/avail
+紧随/used 4096 对齐，宿主与 guest 驱动两侧自洽）；门铃路径：
+扫 avail → 三描述符链解析（header/data/status，静态翻译直访
+guest RAM）→ 扇区 I/O → used 环 append → 完成挂起 → 泵注
+**LR3 vSPI 35**（新号与 vblk 时代 34 代际区分）→ guest ISR 读
+InterruptStatus/ACK 清挂起。畸形链跳过，参数越界 status=ERR 照常
+完成（设备级默认拒绝）。**持久化=结构保证**：静态磁盘数组不经
+vm_create 复位，销毁重建数据仍在。中断通道编号化：
+LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 路线注记（范围外，记录归属）
 
