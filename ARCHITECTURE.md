@@ -295,14 +295,15 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
   per-VM（当前共享 0）、vCPU>1/VM、优先级/实时策略、分配器
   （vm_space/vcpu 由内嵌换动态）、**VM0=eshine-rtos 任务内核客（第十六
   站：参考RTOS 公开设计为基准的从零最小人格——32 级位图抢占+tick 100Hz+
-  IRQ 驱动壳；SIMD per-VM 帧入泵）** / VM1=裸机对照组（guest2.bin）/
+  IRQ 驱动壳；SIMD per-VM 帧入泵；第十七站同步原语：每对象 FIFO 等待
+  队列的计数信号量+owner/递归互斥，DAIF 短临界段）** / VM1=裸机对照组（guest2.bin）/
   **VM2=Linux guest（第十四站：6.6 LTS，Image 外置构建、stage-2 非恒等
   映射、per-VM 诚实 DTB；第十五站起端点=busybox 用户空间）**
 - 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（55 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（58 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -315,7 +316,11 @@ runnable→壳任务 READY→rtos> prompt）** + RTOS selftest（寄存器跨
 **spawn gate16（动态任务生-问候-亡）** + **fp 自证（1e6 double 和
 跨任务/跨客切换精确=SIMD per-VM 帧判据）** + **sleep 3 睡中心跳
 夹行（任务级并发硬判据）** + **yield（HVC#2→PAUSED→vmrun 续跑，
-任务语境存活）** + HVC#4 交还 + vmstat 可读 + **vm1 裸机对照组
+任务语境存活）** + HVC#4 交还 + vmstat 可读 + **semdemo（有界环
+8/8——信号量对阻塞乒乓，per-item 计数 8+8）+ ps mid-hold（mutexdemo
+持锁睡中 ps 表里 waiter BLOCK/contender SLEEP——阻塞是活状态非日志）
++ mutexdemo（阻塞醒序 unlocking < locked-after-block+递归 take 2+
+非拥有者 give 拒绝——第十七站同步原语判据）** + **vm1 裸机对照组
 （[vm1] 前缀，双 RUNNING）** + 双客交错 token 双回显 +
 **dwrite/dread（重锚 vm1：三描述符链→门铃→完成中断判据）** +
 **spin 3G 前后 preempts 差 >=2（重锚 vm1；RTOS 并跑下跨量子，帧
@@ -338,8 +343,10 @@ token 双回显 → cat /proc/cpuinfo CPU part 0xd07 用户态自证 →
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物），shell help 内置
-55 步手动走查清单。
+58 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
-——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出。
+——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；
+2026-10-26 第二起：站十六 e87a3bb 宣称三处同步但 shell.c 走查从未
+落盘（48 步陈表+version 陈行），站十七重写根治。
 CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。
