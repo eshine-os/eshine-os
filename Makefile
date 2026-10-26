@@ -69,8 +69,26 @@ guest1.bin: guest1.elf
 guest2.bin: guest2.elf
 	$(CROSS)objcopy -O binary $< $@
 
+# rtos:站十六 VM0 客(参考RTOS 味最小任务内核,共享 guest/ ABI 头)。
+# fp 自证走手写 asm,全程 -mgeneral-regs-only 不破。
+RT_CFLAGS := $(CFLAGS) -Iguest
+RTOBJS := rtos/start.o rtos/vec.o rtos/rt_sched.o rtos/rt_task.o \
+          rtos/rt_uart.o rtos/rt_shell.o rtos/rt_main.o rtos/rt_fp.o
+
+rtos/start.o: rtos/start.S
+	$(CC) $(ASFLAGS) -c -o $@ $<
+rtos/vec.o: rtos/vec.S
+	$(CC) $(ASFLAGS) -c -o $@ $<
+rtos/%.o: rtos/%.c rtos/rtos.h
+	$(CC) $(RT_CFLAGS) -c -o $@ $<
+rtos.elf: $(RTOBJS) rtos/linker.ld
+	$(CC) $(RT_CFLAGS) -nostdlib -Wl,--build-id=none -T rtos/linker.ld -o $@ $(RTOBJS)
+rtos.bin: rtos.elf
+	$(CROSS)objcopy -O binary $< $@
+
 clean:
-	rm -f $(OBJS) $(TARGET) $(OBJS:.o=.d) $(GOBJS) guest/*.d guest1.elf guest2.elf guest1.bin guest2.bin
+	rm -f $(OBJS) $(TARGET) $(OBJS:.o=.d) $(GOBJS) guest/*.d guest1.elf guest2.elf guest1.bin guest2.bin \
+	       $(RTOBJS) rtos/*.d rtos.elf rtos.bin
 
 .PHONY: all run verify clean
 
