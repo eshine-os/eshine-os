@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Julian Chu -->
 # Spec — 第十五站:rootfs 站(initramfs → busybox 用户空间)
 
-2026-10-26 · 用户三决策全选推荐(见下) · 状态:实现中
+2026-10-26 · 用户三决策全选推荐(见下) · 状态:已完成(门禁 48 步双绿)
 
 ## 0. 目标
 
@@ -43,10 +43,19 @@
   `linux,initrd-end   = <0x0 0x44800000>`(u64);
   bootargs 增 `rdinit=/bin/sh`。
 
-### 2.2 内核配方补丁(scripts/build-linux.sh 追加)
+### 2.2 内核配方:零补丁(实测纠偏);宿主侧另收 CPACR 归还(实现期发现)
 
-- `CONFIG_RD_NONE=y`(本机 .config 实测未开)——未压缩 cpio 直读,
-  与定长槽互为因果(压缩流尾随零是解压器垃圾,未压缩 cpio 尾零合法)。
+实现期实测出站 14 遗留根因:**vcpu_run 每次进场强写 CPACR=3<<22
+越权之二**——FPEN 真位是 [21:20](内核 sysreg.h:EL1EN=bit20/
+EL0EN=bit21),整寄存器写把内核 __cpu_setup 布好的 FPEN 清零,首次
+抢占重入后用户态 FP 恢复(fpsimd_load_state)首条 SIMD 即 EC=0x07
+"Unhandled exception" 恐慌(Linux PID1 上机实测)。修法同 SP_EL0/
+vtimer 哲学:**CPACR 归 guest,宿主不再写**(vcpu_run 一行移除)。
+
+- 设计期以为要补 `CONFIG_RD_NONE=y`,实测 **6.6 无此选项**——
+  未压缩 cpio 支持已固化(init/initramfs.c:070701 魔数直入解析器,
+  尾零被显式跳过),配方零改动,站 14 的 Image 即成品。
+  尾零与"压缩流尾零是解压器垃圾"的差异正是选未压缩的原因之一。
 
 ### 2.3 busybox 构建(scripts/build-initramfs.sh,新)
 
@@ -66,17 +75,18 @@ hypervisor 本体**不需要任何代码改动**:stage-2 已盖全 128MB,
 DTB 是站 11 的整树 memcpy,initrd 由 QEMU loader 载入 RAM——
 站 11"bootloader 同构"投资在此兑付。
 
-## 3. 门禁 45 → 50(needle 首跑实证后锁)
+## 3. 门禁 45 → 48(needle 首跑实证后锁;实现期 50 收敛为 48)
 
-- [46] initramfs 装载与展开(内核日志证据,首跑定 needle)
-- [47] init 接力:Run /bin/sh as init process
-- [48] vmconsole 2 → shell prompt + token 双回显
-  (RX 环→vSPI 33 注入→tty ldisc→sh 全链;站 12 GICD word1 修复
-  的 Linux 红利在此兑付)
-- [49] `cat /proc/cpuinfo` → `CPU part : 0xd07`(用户态自证)
-- [50] 收尾:vmconsole host + vmkill 2(killed)+ tick 递增 + 宿主 token
+- [44] initramfs 链:Freeing initmem + `Run /init as init process`
+  (装载→展开→/init 接管;/init 脚本挂 proc/sys 后 exec sh)
+- [45] vmconsole 2 → `~ # ` busybox 壳提示(RX 环→vSPI 33→tty→sh 全链;
+  站 12 GICD word1 修复的 Linux 红利在此兑付)
+- [46] 壳内 token 双回显(tty echo + sh 输出;计数锚下一个 prompt
+  防首中即回的竞态,实现期实测)
+- [47] `cat /proc/cpuinfo` → `CPU part : 0xd07`(用户态自证)
+- [48] 逃生 0x1d 夺回 + vmkill 2(killed)+ tick 递增 + 宿主 token
 - 旧 [44] VFS panic 判据:被更强端点取代,演进在 ARCHITECTURE
-  验证节诚实标注(总数 45→50,判据只强不弱)。
+  验证节诚实标注(总数 45→48,判据只强不弱;boot 越过 root-mount 直达用户空间)。
 - 三处同步同 commit:verify / shell help 走查 / ARCHITECTURE
   (+Makefile 注释)。
 
@@ -89,6 +99,11 @@ DTB 是站 11 的整树 memcpy,initrd 由 QEMU loader 载入 RAM——
 - shell RX:vuart RX 环→vSPI 33,链路门禁 8 站实证;Linux tty
   使能 SPI33 走 GICD word1(0x104,站 14 修复)——若链断,先查
   vgic_spi_enabled(33) 与 RIS/DR 语义。
+- **owner 自动归还陷阱(实现期发现)**:站 6 的"TIMER 睡自动归还
+  owner"让恒 250Hz armed 的 Linux 壳总被收台(输入喂给宿主 shell,
+  实测)。修法:owner 显式接管 + 逃生字符 0x1d(Ctrl-],垫 Xen/ssh
+  惯例);门禁 [26]/[28]/[48] 同步补逃生序列;裸机客的 host HVC#4
+  不变。
 - busybox 静态 glibc NSS 噪音(getpwnam 类警告):接受,不修
   (rdinit 直跑 sh,不走 login)。
 - 8MB 不够(busybox defconfig 膨胀):配方终检硬门挡下,升槽位

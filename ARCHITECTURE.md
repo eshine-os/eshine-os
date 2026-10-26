@@ -205,7 +205,11 @@ GICD SPI 33/35→回读验证自报。EMULATED 窗口自本站允许多页（真
 RX 所有权（`sched_console_owner` = vcpu 指针，NULL=宿主）：前台模式
 泵只跑 owner VM（免双 guest 抢输入，后台模式全轮转）；HVC #3 三态
 代理（-2=无输入权 → guest WFI 让位，TWI 陷阱化）；HVC #4 主动交还；
-WAIT/退场自动归还。
+退场归还（vm_finish/vm_kill 清 owner）；**站十五：显式接管**
+（`vmconsole <id>` 后不再按 WAIT 原因自动归还——真 Linux 壳恒
+250Hz armed，timer 睡即被收台则 owner 形同虚设，实测；归还三口 =
+`vmconsole host` / **逃生字符 0x1d（Ctrl-]）**/ VM 死亡；裸机客另有
+host HVC#4 自报）。
 
 WAIT/WOKE（两源，第六-八站三段演化）：WFI 陷阱 → VCPU_WAIT → 泵置
 wait_state=1 +pc+=4（代完成）+ **wait_reason 判定**（切出保存的本人
@@ -215,8 +219,10 @@ vtimer ctx 武装=TIMER，否则 RX）。TIMER 到点两路：物理 27（ctx �
 找人在双等待者下会归错，实测）；WOKE → 泵注 LR0。RX 唤醒（第八站）：
 shell 入环置 RIS → RXIM 使能即泵注 LR1（vSPI 33）→ guest handler
 排空 DR 入软环 → getc 续取；泵内对仍有数据的 RX 等待者再唤醒兜底。
-**RX 等待持 owner**（输入即唤醒源），**TIMER 等待才归还**（宿主睡期间
-要能敲命令；回收出口 = guest 的 host 命令 HVC #4）。
+**owner 是显式接管**（站十五定型： TIMER 睡不再自动归还——Linux 壳
+的 tick 恒 armed，自动归还让壳会话永远进不去；宿主夺回 = 逃生 0x1d）；
+RX 等待者输入入环即刻唤醒，TIMER 等待者（壳等敲键）醒于下一拍后
+自查环——4ms 量级延迟无感。
 
 ## 设备仿真（27.04 第六站：vuart/MMIO 陷阱）
 
@@ -294,7 +300,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（45 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（48 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] 前缀（陷阱 TX 整行冲刷判据）** + **guest 自报
@@ -322,10 +328,13 @@ arch_sys_counter clocksource（vtimer interrupt-names 接线 + 站十四注入
 不越权修复）→ GICv3 redistributor 探测（站十四 GICD 家族译码规范
 对齐：SPI 32-63 落 word1=0x104）→ ttyAMA0 enabled（第十三站 PL011
 全驱动交接）→ vda 128 blocks（virtio legacy 队列 + 完成中断链）→
-VFS panic 无 rootfs 端点 → 宿主完整（vmkill 拒 + tick 递增）**，
+**initramfs 接管（第十五站端点演进:站十四的 VFS panic 由更强端点
+取代——busybox PID 1 壳）→ vmconsole 2 直落 ~ # 壳提示 →
+壳内 token 双回显（tty echo + sh 输出）→ cat /proc/cpuinfo
+CPU part 0xd07 用户态自证 → Ctrl-] 夺回 + vmkill 处决 + 宿主完整**，
 静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物），shell help 内置
-45 步手动走查清单。
+48 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出。

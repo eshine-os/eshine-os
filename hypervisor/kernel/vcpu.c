@@ -36,12 +36,15 @@ u64 vcpu_run(struct vcpu *v, u64 vttbr)
      * 防上一位 guest 的陈旧页表随槽位复用泄给新客)。 */
     __asm__ volatile("msr vtcr_el2, %0" :: "r"(VTCR_VALUE));
     __asm__ volatile("msr vttbr_el2, %0" :: "r"(vttbr));
-    /* FPEN=11:guest 的 EL0/EL1 SIMD 访问不陷阱(第十四站:Linux 内核用
-     * NEON,裸机 guest 全部 -mgeneral-regs-only 从未触发 EC=0x21)。
-     * CPACR_EL1 不管 EL2;宿主零 FP(-mgeneral-regs-only)——永久放行
-     * 无副作用。已知限制:SIMD per-VM ctx 不保存,多 FP guest 并跑会
-     * 串台(当前唯一 FP 使用者是 Linux 槽;专站补)。 */
-    __asm__ volatile("msr cpacr_el1, %0" :: "r"(3UL << 22));   /* FPEN=11(bits[23:22]) */
+    /* CPACR_EL1 归 guest(站十五):站十四曾在此强写 3<<22,实为越权
+     * 之二——FPEN 真位是 [21:20](sysreg.h:EL1EN=bit20/EL0EN=bit21),
+     * 整寄存器写反而把内核 __cpu_setup 布好的 FPEN 清零:首次抢占重
+     * 入后,用户态 FP 恢复路径 fpsimd_load_state 首条 SIMD 即 EC=0x07
+     * 陷阱→"Unhandled exception" 恐慌(Linux PID1 上机实测)。内核在
+     * __cpu_setup 自己设 3<<20,EL1/EL2 陷阱不牵涉我们;宿主零 FP
+     * (-mgeneral-regs-only),跨陷阱不碰 FP 现状。同哲学:SP_EL0 归
+     * guest、vtimer 归 guest,CPACR 也归 guest。已知限制:SIMD per-VM
+     * ctx 不保存,多 FP guest 并跑会串台(当前唯一 FP 用户是 Linux 槽)。 */
     __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_GUEST));
     __asm__ volatile("tlbi vmalls12e1is; dsb sy; isb");
 

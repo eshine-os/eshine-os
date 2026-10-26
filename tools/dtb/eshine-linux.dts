@@ -70,7 +70,13 @@
 
 	chosen {
 		stdout-path = "/pl011@9000000";
-		bootargs = "console=ttyAMA0 earlycon";
+		bootargs = "console=ttyAMA0 earlycon";   /* initramfs /init 默认接管 */
+		/* 站十五:initramfs 定长 8MB 槽(loader 同构:QEMU 直载宿主
+		 * 0x5C000000 = IPA 0x44000000 经 stage-2 非恒等映射);cpio
+		 * 尾零合法 padding,常量属性零运行时 patch。槽宽与
+		 * scripts/build-initramfs.sh 的 SLOT 绑死。 */
+		linux,initrd-start = <0x00 0x44000000>;
+		linux,initrd-end = <0x00 0x44800000>;
 	};
 
 	apb-pclk {

@@ -5,9 +5,14 @@ set -e
 D="$(cd "$(dirname "$0")/.." && pwd)"
 # 第十四站:Linux guest 内核(槽 2;Image 存在才装载,几何:PA 0x58080000)
 IMG="${ESHINE_LINUX_IMAGE:-$HOME/projects/eshine-linux/linux-6.6/arch/arm64/boot/Image}"
+INITRD="${ESHINE_INITRAMFS:-$HOME/projects/eshine-linux/initramfs.cpio}"
 EXTRA=""
 if [ -f "$IMG" ]; then
   EXTRA="-device loader,file=$IMG,addr=0x58080000,force-raw=on"
+fi
+# 第十五站:initramfs 定长 8MB 槽(IPA 0x44000000 = 宿主 0x5C000000)
+if [ -f "$INITRD" ]; then
+  EXTRA="$EXTRA -device loader,file=$INITRD,addr=0x5C000000,force-raw=on"
 fi
 
 exec qemu-system-aarch64 \

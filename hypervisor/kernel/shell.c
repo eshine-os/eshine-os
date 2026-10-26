@@ -18,8 +18,9 @@ static void cmd_help(void)
 {
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
     console_puts("          vmrun <id> vmconsole <id|host> vmstat vmkill <id>\n");
+    console_puts("    (前台会话期 Ctrl-](0x1d)=宿主夺回控制台)\n");
     console_puts("guest:    selftest sleep [N] spin dwrite dread fault echo <text> host exit\n");
-    console_puts("make verify walkthrough (45 步;与 make run 同一构建,可手动过):\n");
+    console_puts("make verify walkthrough (48 步;与 make run 同一构建,可手动过):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [3]\n");
     console_puts("  tick x2             -> ticks 递增             [4]\n");
     console_puts("  vmls / vmcreate 0   -> 空表 / CREATED         [5-6]\n");
@@ -43,7 +44,7 @@ static void cmd_help(void)
     console_puts("  vmconsole 1+回车 / echo GOKBx / host         [24]\n");
     console_puts("  vmstat / vmconsole 0+回车 / spin -> spun 3G   [25]\n");
     console_puts("    (preempts 前后差>=2:跨量子无损转写)\n");
-    console_puts("  vmconsole 0+回车 / sleep -> 公平+后台 slept   [26-27]\n");
+    console_puts("  vmconsole 0+回车 / sleep / Ctrl-] -> 公平+后台  [26-27]\n");
     console_puts("  sleep 4 / sleep 2 双睡 -> 后武装者先醒        [28]\n");
     console_puts("  vmconsole 0+回车 / echo DUALx -> 双醒后双活   [29]\n");
     console_puts("  vmconsole 0+回车 / exit    -> VM_DEAD         [30]\n");
@@ -60,7 +61,12 @@ static void cmd_help(void)
     console_puts("  ttyAMA0 enabled     -> PL011 全驱动交接       [42]\n");
     console_puts("  vda 128 blocks      -> virtio 完成中断链      [43]\n");
     console_puts("  VFS panic           -> 无 rootfs 端点         [44]\n");
-    console_puts("  vmkill 2 / tick     -> 僵尸处决,宿主完整     [45]\n");
+    console_puts("  Freeing+Run /init    -> initramfs 接管用户空间   [44]\n");
+    console_puts("  vmconsole 2          -> ~ # busybox 壳(PID 1)   [45]\n");
+    console_puts("    (0x1d Ctrl-] = 宿主夺回;owner 不再自动归还)\n");
+    console_puts("  echo TOKEN           -> 壳内双回显(tty+sh)      [46]\n");
+    console_puts("  cat /proc/cpuinfo    -> CPU part 0xd07 用户态自证 [47]\n");
+    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整      [48]\n");
 }
 
 static void cmd_version(void)
@@ -223,6 +229,19 @@ void shell_run(void)
         if (ch >= 0) {
             char c = (char)ch;
 
+            /* 站十五:逃生字符 0x1d(Ctrl-])= 宿主夺回路由(垫 Xen/ssh
+             * 惯例)。owner 改显式接管后(泵撤 TIMER 自动归还),被
+             * 占控台的唯一解:裸机客有 host(HVC#4)自报归还,真 Linux
+             * 没有——没有它,壳用户永远进不去(owner 总被 tick 睡眠
+             * 收走);有了它,卡死的 owned 客也夺不宿主的面。 */
+            if (sched_console_owner && c == 0x1d) {
+                struct eshine_vm *vm = vm_of_vcpu(sched_console_owner);
+
+                vuart_tx_flush(&vm->vu, (u32)vm->vmid);
+                sched_console_owner = NULL;
+                console_puts("console -> host (escape)\n");
+                continue;
+            }
             if (sched_console_owner) {
                 struct vcpu *v = sched_console_owner;
                 struct eshine_vm *vm = vm_of_vcpu(v);

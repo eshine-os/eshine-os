@@ -392,8 +392,11 @@ bool sched_pump(void)
              * (宿主睡期间要能敲命令,回收出口在 guest 的 host 命令)。 */
             v->wait_reason = (v->vtimer_ctl & 1UL) ? VCPU_WAIT_TIMER
                                                    : VCPU_WAIT_RX;
-            if (sched_console_owner == v && v->wait_reason == VCPU_WAIT_TIMER)
-                sched_console_owner = NULL;
+            /* 站十五撤自动归还:真 Linux 壳恒 250Hz armed,timer 睡
+             * 即被收台,输入永远喂给宿主 shell(owner 形同虚设)。
+             * owner 从此是显式接管,归还只走 vmconsole host / 逃生
+             * 0x1d / VM 死亡三口(裸机客另有 host HVC#4 自报)。 */
+            (void)0;
         } else {
             vm_finish(id, reason);        /* YIELD/EXIT/FAULT */
         }
