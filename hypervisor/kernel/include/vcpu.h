@@ -30,6 +30,14 @@ struct vcpu {
                                  * 陷阱位(guest 直写物理),泵切出存/切入还 */
     u64 vtimer_cval;
     u64 sp_el0;                 /* guest SP_EL0(arm64 内核 current;第十四站) */
+    /* SIMD per-VM 帧(第十六站):Q0-Q31 + FPCR/FPSR。宿主零 FP
+     * (-mgeneral-regs-only),泵在 vcpu_run 前装/后存(站七 vtimer
+     * 同形),guest FP 现场跨客切换无损。16B 对齐(stp q 对要求);
+     * asm 陷阱桩不触及此区(帧尾扩,先例 vtimer_ctl/cval/sp_el0)。
+     * v8.0(a57)无 SVE,单份无银行,帧即完备。 */
+    u64 q[64] __attribute__((aligned(16)));
+    u64 fpcr;
+    u64 fpsr;
 };
 
 /* 退回宿主的原因码(vcpu_run 返回值) */
@@ -42,6 +50,10 @@ struct vcpu {
 void vcpu_init(void);
 u64  vcpu_run(struct vcpu *v, u64 vttbr);   /* 正常返回值 = exit_reason */
 void vcpu_exit(void) __attribute__((noreturn));
+
+/* SIMD per-VM 帧存取(第十六站);泵边调用,guest 已切出,现场属帧主 */
+void fpsimd_save(struct vcpu *v);
+void fpsimd_load(struct vcpu *v);
 
 /* trap 出口调度点与 guest fault 诊断(el1_sync 与 mmio_dispatch 共用) */
 void resume_or_preempt(struct vcpu *v) __attribute__((noreturn));

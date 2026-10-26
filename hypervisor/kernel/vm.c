@@ -374,7 +374,9 @@ bool sched_pump(void)
          * 别家错过由每拍扫描兜住。CNTVOFF 共享 0:双 guest 同墙钟。 */
         __asm__ volatile("msr cntv_cval_el0, %0" :: "r"(v->vtimer_cval));
         __asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(v->vtimer_ctl));
+        fpsimd_load(v);               /* 第十六站:SIMD 帧切入装(站七 vtimer 同形) */
         reason = vcpu_run(v, vm->space.vttbr);
+        fpsimd_save(v);               /* 第十六站:SIMD 帧切出存 */
         __asm__ volatile("mrs %0, cntv_ctl_el0" : "=r"(v->vtimer_ctl));
         __asm__ volatile("mrs %0, cntv_cval_el0" : "=r"(v->vtimer_cval));
         cur_vcpu = NULL;                /* 宿主语境:shell 命令期 tick 不误
