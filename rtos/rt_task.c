@@ -15,12 +15,20 @@ static rt_task_t idle_task;
 rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
                           void *arg, u32 prio)
 {
-    unsigned int i;
+    unsigned int i, slot;
     rt_task_t *t = NULL;
 
     for (i = 0; i < RT_POOL_MAX; i++) {
         if (pool[i].entry == NULL || pool[i].state == RT_DEAD) {
             t = &pool[i];
+            slot = i;              /* 栈下标=池槽位,与名字长度无关
+                                     * (站 16 潜伏 bug:名字循环曾复用
+                                     * i,frame_init 拿到的是名字长度当
+                                     * 栈下标——shell 住 stack[5]、
+                                     * heartbeat 住越界 stack[9],全靠
+                                     * 名字长度不撞车;站 17 首对同长并
+                                     * 发任务 producer/consumer 双双 8 字
+                                     * 共享 0xd430 帧,当场对撞炸出) */
             break;
         }
     }
@@ -37,7 +45,7 @@ rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
     t->wq_next = NULL;            /* 站十七:同步队列链,复用槽必清 */
     t->wake_tick = 0;
     t->slice_left = RT_SLICE;
-    rt_frame_init(t, task_stacks[i] + sizeof(task_stacks[i]), entry, arg);
+    rt_frame_init(t, task_stacks[slot] + sizeof(task_stacks[slot]), entry, arg);
     rt_ready_push(t);
     return t;
 }
