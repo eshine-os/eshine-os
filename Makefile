@@ -68,7 +68,7 @@ guest2.bin: guest2.elf
 RT_CFLAGS := $(CFLAGS) -Iguest
 RTOBJS := rtos/start.o rtos/vec.o rtos/rt_sched.o rtos/rt_task.o \
           rtos/rt_uart.o rtos/rt_shell.o rtos/rt_main.o rtos/rt_fp.o \
-          rtos/rt_sync.o
+          rtos/rt_sync.o rtos/rt_demo.o
 
 rtos/start.o: rtos/start.S
 	$(CC) $(ASFLAGS) -c -o $@ $<

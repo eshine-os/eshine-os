@@ -89,6 +89,10 @@ static void shell_line(char *line)
             rt_puts("fp: task spawned\n");
         else
             rt_puts("fp: pool full\n");
+    } else if (streq(line, "semdemo")) {
+        rt_demo_sem();               /* 站十七:演示即判据 */
+    } else if (streq(line, "mutexdemo")) {
+        rt_demo_mutex();
     } else if (starts(line, "spawn ")) {
         static char spawn_name[12];     /* 单缓冲:并发 spawn 会互踩,
                                          * demo 尺度一次一个(记残余) */
@@ -126,7 +130,7 @@ static void shell_line(char *line)
         rt_puts("\n");
     } else if (line[0]) {
         rt_puts("rtos: try echo <t> | selftest | ps | spawn <n> | sleep [1-9]"
-                " | fp | yield | host | exit\n");
+                " | fp | yield | semdemo | mutexdemo | host | exit\n");
     }
 }
 
