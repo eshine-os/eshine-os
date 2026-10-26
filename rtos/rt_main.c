@@ -73,10 +73,8 @@ static void heartbeat_task(void *arg)
 
 void rt_idle_loop(void)
 {
-    for (;;) {
-        rt_sched();                   /* 就绪者上场;空则落到 WFI */
-        __asm__ volatile("wfi");      /* 陷阱入泵;tick/RX 到即回 */
-    }
+    for (;;)
+        rt_sched();                   /* 就绪者上场;空则内含 WFI 让位 */
 }
 
 void guest_main(void)
@@ -85,13 +83,7 @@ void guest_main(void)
 
     uart_pl011_init();                /* 站13:身份证+开机(先开机才有输出) */
     rt_puts("eshine-rtos " ESHINE_VERSION_STR " @EL1 via stage-2 (vuart @trap)\n");
-    gic_dist_init();                  /* 站12:vGIC 真启动式 */
-    virtio_blk_init();                /* 站10:probe+DRIVER_OK */
-    fdt_check();                      /* 站11:三节点自查 */
-    __asm__ volatile("msr cpacr_el1, %0" :: "r"(3UL << 20));  /* FPEN 自设 */
-    __asm__ volatile("isb");
-
-    /* RTOS 世界就绪:引导语境转正为 idle,建壳与心跳 */
+    /* RTOS 世界先立(引导语境转正 idle):任何潜在 IRQ 到达前,rt_cur 必须有效 */
     rt_cur = idle;
     idle->entry = (void (*)(void *))rt_idle_loop;   /* 非 NULL:ps 可见 */
     idle->prio = RT_NPRIO - 1;
@@ -99,6 +91,13 @@ void guest_main(void)
     idle->name[0] = 'i'; idle->name[1] = 'd'; idle->name[2] = 'l';
     idle->name[3] = 'e'; idle->name[4] = '\0';
     idle->slice_left = RT_SLICE;
+    gic_dist_init();                  /* 站12:vGIC 真启动式 */
+    virtio_blk_init();                /* 站10:probe+DRIVER_OK */
+    fdt_check();                      /* 站11:三节点自查 */
+    __asm__ volatile("msr cpacr_el1, %0" :: "r"(3UL << 20));  /* FPEN 自设 */
+    __asm__ volatile("isb");
+
+    /* 任务世界:壳与心跳上池 */
     rt_ticks = 0;
     rt_task_create("shell", rt_shell_task, NULL, 5);
     rt_task_create("heartbeat", heartbeat_task, NULL, 10);

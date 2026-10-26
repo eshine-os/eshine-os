@@ -46,9 +46,15 @@ void el2_irq_host(void)
     } else if (intid == GIC_PPI_VTIMER) {
         /* 物理线到点 = 其 ctx 装载者的 cval 已过。双等待者时代按表序
          * 找人会归错(先武者 cval 未到先醒,实测);按到期判定归属——
-         * 与每拍扫描同谓词,过期者一律 WOKE+熄火。 */
+         * 与每拍扫描同谓词,过期者一律 WOKE+熄火。
+         * 站十六:关线只属睡客路径(sweep 真唤醒了人)。到点者是
+         * RUNNING-轮转客时(陷阱抢占切走后的宿主相),它未认领的
+         * 注入拍必须保活——物理 ctl 不许动:重装帧 ctl=1+过期 cval
+         * 即自证挂起,进场即注入(实测:无差别关线+陷阱抢占切窗,
+         * Linux 丢拍冻结 ~1/3);此时只降优先级。 */
         sched_vtimer_sweep();
-        vgic_wake_waiter();              /* 本次真响过物理线:关线+降优先级 */
+        vgic_wake_waiter();              /* 关线防重挂风暴;丢拍窗用注入
+                                          * 后重填陷阱配额封(见下) */
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
     }

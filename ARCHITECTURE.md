@@ -293,48 +293,52 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 - LR 满兜底（maint PPI 25+UIE+ring）、UART IRQ 优先级/多中断源精细
   调度（当前单 RXIM）、多仿真设备表（当前 vuart 单设备）、CNTVOFF
   per-VM（当前共享 0）、vCPU>1/VM、优先级/实时策略、分配器
-  （vm_space/vcpu 由内嵌换动态）、VM0/VM1=裸机测试 guest / **VM2=Linux
-  guest（第十四站：6.6 LTS，Image 外置构建、stage-2 非恒等映射、
-  per-VM 诚实 DTB、端点=无 rootfs 的 VFS panic）**
+  （vm_space/vcpu 由内嵌换动态）、**VM0=eshine-rtos 任务内核客（第十六
+  站：参考RTOS 公开设计为基准的从零最小人格——32 级位图抢占+tick 100Hz+
+  IRQ 驱动壳；SIMD per-VM 帧入泵）** / VM1=裸机对照组（guest2.bin）/
+  **VM2=Linux guest（第十四站：6.6 LTS，Image 外置构建、stage-2 非恒等
+  映射、per-VM 诚实 DTB；第十五站起端点=busybox 用户空间）**
 - 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（48 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（55 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
-**后台 banner [vm0] 前缀（陷阱 TX 整行冲刷判据）** + **guest 自报
-fdt ok: cpu/uart/blk 三节点（第十一站 DTB 注入，设备身份从树查出
-非硬编码）** + **guest 自报 pl011 on: amba 00141011（第十三站 PL011
-完整化：AMBA 身份证 PERIPHID/PCELLID 探测 + CR 真语义开机，开机前
-DR 写被门丢弃）** + **guest 自报 gicd v3 ok / gic on: 27 33 35（第十二站
-vGIC：PIDR2 探测 + GICD/GICR 使能路径回读，注入按使能位门控）** +
-**guest 自报 uart irq on（RXIM/vSPI 33）** +
-**guest 自报 virtio blk on（probe 三验→DRIVER_OK/vSPI 35）** +
-**RX 唤醒链（入环→直通 runnable→FR 命中→prompt 重打）** +
-VM0 selftest（寄存器跨 100 MMIO 陷阱）+ HVC#4 交还 +
-vmstat 可读 + vm1 同律（[vm1] 前缀）+ 双 RUNNING + 双 VM 交错
-token 双回显（RX 路由判据）+ **dwrite/dread（三描述符链→门铃→
-完成中断判据）** + spin 3G 前后 preempts 差 >=2（纯计算
-负载跨量子，帧转写无损判据）+ WAIT 公平（vm0 睡时宿主/vm1 活）+
-后台醒（WOKE→泵注入）+ **双睡定序（后武装者先醒，min-deadline
-判据）** + **双醒后双活** + exit/VM_DEAD + **virtio 持久化（销毁→
-重建→旧数据仍在）** + fault 隔离（窗口外默认拒绝）+
-全 DEAD + 宿主完整性复验 + guest 退场后 tick 仍增长（HCR/DAIF
-恢复判据）+ vmkill 拒绝路径 + **Linux bring-up（第十四站：vmcreate 2/
-vmrun 2 → Booting Linux @CPU0（stage-2 非恒等映射 + DTB x0 启动协议）→
-Machine model: eshine-os,vm（诚实树）→ arch_timer virt 62.50MHz +
-arch_sys_counter clocksource（vtimer interrupt-names 接线 + 站十四注入
-不越权修复）→ GICv3 redistributor 探测（站十四 GICD 家族译码规范
-对齐：SPI 32-63 落 word1=0x104）→ ttyAMA0 enabled（第十三站 PL011
-全驱动交接）→ vda 128 blocks（virtio legacy 队列 + 完成中断链）→
-**initramfs 接管（第十五站端点演进:站十四的 VFS panic 由更强端点
-取代——busybox PID 1 壳）→ vmconsole 2 直落 ~ # 壳提示 →
-壳内 token 双回显（tty echo + sh 输出）→ cat /proc/cpuinfo
-CPU part 0xd07 用户态自证 → Ctrl-] 夺回 + vmkill 处决 + 宿主完整**，
-静态 marker 不算；连续 2 轮全绿才真绿）。
+**后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
+**RTOS 设备自证链（fdt ok 三节点/pl011 amba 身份证/gicd v3/gic on
+27 33 35/uart irq on/virtio blk on——与裸机客同一 ABI 同款 needle，
+第十一/十二/十三站判据原样移植到任务内核客）** +
+**rtos: up（位图调度器+tick 起立）** + **RX 唤醒链（入环→直通
+runnable→壳任务 READY→rtos> prompt）** + RTOS selftest（寄存器跨
+100 MMIO 陷阱）+ **ps（shell/heartbeat/idle 任务表活体）** +
+**spawn gate16（动态任务生-问候-亡）** + **fp 自证（1e6 double 和
+跨任务/跨客切换精确=SIMD per-VM 帧判据）** + **sleep 3 睡中心跳
+夹行（任务级并发硬判据）** + **yield（HVC#2→PAUSED→vmrun 续跑，
+任务语境存活）** + HVC#4 交还 + vmstat 可读 + **vm1 裸机对照组
+（[vm1] 前缀，双 RUNNING）** + 双客交错 token 双回显 +
+**dwrite/dread（重锚 vm1：三描述符链→门铃→完成中断判据）** +
+**spin 3G 前后 preempts 差 >=2（重锚 vm1；RTOS 并跑下跨量子，帧
+转写无损判据）** + **WAIT 公平（重锚 vm1：裸机睡时宿主/RTOS 活）** +
+后台醒（WOKE→泵注入）+ **双睡定序演进（第十六站：vm1 one-shot 4s
+与 vm0 RTOS 任务睡 2s 并存——后武装者先醒；RTOS 100Hz 周期重臂
+若串台踩了 vm1 的单发 cval，醒序即翻案）** + 双醒后双活 +
+**virtio 持久化（重锚 vm1：销毁→重建→旧数据仍在）** +
+fault 隔离（窗口外默认拒绝）+ **vmls 双态（rtos RUNNING 留活供
+并发判据/裸机 DEAD）** + 宿主完整性复验 + guest 退场后 tick 仍增长
+（HCR/DAIF 恢复判据）+ vmkill 拒绝路径 + **Linux bring-up（第十四
+站：vmcreate 2/vmrun 2 → Booting Linux @CPU0（stage-2 非恒等映射 +
+DTB x0 启动协议）→ Machine model: eshine-os,vm（诚实树）→
+arch_timer virt 62.50MHz + arch_sys_counter clocksource → GICv3
+redistributor 探测（word1=0x104 规范译码）→ **双客并发时序证明
+（第十六站：活 RTOS 的 rtos: alive 心跳行必须夹在 Linux boot 行流
+之间——串行 log 顺序即证）** → ttyAMA0 enabled → vda 128 blocks →
+**initramfs 接管（第十五站）→ vmconsole 2 直落 ~ # 壳 → 壳内
+token 双回显 → cat /proc/cpuinfo CPU part 0xd07 用户态自证 →
+**RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
+vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物），shell help 内置
-48 步手动走查清单。
+55 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出。

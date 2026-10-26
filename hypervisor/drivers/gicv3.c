@@ -91,6 +91,20 @@ void vgic_wake_waiter(void)
     gicv3_eoi_drop(GIC_PPI_VTIMER);
 }
 
+bool vtimer_inflight(void)
+{
+    /* 站十六:vm27 挂起在途。挂起未认领的 v27 活不过 VM 切换——HW LR
+     * 的 pending 由物理线驱动,下一位客装自己的 vtimer 时线一落,该拍
+     * 即蒸发(Linux 丢拍冻结的根因;旧 1Hz 慢轮转拍总在同片认领,快
+     * 轮转跨片挂起成常态)。抢占决策点守门:在途则就地重填配额不切走;
+     * 认领路径零陷阱,vIRQ 进入后几条指令内即消费。vuart/virtio 的
+     * 纯虚拟 LR 不挂物理线,不受此律,按 HW 位滤除。 */
+    u64 lr;
+
+    __asm__ volatile("mrs %0, ich_lr0_el2" : "=r"(lr));
+    return (lr & ICH_LR_HW) && (lr & ICH_LR_PENDING);
+}
+
 void vgic_inject_vtimer(u8 prio)
 {
     /* HW 映射:vINTID=27(guest CNTV 视角),pINTID=27(物理同号线);

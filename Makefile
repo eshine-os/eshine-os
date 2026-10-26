@@ -23,9 +23,9 @@ OBJS  := $(CSRCS:.c=.o) $(ASRCS:.S=.o)
 TARGET := eshine.elf
 
 # guest:独立构建,同源双身份(-DGUEST_ID=0/1),链接 IPA 0x40000000(见 guest/linker.ld)
-GOBJS := guest/start.o guest/vec.o guest/main0.o guest/main1.o
+GOBJS := guest/start.o guest/vec.o guest/main1.o
 
-all: $(TARGET) guest1.bin guest2.bin
+all: $(TARGET) rtos.bin guest2.bin
 
 $(TARGET): $(OBJS) linker.ld
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
@@ -47,25 +47,19 @@ tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb: tools/dtb/eshine-vm.dts tool
 hypervisor/kernel/dtb.o: tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb
 
 # make run 与 make verify 同构:同一构建产物(含 guest 双镜像),
-# run 走 run_qemu.sh 交互,verify 走 48 步门禁——两者验的是同一个 elf
-run: $(TARGET) guest1.bin guest2.bin
+# run 走 run_qemu.sh 交互,verify 走 55 步门禁——两者验的是同一个 elf
+run: $(TARGET) rtos.bin guest2.bin
 	./scripts/run_qemu.sh
 
-verify: $(TARGET) guest1.bin guest2.bin
+verify: $(TARGET) rtos.bin guest2.bin
 	python3 tools/verify/verify_el2.py
 
-guest/main0.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/virtio.h guest/fdt.h
-	$(CC) $(CFLAGS) -DGUEST_ID=0 -c -o $@ $<
 guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/virtio.h guest/fdt.h
 	$(CC) $(CFLAGS) -DGUEST_ID=1 -c -o $@ $<
 
-guest1.elf: guest/start.o guest/vec.o guest/main0.o guest/linker.ld
-	$(CC) $(CFLAGS) -nostdlib -Wl,--build-id=none -T guest/linker.ld -o $@ guest/start.o guest/vec.o guest/main0.o
 guest2.elf: guest/start.o guest/vec.o guest/main1.o guest/linker.ld
 	$(CC) $(CFLAGS) -nostdlib -Wl,--build-id=none -T guest/linker.ld -o $@ guest/start.o guest/vec.o guest/main1.o
 
-guest1.bin: guest1.elf
-	$(CROSS)objcopy -O binary $< $@
 guest2.bin: guest2.elf
 	$(CROSS)objcopy -O binary $< $@
 
@@ -93,4 +87,4 @@ clean:
 .PHONY: all run verify clean
 
 # 头文件自动依赖(-MMD -MP),头文件改动触发重编
--include $(OBJS:.o=.d) $(GOBJS:.o=.d)
+-include $(OBJS:.o=.d) $(GOBJS:.o=.d) $(RTOBJS:.o=.d)

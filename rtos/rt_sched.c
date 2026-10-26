@@ -58,18 +58,27 @@ static int higher_ready_than(rt_task_t *cur)
 
 void rt_sched(void)
 {
-    rt_task_t *next = rt_pick_ready();
+    rt_task_t *next;
 
-    if (!next)
-        return;                     /* 空转语境(idle):回调用者 WFI */
-    if (next == rt_cur) {           /* 摘了自己又选回自己 */
-        rt_ready_push(next);
+    for (;;) {
+        next = rt_pick_ready();
+        if (!next) {
+            /* 空转语境:无一就绪——WFI 让位(泵判 WAIT)。不 WFI 的话
+             * 壳 BLOCK 后会热自旋;醒来重扫,IRQ 出口可能已直接切走
+             * 我们(冻结在本帧,无需回头)。 */
+            __asm__ volatile("wfi");
+            continue;
+        }
+        if (next == rt_cur) {       /* 摘了自己又选回自己 */
+            rt_ready_push(next);
+            return;
+        }
+        next->state = RT_RUN;
+        if (rt_cur->state == RT_RUN)/* 被切走的排回队尾(RR 语义) */
+            rt_ready_push(rt_cur);
+        rt_switch_to(next);         /* noreturn:醒来已是新语境 */
         return;
     }
-    next->state = RT_RUN;
-    if (rt_cur->state == RT_RUN)    /* 被切走的排回队尾(RR 语义) */
-        rt_ready_push(rt_cur);
-    rt_switch_to(next);             /* noreturn:醒来已是新语境 */
 }
 
 void rt_wake_rx(void)

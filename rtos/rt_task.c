@@ -50,7 +50,8 @@ void rt_task_exit(void)             /* noreturn:DEAD 后必切走 */
     if (!next)
         rt_idle_loop();             /* 理论兜底:全灭时回 idle 轮询 */
     next->state = RT_RUN;
-    rt_switch_to(next);
+    rt_switch_to(next);              /* 本任务 DEAD,永不续跑;堵返回路径 */
+    __builtin_unreachable();
 }
 
 void rt_sleep_ticks(u64 n)

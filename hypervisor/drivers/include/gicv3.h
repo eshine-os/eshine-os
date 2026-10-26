@@ -4,6 +4,7 @@
 #define ESHINE_GICV3_H
 
 #include "kernel/include/types.h"
+#include <stdbool.h>
 
 /* QEMU virt GICv3 连线(公开文档,参考实现 qemu_virt dtsi 同源) */
 #define GICD_BASE       0x08000000UL
@@ -29,7 +30,8 @@ u64  gicv3_claim(void);                   /* mrs ICC_IAR1_EL1 */
 void gicv3_eoi_dir(u64 intid);            /* 降优先级 + DIR 撤销(宿主自有) */
 void gicv3_eoi_drop(u64 intid);           /* 只降优先级(27 的物理线由 guest 虚 EOI 联动撤销) */
 void vgic_enable(void);                    /* B 相:ICH_VMCR/ICH_HCR 虚拟面开 */
-void vgic_inject_vtimer(u8 prio);         /* B 相:LR0 HW 映射注入 vINTID 27 */
+void vgic_inject_vtimer(u8 prio);
+bool vtimer_inflight(void);        /* 站十六:vm27 挂起在途(抢占守门) */         /* B 相:LR0 HW 映射注入 vINTID 27 */
 void vgic_inject_uart(void);              /* 第八站:LR1 纯虚拟注入 vINTID 33 */
 void vgic_inject_virtio(void);             /* 第十站:LR3 纯虚拟注入 vINTID 35 */
 void vgic_wake_waiter(void);              /* 27 到点:关 CNTV 降线+降优先级(WOKE 交泵注入) */

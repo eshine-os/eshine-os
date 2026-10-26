@@ -124,20 +124,22 @@ vtimer 到点唤醒泵回,站五机制零改动)。
   帧不保则校验必炸。**per-task FP ctx 不做**:仅 fp 任务用 FP,壳/心跳/idle
   FP-free(安全前提记残余,十七站引入通用原语时再议)。
 
-## 4. 门禁 48 → 56(只增不减)
+## 4. 门禁 48 → 55(只增不减)
 
 - **存量 48 步全保**;vm0 裸机系 needle(fdt×3/pl011 身份/gicd/gic/uart irq/
   virtio/selftest/echo/双睡公平/spin 等)逐条**重锚 `[vm1]` 同强度**(裸机
   行为一寸不减,只是新宿主是 guest2.bin)。
-- **vm0 = RTOS 新判据**(净增 8 项判据):
+- **vm0 = RTOS 新判据**(净增 7 项判据 + vm0 exit 迟退步):
   1. bring-up 针(banner/设备自证链,needle 文本同裸机);
   2. `ps` 表判据(shell/heartbeat/idle 在场);
   3. `spawn gate16` → `gate16: hello from task`;
   4. 壳 token 双回显(`echo` 系,双 prompt 锚定,站八竞态教训);
   5. `sleep 3` 睡中 `rtos: alive` 夹行(任务级并发硬判据);
   6. `fp` → `fp OK: 500000500000`;
-  7. **双客并发时序证明**:Linux boot 行流与 `rtos: alive` 心跳在 log 中
-     交错(顺序断言:两 Linux boot 行之间存在 ≥1 行 RTOS 心跳);
+  7. **双客并发时序证明(解掩蔽引导段窗口)**:Linux 早期 PSTATE.I=1,
+     量子无从耗尽、泵单客直跑(活客短暂饿死系 guest 自掩蔽,非宿主
+     失职);local_irq_enable 后泵恢复轮转——GICv3 针之后被动收 5s,
+     断言 `rtos: alive` 心跳行与 boot 流交错(顺序即证两客真并发);
   8. HVC 面存活:`yield`(resumed)/`host`(交还)在 RTOS 壳下重验;exit 由
      vmkill 步骤面覆盖。
 - 三处同步纪律:verify + 宿主壳 help(版本行) + ARCHITECTURE 验证节同 commit;
@@ -162,6 +164,22 @@ vtimer 到点唤醒泵回,站五机制零改动)。
 | per-task FP ctx 无 | 安全前提:仅 fp 任务用 FP;十七站通用原语时再议 |
 | 心跳行进 shell 会话会打乱行缓冲 | 心跳行独立 `\n` 收尾,verify 判据按"行内包含"锚,不与 token 行互斥 |
 | 静态任务池 8 | 池满 spawn 报 `pool full`,门禁不触发(3 任务 + 2 动态 < 8) |
+
+## 6.5 实现期纠偏(2026-10-26,门禁首跑实证)
+
+- **共享物理面收编扩到五组**:spec 只列了 SIMD 帧;实现期异构双客把
+  全 EL 共享一份的物理面逐个炸出——VBAR_EL1(向量表错门,幽灵输出)、
+  CPACR_EL1、SCTLR/TTBR0/TCR(stage-1 串台,向量取指经 Linux 表翻到
+  垃圾 IPA 指令中止死)、ICH_LR0/ICH_VMCR(GIC 虚拟面单点,Linux 丢拍
+  jiffies 冻死)。全部泵边前装后存入帧,同 vtimer/sp_el0 家族。
+- **陷阱量子试制即退役**:为救引导期并发判据曾试"MMIO 陷阱计量子"
+  (512 陷阱/片扳机抢占)——它把宿主相频率拉高百倍,撞上
+  vgic_wake_waiter 的"关线"与未认领挂起拍活不过 VM 切换(HW LR
+  pending 由物理线驱动)的组合,Linux 单跑闪断 ~25-75%(二分+对照
+  实测)。判据窗口改到解掩蔽段后整组退役,回归站五 tick 量子。
+- **泵出入口 DAIF 双屏**:出口保存段(vtimer 最先存)与入口装载段
+  各以 DAIF 屏蔽——27 在这两窗内插队会把 armed 存成 0/把装载好的
+  ctl 关线,RAW 语义归 RX 永久停摆。
 
 ## 7. 偏离登记(预登记 #20,随实现 commit 落 baseline-deviations.md)
 

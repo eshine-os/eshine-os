@@ -86,8 +86,10 @@ void rt_fp_task(void *arg);
 rt_task_t *rt_irq_dispatch(void);  /* vec.S bl 目标:返回 0=续跑,否则=新任务 */
 void rt_idle_loop(void) __attribute__((noreturn));
 
-/* vec.S */
-void rt_switch_to(rt_task_t *next) __attribute__((noreturn));
+/* vec.S:续跑路径经 .Lcoop_ret -> rt_sched 调用点后的正常收尾返回
+ * ——绝不能标 noreturn(GCC 会在调用点后排环回头/死代码,续跑即踩;
+ * 本站实测:明雷=空指针炸,暗雷=落进 puts_uart 无限打印)。 */
+void rt_switch_to(rt_task_t *next);
 void rt_frame_init(rt_task_t *t, void *stack_top, void (*entry)(void *), void *arg);
 
 #endif /* RTOS_H */

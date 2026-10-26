@@ -38,6 +38,22 @@ struct vcpu {
     u64 q[64] __attribute__((aligned(16)));
     u64 fpcr;
     u64 fpsr;
+    /* 站十六:全 EL 共享一份的物理面继续收编——异构双客(RTOS 裸 EL1 vs
+     * Linux 全 stage-1)首次互换,泄漏全数现形:
+     * VBAR_EL1(vm1 引导换向量表,vm0 注入中断跳错门);
+     * CPACR_EL1(vm0 设 FPEN,他客若清零则 FP 断腿);
+     * SCTLR/TTBR0/TCR(M=1 的 Linux 与 M=0 的 RTOS 互换,向量取指经
+     * 他客 stage-1 表翻到垃圾 IPA 指令中止死);
+     * LR0/VMCR(GIC 虚拟面:泵为 vm0 注入唤醒复用同颗 LR0,覆写 vm2
+     * 未认领的 tick,Linux 丢拍冻死;VMCR=ICV PMR/GRPEN 底座同);
+     * trap_left(掩蔽 IRQ 引导客的量子扳机之二)。 */
+    u64 vbar;
+    u64 cpacr;
+    u64 sctlr;
+    u64 ttbr0;
+    u64 tcr;
+    u64 lr_vtimer;               /* ICH_LR0 快照(泵边装存) */
+    u64 vmcr;                    /* ICH_VMCR 快照(泵边装存) */
 };
 
 /* 退回宿主的原因码(vcpu_run 返回值) */

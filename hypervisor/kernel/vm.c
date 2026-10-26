@@ -284,10 +284,10 @@ u64 vm_ipa_to_pa(struct eshine_vm *vm, u64 ipa, u64 size)
  * (vgic_wake_waiter 只属真正响过的物理 27 路径);拍频 = 1 tick,
  * 与泵粒度同阶——WOKE 的生效本就要等下一次泵轮到它,与即时判定
  * 等效(单核调度的本质粒度)。 */
-void sched_vtimer_sweep(void)
+u32 sched_vtimer_sweep(void)
 {
     u64 now;
-    u32 id;
+    u32 id, woke = 0;
 
     __asm__ volatile("mrs %0, cntvct_el0" : "=r"(now));
     for (id = 0; id < ESHINE_MAX_VMS; id++) {
@@ -301,7 +301,9 @@ void sched_vtimer_sweep(void)
             continue;
         v->wait_state = 2UL;              /* WOKE:泵轮到时注 LR */
         v->vtimer_ctl = 0UL;              /* ctx 熄火:防切入装回过期值即重挂 */
+        woke++;
     }
+    return woke;
 }
 
 /* 调度泵:轮转游标遍历,每 VM 一个量子;宿主权威在 shell(命令即原子段,
@@ -339,6 +341,11 @@ bool sched_pump(void)
             continue;                     /* 前台模式:console 独占,免 RX 竞争 */
         rr_next = (id + 1) % ESHINE_MAX_VMS;
         v->slice_left = SCHED_QUANTUM_TICKS;
+        /* 站十六:GIC 虚拟面恢复必须在 WOKE 注入之前(注入覆写成新唤醒;
+         * 放后面会吃掉刚注入的 v27,睡眠永不醒,实测)。LR0 是 per-pCPU
+         * 单点:双 vtimer 客并跑,泵为 vm0 注入会覆写 vm2 未认领的 tick。 */
+        __asm__ volatile("msr ich_lr0_el2, %0" :: "r"(v->lr_vtimer));
+        __asm__ volatile("msr ich_vmcr_el2, %0" :: "r"(v->vmcr));
         sched_need_resched = 0;
         if (v->wait_state == 2UL) {        /* WOKE 专属 vtimer(27/扫描经
                                             * ctx 表定位;RX 走直通 runnable
@@ -372,13 +379,44 @@ bool sched_pump(void)
          * guest 直写物理;泵以切换对齐——切入还本人 ctx,物理 CNTV
          * 恒为"当前客"的;切出即存(全出口含 YIELD/EXIT/FAULT/WAIT),
          * 别家错过由每拍扫描兜住。CNTVOFF 共享 0:双 guest 同墙钟。 */
+        /* 站十六入口序:共享面先装,vtimer 最后装并直接进场——装载与
+         * vcpu_run 之间零宿主代码,27 无从插队。共享面(全 EL 一份的
+         * 物理面,异构双客互换必串,各客归各)=SIMD 帧 + VBAR/CPACR +
+         * stage-1 控制面(SCTLR/TTBR0/TCR);GIC 虚拟面已在 WOKE 注入
+         * 前装(见上)。 */
+        /* 入口段同屏(站十六):装载->eret 之间的 27 若插队,已装载的
+         * ctl 会被 wake_waiter 关线清零,guest 带着软件以为 armed、硬件
+         * 实熄的定时器跑,msleep 永不到点,tickless 停摆(实测残余闪断
+         * ~25% 即此窗)。eret 装 SPSR 自然解屏。 */
+        __asm__ volatile("msr daifset, #2");
+        fpsimd_load(v);
+        __asm__ volatile("msr vbar_el1, %0" :: "r"(v->vbar));
+        __asm__ volatile("msr cpacr_el1, %0" :: "r"(v->cpacr));
+        __asm__ volatile("msr tcr_el1, %0" :: "r"(v->tcr));
+        __asm__ volatile("msr ttbr0_el1, %0" :: "r"(v->ttbr0));
+        __asm__ volatile("msr sctlr_el1, %0" :: "r"(v->sctlr));
         __asm__ volatile("msr cntv_cval_el0, %0" :: "r"(v->vtimer_cval));
         __asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(v->vtimer_ctl));
-        fpsimd_load(v);               /* 第十六站:SIMD 帧切入装(站七 vtimer 同形) */
         reason = vcpu_run(v, vm->space.vttbr);
-        fpsimd_save(v);               /* 第十六站:SIMD 帧切出存 */
+
+        /* 站十六出口序:DAIF 先屏,vtimer 最先存。vcpu_exit 已解 IRQ,
+         * 这段保存窗若插进 el2_irq_host 的 27(vgic_wake_waiter 写
+         * cntv_ctl=0"关线"),armed 状态被存成 0 -> WAIT 归 RX -> 永久
+         * 停摆。旧窗(仅 tick 检查)近乎为零;本站共享面保存把窗撑到
+         * 微秒级,轮转宿主相高频期(陷阱量子 ~40ms 一片)命中率陡升
+         * ——单跑 Linux 实测闪断,T1/T2 侥幸即此窗。整段屏蔽 DAIF。 */
+        __asm__ volatile("msr daifset, #2");
         __asm__ volatile("mrs %0, cntv_ctl_el0" : "=r"(v->vtimer_ctl));
         __asm__ volatile("mrs %0, cntv_cval_el0" : "=r"(v->vtimer_cval));
+        __asm__ volatile("mrs %0, sctlr_el1" : "=r"(v->sctlr));
+        __asm__ volatile("mrs %0, ttbr0_el1" : "=r"(v->ttbr0));
+        __asm__ volatile("mrs %0, tcr_el1" : "=r"(v->tcr));
+        __asm__ volatile("mrs %0, vbar_el1" : "=r"(v->vbar));
+        __asm__ volatile("mrs %0, cpacr_el1" : "=r"(v->cpacr));
+        __asm__ volatile("mrs %0, ich_lr0_el2" : "=r"(v->lr_vtimer));
+        __asm__ volatile("mrs %0, ich_vmcr_el2" : "=r"(v->vmcr));
+        fpsimd_save(v);
+        __asm__ volatile("msr daifclr, #2");
         cur_vcpu = NULL;                /* 宿主语境:shell 命令期 tick 不误
                                           * 计入 guest 量子(27 分支已独立查) */
         progressed = true;
