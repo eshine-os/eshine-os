@@ -172,6 +172,34 @@ ARCHITECTURE 验证节 58)。
 | 演示死锁即 vm0 永久挂(demo give 计数错) | 演示计数静态可验;若挂,门禁超时红,按尸体诊断 |
 | 心跳行夹进判据窗口 | 判据按"行内包含/计数"锚,不要求相邻(站 16 惯例) |
 
+## 5.5 实现期纠偏(2026-10-26,门禁 4 轮实证)
+
+- **§2.5 "单核免锁"论证不完整,已修**:tick 抢切能把另一任务插在
+  两条指令之间——check+dec 不封窗可被双取到负数;且 rdy 队自站 16
+  起就有任务/ISR 双写者交错的丢任务潜伏窗口(rt_sched 重排、对象
+  handoff 均任务侧写者)。实际实现为**短 DAIF 临界段**(save/restore
+  而非 set/clr,ISR 语境不泄掩码):take 快路/give 记数/挂等
+  state+入队全封窗,rdy_enqueue/rt_pick_ready 内嵌同款;
+  rt_sched/WFI 永不进窗。
+- **首跑崩溃真凶 = 站 16 潜伏 bug,非本站原语**:`rt_task_create`
+  名字拷贝循环复用 `i`,`rt_frame_init` 拿到**名字长度当栈下标**——
+  shell(5)住 stack[5]、heartbeat(9)住越界 stack[9](压着 g_vq 顶)、
+  gate16/fptest(6)撞同一 stack[6] 但顺序复用,全靠名字长度不撞
+  车活过两轮门禁;producer/consumer 双双 8 字,第一对同长并发任务
+  共享 0xd430 帧区当场对撞(-d int 两发 eret 紧邻 + 帧基址与名字
+  长度推算分毫不差定谳;objdump 全链审计原语/调度器编译产物皆清白)。
+  修复=槽位号独立保存。**教训:名字拷贝循环复用下标变量与 asm 契约
+  同级的静默杀手;两轮门禁绿≠无雷,新判据即尸检报告。**
+- **[53] 闪断(4 轮 1 挂)归因**:Linux 内核时间冻在 0.489s(解包
+  完、/init 前的安静相),VM0 心跳存活——站 16 记档的
+  `vgic_wake_waiter` 无条件关线 × 在途 pending LR 活不过线落物理:
+  宿主相 v27 若带未消费 pending LR,关线一落该拍蒸发,解包期 Linux
+  无别源中断唤醒重编程,一拍冻即死;`vtimer_inflight` 守门只护
+  抢占决策点不护宿主相 27 分支。站 16 的 gating 实验撞过此墙
+  (re-assert 风暴),真正的修法是 inflight 时改走"立即回业主 VM
+  消费自己的拍"——登记为站 18 首选候选(现有两次独立症状报告:
+  站 16 [47] 期闪断 + 本站 [53])。
+
 ## 6. 偏离登记(预登记 #21,随实现 commit 落 baseline-deviations.md)
 
 > #21 同步原语形态:参考实现 rtos-kernel(参考RTOS/Linux 派生,"连行为参考
