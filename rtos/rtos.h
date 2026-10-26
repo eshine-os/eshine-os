@@ -41,6 +41,7 @@ struct rt_task {
     u64 wake_tick;
     u32 slice_left;
     struct rt_task *next;        /* 就绪 FIFO 尾链(非环,摘除简单) */
+    struct rt_task *wq_next;     /* 同步对象等待队列链(第十七站) */
     char name[12];
 };
 typedef struct rt_task rt_task_t;
@@ -91,5 +92,38 @@ void rt_idle_loop(void) __attribute__((noreturn));
  * 本站实测:明雷=空指针炸,暗雷=落进 puts_uart 无限打印)。 */
 void rt_switch_to(rt_task_t *next);
 void rt_frame_init(rt_task_t *t, void *stack_top, void (*entry)(void *), void *arg);
+
+/* rt_sched.c:DAIF 短临界段(第十七站)。save/restore 而非 set/clr——
+ * ISR 语境(I=1)restore 原样归还,不泄掩码。 */
+u64 rt_daif_save(void);
+void rt_daif_load(u64 d);
+
+/* rt_sync.c(第十七站):同步原语——每对象 FIFO 等待队列(参考RTOS 公开
+ * 设计为基准的最小形态:唤醒队头,非广播)。take 重检环(醒后自己复核
+ * 条件),give 让渡+唤醒队头,被醒者更高优先则立即让位;
+ * "唤醒=允许重试,非授予"。 */
+typedef struct rt_sem {
+    long count;                   /* 可用资源数 */
+    rt_task_t *wq_head;           /* 等待队列(单向,尾链) */
+    rt_task_t *wq_tail;
+} rt_sem_t;
+
+typedef struct rt_mutex {
+    rt_task_t *owner;             /* 持锁者(递归判据) */
+    u32 nest;                     /* 同 owner 重入深度 */
+    rt_task_t *wq_head;
+    rt_task_t *wq_tail;
+} rt_mutex_t;
+
+void rt_sem_init(rt_sem_t *s, long init);
+long rt_sem_take(rt_sem_t *s);    /* 资源不足则挂等(无超时,0=取到) */
+long rt_sem_give(rt_sem_t *s);    /* count++ + 唤醒队头 */
+void rt_mutex_init(rt_mutex_t *m);
+long rt_mutex_take(rt_mutex_t *m);/* 空则占;owner 重入 nest++;否则挂等 */
+long rt_mutex_give(rt_mutex_t *m);/* 非拥有者 -1;nest 归零让渡+唤醒 */
+
+/* rt_demo.c(第十七站):演示即判据 */
+void rt_demo_sem(void);
+void rt_demo_mutex(void);
 
 #endif /* RTOS_H */

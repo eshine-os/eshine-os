@@ -11,9 +11,28 @@ static rt_task_t *rdy_tail[RT_NPRIO];
 static u32 rdy_map;
 static int need_switch;
 
+/* DAIF 短临界段(第十七站):rdy 队是任务上下文与 ISR 出口共用的底座。
+ * 唯一交错源是 tick 抢切——两个写者(任务侧入队/handoff 与 ISR 侧醒
+ * 睡客/RR 重排)跨指令交错,尾链/位图会把任务挤下链永久丢失(站十六
+ * 潜伏竞态,本站收敛)。ISR 语境自带 I=1,save/restore 原样归还。 */
+u64 rt_daif_save(void)
+{
+    u64 d;
+
+    __asm__ volatile("mrs %0, daif\n\t"
+                     "msr daifset, #2" : "=r"(d) :: "memory");
+    return d;
+}
+
+void rt_daif_load(u64 d)
+{
+    __asm__ volatile("msr daif, %0" :: "r"(d) : "memory");
+}
+
 static void rdy_enqueue(rt_task_t *t)
 {
     u32 p = t->prio;
+    u64 d = rt_daif_save();
 
     t->next = NULL;
     if (!rdy_head[p])
@@ -22,6 +41,7 @@ static void rdy_enqueue(rt_task_t *t)
         rdy_tail[p]->next = t;
     rdy_tail[p] = t;
     rdy_map |= 1u << p;
+    rt_daif_load(d);
 }
 
 void rt_ready_push(rt_task_t *t)
@@ -34,10 +54,12 @@ rt_task_t *rt_pick_ready(void)
 {
     u32 p;
     rt_task_t *t;
+    u64 d;
 
     if (!rdy_map)
         return NULL;
     p = (u32)__builtin_ctz(rdy_map);
+    d = rt_daif_save();
     t = rdy_head[p];
     rdy_head[p] = t->next;
     t->next = NULL;
@@ -45,6 +67,7 @@ rt_task_t *rt_pick_ready(void)
         rdy_tail[p] = NULL;
         rdy_map &= ~(1u << p);
     }
+    rt_daif_load(d);
     return t;
 }
 

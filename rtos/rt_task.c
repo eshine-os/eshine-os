@@ -34,6 +34,7 @@ rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
     t->prio = prio < RT_NPRIO ? prio : RT_NPRIO - 1;
     t->state = RT_READY;
     t->wait_mask = 0;
+    t->wq_next = NULL;            /* 站十七:同步队列链,复用槽必清 */
     t->wake_tick = 0;
     t->slice_left = RT_SLICE;
     rt_frame_init(t, task_stacks[i] + sizeof(task_stacks[i]), entry, arg);
