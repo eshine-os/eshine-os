@@ -152,3 +152,92 @@ void rt_demo_fpdual(void)
         !rt_task_create("fpdB", rt_fp_dual_task, NULL, 12))
         rt_puts("fpdual: pool full\n");
 }
+
+/* ---- eventdemo(站十九B):AND 双拍不醒+双拍齐醒+OR 支线 ----
+ * 优先级:setter 6 < AND-waiter 8 < OR-waiter 9——set 醒即抢,
+ * 行序全确定性:A 拍 AND 不满(仍挂),B 拍齐醒,C 拍 OR 即醒。 */
+static rt_event_t demo_event;
+
+static void evt_waiter_and(void *arg)
+{
+    u32 got;
+
+    (void)arg;
+    rt_puts("evt: waiter waiting AND {A|B}\n");
+    rt_event_wait(&demo_event, 0x5u, 1, &got);
+    rt_puts("evt: waiter fired flags=0x5\n");   /* A|B 恰 0x5,字面自证 */
+}
+
+static void evt_waiter_or(void *arg)
+{
+    u32 got;
+
+    (void)arg;
+    rt_puts("evt: or-waiter waiting OR {C}\n");
+    rt_event_wait(&demo_event, 0x8u, 0, &got);
+    rt_puts("evt: OR fired flags=0x8\n");
+}
+
+static void evt_setter(void *arg)
+{
+    (void)arg;
+    rt_sleep_ticks(50);
+    rt_event_set(&demo_event, 0x1u);            /* A:AND 不满,waiter 仍挂 */
+    rt_puts("evt: A set (waiter stays)\n");
+    rt_sleep_ticks(50);
+    rt_event_set(&demo_event, 0x4u);            /* B:双拍齐,AND met */
+    rt_puts("evt: B set (AND met)\n");
+    rt_sleep_ticks(50);
+    rt_event_set(&demo_event, 0x8u);            /* C:OR 支线即醒 */
+    rt_puts("evt: C set (OR path)\n");
+}
+
+void rt_demo_event(void)
+{
+    rt_event_init(&demo_event);
+    if (!rt_task_create("evtand", evt_waiter_and, NULL, 8) ||
+        !rt_task_create("evtor", evt_waiter_or, NULL, 9) ||
+        !rt_task_create("evtset", evt_setter, NULL, 6))
+        rt_puts("eventdemo: pool full\n");
+}
+
+/* ---- queuedemo(站十九B):16 条 u64 环(cap=8),满发阻塞乒乓 ----
+ * 优先级:producer 7 压 consumer 9——灌满即阻塞,收方慢收逼出
+ * 多轮满环。行判据:第 9 条前的阻塞自报 + 16/16 闭环。 */
+static rt_queue_t demo_queue;
+
+static void q_producer(void *arg)
+{
+    unsigned int i;
+
+    (void)arg;
+    for (i = 1; i <= 16; i++) {
+        if (i == 9)                             /* cap=8:第 9 条必先满 */
+            rt_puts("q: ring full, sender blocked\n");
+        rt_queue_send(&demo_queue, 0x1000u + i);
+        rt_puts_u64("q: sent ", i, "\n");
+    }
+    rt_puts("q: producer done 16\n");
+}
+
+static void q_consumer(void *arg)
+{
+    unsigned int i;
+    u64 msg;
+
+    (void)arg;
+    for (i = 1; i <= 16; i++) {
+        rt_queue_recv(&demo_queue, &msg);
+        rt_puts_u64("q: got ", i, "\n");
+        rt_sleep_ticks(2);                      /* 慢收:逼出满环阻塞 */
+    }
+    rt_puts("q: done 16/16\n");
+}
+
+void rt_demo_queue(void)
+{
+    rt_queue_init(&demo_queue, 8);
+    if (!rt_task_create("qprod", q_producer, NULL, 7) ||
+        !rt_task_create("qcons", q_consumer, NULL, 9))
+        rt_puts("queuedemo: pool full\n");
+}

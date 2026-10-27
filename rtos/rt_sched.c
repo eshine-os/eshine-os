@@ -71,31 +71,56 @@ rt_task_t *rt_pick_ready(void)
     return t;
 }
 
-/* 站十八B:PI 降级摘除——READY 任务被 boost 前摘出原优先级链
- * (单级链表扫描,池 ≤8 非热点);同款 DAIF 临界段。 */
+/* 站十八B:PI 降级摘除;站19 起改全层扫描——PI boost 改写 prio 后,
+ * 残令牌可能躺在旧优先级层(按 t->prio 找会漏摘),全扫一律摘净。
+ * 单级链表扫描,池 ≤8、层 ≤32,非热点;同款 DAIF 临界段。 */
 void rdy_remove(rt_task_t *t)
 {
-    u32 p = t->prio;
-    rt_task_t *cur = rdy_head[p], *prev = NULL;
+    u32 p;
     u64 d = rt_daif_save();
 
-    while (cur) {
-        if (cur == t) {
-            if (prev)
-                prev->next = t->next;
-            else
-                rdy_head[p] = t->next;
-            if (rdy_tail[p] == t)
-                rdy_tail[p] = prev;
-            t->next = NULL;
-            if (!rdy_head[p])
-                rdy_map &= ~(1u << p);
-            break;
+    for (p = 0; p < RT_NPRIO; p++) {
+        rt_task_t *cur = rdy_head[p], *prev = NULL;
+
+        while (cur) {
+            if (cur == t) {
+                if (prev)
+                    prev->next = t->next;
+                else
+                    rdy_head[p] = t->next;
+                if (rdy_tail[p] == t)
+                    rdy_tail[p] = prev;
+                t->next = NULL;
+                if (rdy_head[p] == t)   /* 兜底:自环残迹(head=t),清空
+                                         * 本层,免得 head 在而 tail 空 */
+                    rdy_head[p] = NULL;
+                if (!rdy_head[p])
+                    rdy_map &= ~(1u << p);
+                rt_daif_load(d);
+                return;
+            }
+            prev = cur;
+            cur = cur->next;
         }
-        prev = cur;
-        cur = cur->next;
     }
     rt_daif_load(d);
+}
+
+/* 回流令牌:令牌回队但不碰状态(运行中任务不得被改 READY——rt_ready_push
+ * 的状态写只属于真 BLOCK/SLEEP 醒客)。唯一用途:IRQ 出口与 rt_sched 的
+ * 自拣兑付(站19 [41]:唤醒打在 rt_cur 身上时的醒递通道,阻塞位点负责清) */
+void rt_ready_requeue(rt_task_t *t)
+{
+    rdy_enqueue(t);
+}
+
+/* 被抢占者回队:先清残令牌再入队——运行中任务可能持着醒客令牌,不清就
+ * 双份入队,tail->next 会写成自环;自环上的 rdy_remove 摘不掉,DEAD 任务
+ * exit 时残环滞留队头,下一 pick 把 DEAD 复活进 UB(站19 pidemo 定谳) */
+void rt_preempt_requeue(rt_task_t *t)
+{
+    rdy_remove(t);
+    rt_ready_push(t);
 }
 
 /* 就绪最高位是否比 cur 高(数字更小即优先级更高) */
@@ -119,13 +144,18 @@ void rt_sched(void)
             __asm__ volatile("wfi");
             continue;
         }
-        if (next == rt_cur) {       /* 摘了自己又选回自己 */
-            rt_ready_push(next);
+        if (next == rt_cur) {       /* 摘了自己又选回自己:回流令牌兑付。
+                                     * 只回队不碰状态——运行中改 READY 会
+                                     * 污染 IRQ 出口/RR 的状态门,挂等者
+                                     * 被令牌反复"唤醒"短路成忙自旋,
+                                     * 等待队列随之双推自环(站19 [41] 定谳) */
+            rdy_enqueue(next);
             return;
         }
         next->state = RT_RUN;
-        if (rt_cur->state == RT_RUN)/* 被切走的排回队尾(RR 语义) */
-            rt_ready_push(rt_cur);
+        if (rt_cur->state == RT_RUN)/* 被切走的排回队尾(RR 语义;
+                                     * 恒单份:先清残令牌,站19) */
+            rt_preempt_requeue(rt_cur);
         rt_switch_to(next);         /* noreturn:醒来已是新语境 */
         return;
     }
@@ -147,8 +177,12 @@ void rt_tick_bookkeep(void)
         t->slice_left--;
         if (t->slice_left == 0) {
             t->slice_left = RT_SLICE;
-            if (rdy_head[t->prio]) { /* 同级有人:轮转让位 */
-                rt_ready_push(t);
+            if (rdy_head[t->prio]) { /* 同级有人:轮转让位。恒单份:
+                                      * t 可能持着醒客令牌,直推双份
+                                      * → tail 自环 → 摘除残环队列腐
+                                      * 化(head 在 tail 空,NULL deref
+                                      * 炸 VM——站19 pidemo 定谳) */
+                rt_preempt_requeue(t);
                 t->state = RT_READY;
                 need_switch = 1;
             }

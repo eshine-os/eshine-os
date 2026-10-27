@@ -48,14 +48,22 @@ rt_task_t *rt_irq_dispatch(void)
     if (iar != GUEST_INTID_SPURIOUS)
         gic_eoir(iar);
     /* 出口判决:要切(轮转/更高优先就绪)或当前已非 RUN(阻塞/睡/死)
-     * 则摘队头;被抢占的原任务排回队尾。 */
+     * 则摘队头;被抢占的原任务排回队尾。
+     * 站19 [41] 第二次定谳:醒客一律回流令牌(rt_ready_requeue,不碰
+     * 状态)。醒客帧有两种冻结位——wfi 循环体内(被本出口从中切走的
+     * 驻留者)与 .Lcoop_ret(正常让位)。前者醒来落在循环里,靠自拣
+     * 兑付令牌才能 *返回调用者*(否则醒令被吞,state 已被改成 RUN,
+     * wake_sleepers/wake_all 从此永久跳过——旧代码全靠僵尸条目碰巧
+     * 在队才没必现,即 [41] 闪断的真身);后者醒来直接回调用者,残
+     * 留令牌由各阻塞位点的 rdy_remove 清除,不残留不占位。 */
     if (rt_need_switch() || rt_cur->state != RT_RUN) {
         rt_task_t *next = rt_pick_ready();
 
         if (next) {
+            rt_ready_requeue(next);
             next->state = RT_RUN;
-            if (rt_cur->state == RT_RUN)
-                rt_ready_push(rt_cur);
+            if (next != rt_cur && rt_cur->state == RT_RUN)
+                rt_preempt_requeue(rt_cur);  /* 被抢占者恒单份回队 */
             return next;
         }
     }

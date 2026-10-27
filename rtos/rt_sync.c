@@ -34,19 +34,24 @@ static rt_task_t *wq_pop(rt_task_t **head, rt_task_t **tail)
     return t;
 }
 
-/* 挂等:BLOCK 入对象队列再让位;醒来在调用点后继续(take 重检环) */
-static void rt_pend(rt_task_t **head, rt_task_t **tail)
+/* 挂等:BLOCK 入对象队列再让位;醒来在调用点后继续(take 重检环)。
+ * 站19:挂等前清自拣令牌——否则 rt_sched 摘到自己即"醒",重检环被
+ * 令牌无限短路,每次假醒再 wq_push 会把等待队列推成自环。
+ * 站19B 起导出:rt_ipc.c 的队列收发同机器(事件组自带注册表不用此) */
+void rt_pend(rt_task_t **head, rt_task_t **tail)
 {
     u64 d = rt_daif_save();
 
     rt_cur->state = RT_BLOCK;
     wq_push(head, tail, rt_cur);
+    rdy_remove(rt_cur);
     rt_daif_load(d);
     rt_sched();
 }
 
-/* 唤醒队头;更高优先就位即让(统一帧:rt_sched 调用点即续跑点) */
-static void rt_handoff(rt_task_t **head, rt_task_t **tail)
+/* 唤醒队头;更高优先就位即让(统一帧:rt_sched 调用点即续跑点)。
+ * 站19B 起导出:rt_ipc.c 队列同机器 */
+void rt_handoff(rt_task_t **head, rt_task_t **tail)
 {
     rt_task_t *w;
     u64 d = rt_daif_save();

@@ -79,7 +79,9 @@ rt_task_t *rt_idle_task(void);
 void rt_sched(void);             /* 让出点:C 选,asm 换 */
 rt_task_t *rt_pick_ready(void);  /* 就绪摘头;空则 NULL */
 void rt_ready_push(rt_task_t *t);
-void rdy_remove(rt_task_t *t);   /* 站十八B:PI 降级摘除(就绪链中摘人) */
+void rt_ready_requeue(rt_task_t *t); /* 自拣回流令牌:只回队不碰状态(站19) */
+void rt_preempt_requeue(rt_task_t *t); /* 抢占回队恒单份:先清残令牌(站19) */
+void rdy_remove(rt_task_t *t);   /* 站十八B:PI 降级摘除;站19 起兼清自拣令牌 */
 void rt_wake_rx(void);
 void rt_tick_bookkeep(void);     /* tick ISR:唤醒/轮转/切判 */
 int  rt_need_switch(void);
@@ -138,10 +140,47 @@ void rt_mutex_init(rt_mutex_t *m);
 long rt_mutex_take(rt_mutex_t *m);/* 空则占;owner 重入 nest++;否则挂等 */
 long rt_mutex_give(rt_mutex_t *m);/* 非拥有者 -1;nest 归零让渡+唤醒 */
 
+/* 站19B 起导出(原 static):rt_ipc.c 队列同机器 */
+void rt_pend(rt_task_t **head, rt_task_t **tail);
+void rt_handoff(rt_task_t **head, rt_task_t **tail);
+
+/* rt_ipc.c(第十九站B):事件组+消息队列。事件组=每事件条件注册表
+ * (任务链挂不下 want/and_mode),set 扫表只摘满足者;队列=站 17
+ * 原样 FIFO 等待队列机器(满发挂 tx 队,空收取 rx 队)。 */
+#define RT_QCAP 8u                 /* 环容量上限(demo 尺度) */
+
+typedef struct rt_event_waiter {
+    rt_task_t *t;
+    u32 want;
+    int and_mode;
+} rt_event_waiter_t;
+
+typedef struct rt_event {
+    u32 flags;
+    unsigned int nw;                           /* 注册表在用数 */
+    rt_event_waiter_t wait[RT_POOL_MAX];       /* 条件注册表(池即容量) */
+} rt_event_t;
+
+typedef struct rt_queue {
+    u64 buf[RT_QCAP];
+    u32 head, count, cap;                      /* 尾=(head+count)%cap,免冗余 */
+    rt_task_t *rx_h, *rx_t;                    /* 空取等待队列 */
+    rt_task_t *tx_h, *tx_t;                    /* 满发等待队列 */
+} rt_queue_t;
+
+void rt_event_init(rt_event_t *e);
+int rt_event_wait(rt_event_t *e, u32 want, int and_mode, u32 *got); /* 命中即耗 */
+void rt_event_set(rt_event_t *e, u32 bits);    /* |= 且扫表醒满足者 */
+void rt_queue_init(rt_queue_t *q, u32 cap);    /* cap<=RT_QCAP,0 拒 */
+int rt_queue_send(rt_queue_t *q, u64 msg);     /* 满则挂发队,醒后复核 */
+int rt_queue_recv(rt_queue_t *q, u64 *msg);    /* 空则挂取队,醒后复核 */
+
 /* rt_demo.c(第十七站):演示即判据 */
 void rt_demo_sem(void);
 void rt_demo_mutex(void);
 void rt_demo_pi(void);           /* 站十八B:PI 饥饿反转 */
 void rt_demo_fpdual(void);       /* 站十八C:per-task FP 并发自证 */
+void rt_demo_event(void);        /* 站十九B:AND 双拍+OR 支线 */
+void rt_demo_queue(void);        /* 站十九B:16 条收发+满环阻塞 */
 
 #endif /* RTOS_H */

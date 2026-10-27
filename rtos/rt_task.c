@@ -56,6 +56,8 @@ void rt_task_exit(void)             /* noreturn:DEAD 后必切走 */
     rt_task_t *next;
 
     rt_cur->state = RT_DEAD;
+    rdy_remove(rt_cur);              /* 站19:清自拣残令牌——否则摘头会
+                                      * 摘到自己,DEAD 被复活的假醒 */
     next = rt_pick_ready();
     if (!next)
         rt_idle_loop();             /* 理论兜底:全灭时回 idle 轮询 */
@@ -68,6 +70,9 @@ void rt_sleep_ticks(u64 n)
 {
     rt_cur->wake_tick = rt_ticks + n;
     rt_cur->state = RT_SLEEP;
+    rdy_remove(rt_cur);              /* 站19:真挂睡前清自拣令牌——不清则
+                                      * rt_sched 摘到自己即"醒",睡不
+                                      * 落地变忙自旋,饿死低优先就绪者 */
     rt_sched();                      /* 让位;醒来从此处继续 */
 }
 
@@ -75,6 +80,7 @@ void rt_block_rx(void)
 {
     rt_cur->wait_mask = RT_RX_BIT;
     rt_cur->state = RT_BLOCK;
+    rdy_remove(rt_cur);              /* 站19:同上,真阻塞必清令牌 */
     rt_sched();
 }
 
