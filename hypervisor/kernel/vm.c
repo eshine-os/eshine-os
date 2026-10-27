@@ -315,6 +315,17 @@ bool sched_pump(void)
     bool progressed = false;
     u32 n;
 
+    /* 站十八A:在途回业主——27 三分支置的标志,本圈以最后进场者为
+     * 旋转起点(首圈即回业主消费自己的拍;重装帧 ctl=1+过期 cval,
+     * 线仍挂,HW LR 进场重锁 pending,guest 消费即闭环)。业主已
+     * 死/停则在途拍无主可还,顺手熄线收尸。 */
+    if (sched_vtimer_recall) {
+        sched_vtimer_recall = 0UL;
+        if (vm_table[sched_vtimer_last].state != VM_RUNNING)
+            vgic_wake_waiter();
+        else
+            rr_next = (u32)sched_vtimer_last;
+    }
     for (n = 0; n < ESHINE_MAX_VMS; n++) {
         u32 id = (rr_next + n) % ESHINE_MAX_VMS;
         struct eshine_vm *vm = &vm_table[id];
@@ -340,6 +351,7 @@ bool sched_pump(void)
         if (sched_console_owner && sched_console_owner != v)
             continue;                     /* 前台模式:console 独占,免 RX 竞争 */
         rr_next = (id + 1) % ESHINE_MAX_VMS;
+        sched_vtimer_last = id;        /* 站十八A:物理 CNTV 归属随进场 */
         v->slice_left = SCHED_QUANTUM_TICKS;
         /* 站十六:GIC 虚拟面恢复必须在 WOKE 注入之前(注入覆写成新唤醒;
          * 放后面会吃掉刚注入的 v27,睡眠永不醒,实测)。LR0 是 per-pCPU

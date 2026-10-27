@@ -44,17 +44,21 @@ void el2_irq_host(void)
         sched_vtimer_sweep();               /* 每拍表扫:多等待者到期判定 */
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
-        /* 物理线到点 = 其 ctx 装载者的 cval 已过。双等待者时代按表序
-         * 找人会归错(先武者 cval 未到先醒,实测);按到期判定归属——
-         * 与每拍扫描同谓词,过期者一律 WOKE+熄火。
-         * 站十六:关线只属睡客路径(sweep 真唤醒了人)。到点者是
-         * RUNNING-轮转客时(陷阱抢占切走后的宿主相),它未认领的
-         * 注入拍必须保活——物理 ctl 不许动:重装帧 ctl=1+过期 cval
-         * 即自证挂起,进场即注入(实测:无差别关线+陷阱抢占切窗,
-         * Linux 丢拍冻结 ~1/3);此时只降优先级。 */
-        sched_vtimer_sweep();
-        vgic_wake_waiter();              /* 关线防重挂风暴;丢拍窗用注入
-                                          * 后重填陷阱配额封(见下) */
+        /* 站十八A三分支:真唤醒了睡客才关线(睡客没人替它落线);
+         * RUNNING 轮转客的未认领在途拍不碰物理线——HW LR pending 由
+         * 物理线驱动,关了即蒸发([53] 闪断根因:站16 注释宣称"关线只
+         * 属睡客路径"但代码未落,封窗的陷阱量子机器又随站16 退役):
+         * EOI 只降优先级线保挂,置回业主标志,泵下一圈以它为旋转起点
+         * 进场消费(线挂期间重复 27 由本分支廉价吸收;泵由 shell 每圈
+         * 必调,无死循环路径);无睡客无在途=无主陈旧挂起,熄线收尸
+         * (老行为)。 */
+        if (sched_vtimer_sweep())
+            vgic_wake_waiter();
+        else if (vtimer_inflight()) {
+            gicv3_eoi_drop(GIC_PPI_VTIMER);
+            sched_vtimer_recall = 1UL;
+        } else
+            vgic_wake_waiter();
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
     }

@@ -8,3 +8,5 @@
 volatile unsigned long sched_need_resched;   /* asm 桩出口检查(置帧转写) */
 unsigned long sched_preempts;                 /* 抢占计数(vmstat 判据) */
 struct vcpu *sched_console_owner;              /* UART RX 所有权(NULL=host) */
+volatile unsigned long sched_vtimer_recall;   /* 站十八A:在途回业主标志 */
+unsigned long sched_vtimer_last;               /* 站十八A:最后进场 VM id */
