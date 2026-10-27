@@ -57,8 +57,19 @@ void el2_irq_host(void)
         else if (vtimer_inflight()) {
             gicv3_eoi_drop(GIC_PPI_VTIMER);
             sched_vtimer_recall[cpu_id()] = 1UL;
-        } else
-            vgic_wake_waiter();
+        } else {
+            /* 站19D 收口:无主挂起不再就地收尸。收尸写 CNTV_CTL=0
+             * 是 per-pCPU 的:此窗 sweep 只认停泊者,ws 仍在 0 的
+             * 在跑客(WFI 已入、簿记未竟)会被误杀线,出栈存得
+             * ctl=0 按 RX 归类停泊,sweep 永不再匹配(判据要
+             * TIMER),一个 tick 即永眠——[53]/[41] 闪断族在 SMP
+             * 客上的放大面,vm2 单核靴实测冻死于首拍窗。改为只
+             * 降线保挂:线挂期间重复 27 由本分支廉价吸收,停泊
+             * 落定后 26 每拍扫描(smp.c 已补)接管再发现,有界
+             * (≤1s)自愈;真无主(客已死/停)时下一位进场的
+             * WOKE 熄火把线合拢。 */
+            gicv3_eoi_drop(GIC_PPI_VTIMER);
+        }
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
     }

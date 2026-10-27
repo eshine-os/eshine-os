@@ -68,6 +68,7 @@ struct vcpu {
 void vcpu_init(void);
 u64  vcpu_run(struct vcpu *v, u64 vttbr);   /* 正常返回值 = exit_reason */
 void vcpu_exit(void) __attribute__((noreturn));
+void vcpu_flush_all_tables(void);   /* 站19D:生命周期口熄表(槽复用防泄) */
 
 /* SIMD per-VM 帧存取(第十六站);泵边调用,guest 已切出,现场属帧主 */
 void fpsimd_save(struct vcpu *v);

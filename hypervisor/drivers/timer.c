@@ -23,7 +23,13 @@ void timer_init(void)
 
 void timer_handler(void)
 {
-    ticks++;
+    u64 m;
+
+    /* 站19D:三核各起一拍,共享计数只由 CPU0 记账(3 拍/秒的漂移
+     * 不许进宿主 uptime);次级的 26 = 纯兜底面(sweep 驱动+泵醒)。 */
+    __asm__ volatile("mrs %0, mpidr_el1" : "=r"(m));
+    if ((m & 0xffUL) == 0UL)
+        ticks++;
     timer_arm_next();
 }
 

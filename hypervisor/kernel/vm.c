@@ -47,6 +47,11 @@ static const struct vm_geometry vm_geo[ESHINE_MAX_VMS] = {
  * vm0/vm1 单 vCPU 归 CPU0(与宿主 shell 同核);vm2 双 vCPU——
  * vcpu0 专泵 CPU1,vcpu1(guest 的 PSCI CPU_ON 后才有帧)专泵 CPU2。 */
 u32 vm_cpu_map[ESHINE_MAX_VMS][ESHINE_MAX_VCPUS] = {
+    /* 站19D 原设计:vcpu0@CPU1 专泵 + vcpu1@CPU2 专泵(各自跑到出)。
+     * 实验变体 vcpu0@cpu0 轮转世界(vm_cpu_map[2]={0,2})实测同冻——
+     * tick 生命周期竞态与泵语境无关([53]/[41] 族在 SMP 客上的放大面,
+     * 冻点恒落 SMP 交接窗 ~0.2s 内核时),故按 spec 拓扑收口;竞态
+     * 全闭为站二十开站首项(证据档案:收尸窗剖析+26 兜底自愈上限)。 */
     {0, 0}, {0, 0}, {1, 2},
 };
 
@@ -261,6 +266,7 @@ int vm_start(u32 id)
         __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr));
         sctlr &= ~1UL;
         __asm__ volatile("msr sctlr_el1, %0" :: "r"(sctlr));
+        vcpu_flush_all_tables();   /* 站19D:出生口同熄(同 vm_finish 理由) */
     }
     if (id == 2) {
         sched_poke_cpu1();          /* 站十八D:CPU1 泵即扫 */
@@ -339,6 +345,10 @@ static void vm_finish(u32 id, u64 reason)
             console_puts("VM_DEAD\n");
     }
     sched_console_owner = NULL;   /* guest 不再读线,RX 归还宿主 */
+    /* 站19D:生命周期口熄表记账(死/停后槽位可被 vmcreate 复用,同值
+     * VTTBR 下重建页表;进场侧按值对比判不出,此口强制下一进场全量
+     * flush,防旧 stage-2 缓存泄给新客) */
+    vcpu_flush_all_tables();
 }
 
 struct vcpu *vm_vcpu_idx(u32 id, u32 vidx)   /* 站19D:(id,vidx) -> vcpu */
@@ -443,8 +453,9 @@ static bool pump_run_vcpu(u32 id, u32 vi)
              (virtio_irq_ready(vm) &&
               vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO))))
             v->wait_state = 0UL;
-        else
+        else {
             return false;
+        }
     }
     sched_vtimer_last[cpu_id()] = (id << 4) | vi;   /* 站十八A/D+19D:
                                         * 物理 CNTV 归属随本核进场;

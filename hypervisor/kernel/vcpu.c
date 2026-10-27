@@ -6,6 +6,18 @@
 
 struct vcpu *cur_vcpus[3];            /* 站十八D per-CPU;站19D 三核;宏 cur_vcpu 保持旧名 */
 
+/* 站19D:TLB 风暴修正——本核上次进场的 VTTBR 表值(0=强制首发 flush)。
+ * 旧序每 exit/entry 无条件 tlbi vmalls12e1is:真机上尚属浪费,在
+ * QEMU TCG 上是三线程同步全量 flush(跨核屏障 + 两级全部漫游重来,
+ * helper_ldul_mmu/translator_ldq 长尾的根源)。睡眠型 guest(Linux)
+ * 每个 park->wake 周期吃 2 发,100Hz tick 即成 flush 风暴,模拟速率
+ * 崩塌 ~1000x(vm2 单核靴实测同构建 120s 与 0.4s 双速,竞态即踩中
+ * 与否)。同 VM 断点续跑/睡醒重进,表值不变,缓存无陈旧可言;换表
+ * (轮转/出生/槽复用)才熄旧表。生命周期口(vm_start/vm_finish)经
+ * vcpu_flush_all_tables 清零强制下一发,防同值重建页表的槽位复用
+ * 把旧缓存泄给新客。 */
+static u64 last_vttbr[3];
+
 /* EL2-from-EL1 异常落点专用栈(硬件强制 SPSel=1 -> SP_EL2)。
  * 站十八D:per-CPU,每核一页(512*8);asm 桩按 mpidr.aff0 索引,
  * 归位到本核栈顶 —— handler 链不退栈,eret/retire 都不还 SP_EL2,
@@ -40,6 +52,10 @@ u64 vcpu_run(struct vcpu *v, u64 vttbr)
      * 防上一位 guest 的陈旧页表随槽位复用泄给新客)。 */
     __asm__ volatile("msr vtcr_el2, %0" :: "r"(VTCR_VALUE));
     __asm__ volatile("msr vttbr_el2, %0" :: "r"(vttbr));
+    if (last_vttbr[cpu_id()] != vttbr) {   /* 站19D:表值变化才熄旧表 */
+        last_vttbr[cpu_id()] = vttbr;
+        __asm__ volatile("tlbi vmalls12e1is; dsb sy; isb");
+    }
     /* CPACR_EL1 归 guest(站十五):站十四曾在此强写 3<<22,实为越权
      * 之二——FPEN 真位是 [21:20](sysreg.h:EL1EN=bit20/EL0EN=bit21),
      * 整寄存器写反而把内核 __cpu_setup 布好的 FPEN 清零:首次抢占重
@@ -59,11 +75,25 @@ u64 vcpu_run(struct vcpu *v, u64 vttbr)
 void vcpu_exit(void)
 {
     __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_EL2_HOST));   /* 宿主态可收 IRQ */
-    __asm__ volatile("msr vttbr_el2, xzr");
-    __asm__ volatile("tlbi vmalls12e1is; dsb sy; isb");
+    __asm__ volatile("msr vttbr_el2, xzr");   /* break 标记;TLBI 不在此发——
+                                               * 换表的熄旧表收编到进场侧
+                                               * (last_vttbr 对比),同 VM
+                                               * 断点/睡醒重进零 flush */
     __asm__ volatile("msr daifclr, #2");   /* 异常进入自带掩码;回宿主语境必须解 IRQ,
                                             * 否则 shell 永远收不到 tick(活体心跳定位) */
     vcpu_return_host(cur_vcpu);
+}
+
+/* 生命周期口(出生/死亡/暂停):全核表值记账清零 + 广播熄一次。
+ * 槽位复用会在同一 VTTBR 值下重建页表,进场侧按值对比看不出变化,
+ * 缓存会把旧客的 stage-2 泄给新客——此口强制下一进场全量 flush。 */
+void vcpu_flush_all_tables(void)
+{
+    unsigned int i;
+
+    for (i = 0; i < 3; i++)
+        last_vttbr[i] = 0UL;
+    __asm__ volatile("tlbi vmalls12e1is; dsb sy; isb");
 }
 
 /* SIMD per-VM 帧存取(第十六站):16 对 stp/ldp + FPCR/FPSR。

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "drivers/include/gicv3.h"
+#include "drivers/include/timer.h"
 #include "kernel/include/console.h"
 #include "kernel/include/util.h"
 #include "kernel/include/sched.h"
@@ -27,6 +28,15 @@ void secondary_main(u32 cpu)
     __asm__ volatile("msr vbar_el2, %0" :: "r"((u64)&el2_vector_table));
     __asm__ volatile("isb");
     gicv3_secondary_init(cpu);
+    /* 站19D 收口:补 PPI26 宿主拍(计划本项,首版"专泵无量子不配"
+     * 少配了兜底面)。26 在次级不只做量子——el2_irq_host 的 26 分支
+     * 携带每拍到期扫描(sched_vtimer_sweep,per-CPU 判自家帧):睡客
+     * 的 vtimer 在途拍蒸发后(27 被关线/ctx 熄火,再无物理响),唯一
+     * 的再发现途径就是本扫描;无 26 = 单次蒸发即永眠(vm2 SMP 后
+     * alternatives stop_machine 冻死 20s 内核时处,实测)。真机侧
+     * 同源:WFE 睡泵也靠 26 拍醒。CNTHP 是本核硬件,timer_init 天然
+     * per-CPU。 */
+    timer_init();
     sched_cpu_up[cpu] = 1UL;          /* 先握手再自报:CPU0 出提示符前等我 */
     console_puts("cpu");
     util_putdec(cpu);

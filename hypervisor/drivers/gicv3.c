@@ -190,7 +190,11 @@ void gicv3_secondary_init(u32 cpu)
 
     (void)rd32(rd + GICR_TYPER);              /* 在位探测(与 CPU0 同款) */
     wr32(rd + GICR_WAKER, 0);                 /* ProcessorSleep=0 */
-    ppi_configure(rd + 0x10000UL, (1u << GIC_PPI_VTIMER));
+    /* 站19D 收口:26+27 双配——27 = 本核睡客 vtimer 生命线,26 = 每拍
+     * 到期扫描的驱动源(睡客蒸发后的再发现兜底,见 smp.c 注);26 的
+     * 量子职能在专泵退役,兜底职能不退。 */
+    ppi_configure(rd + 0x10000UL,
+                  (1u << GIC_PPI_VTIMER) | (1u << GIC_PPI_HPTIMER));
     __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_EL2_HOST));
     __asm__ volatile("msr icc_sre_el2, %0" :: "r"(3UL));
     __asm__ volatile("isb");

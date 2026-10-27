@@ -164,3 +164,27 @@ git show --stat 验三件在——站 17 教训)。
 > vCPU 真并行:PSCI-SMC 转发、vgic per-vCPU 帧+SGI、DTB cpu@1+psci
 > 重裁剪、VMPIDR per-vcpu)。门禁 62->67。用户 2026-10-27 令
 > "下一站全部需要开发"。
+
+## 8. 实况纠偏(2026-10-27 收口)
+
+1. **[53] 判据行修正**:设计所引 `smp: Bringing up 1 secondary
+   CPU(s)` 在实测内核串口不存在;真实行为
+   `smp: Brought up 1 node, 2 CPUs`。verify 判据须以真行为准。
+2. **TLB 风暴定谳**:vcpu_run/vcpu_exit 每次 `tlbi vmalls12e1is`
+   在 QEMU TCG 是三线程同步全量 flush,睡眠型 guest 每 park→wake
+   两发,100Hz tick 下模拟速率塌 ~1/1000(实测同构建双速
+   0.4s↔180s);修复为 per-pCPU `last_vttbr` 表值对比,换表才
+   flush。真机行为不降级(轮转/出生/槽复用仍熄旧表)。
+3. **专泵 26 兜底**:sweep 唯一周期驱动源是 26(宿主相),专泵核
+   缺 26 即睡客蒸发后无再发现途径;已补
+   `gicv3_secondary_init` 26|27 双配 + `timer_init()`(26 每拍
+   扫描兜底,≤1s 自愈)。
+4. **收尸窗误杀在跑客**:`el2_irq_host` 27 三分支第三支写
+   `CNTV_CTL=0` 是 per-pCPU 的一刀;此窗 sweep 只认停泊者,
+   WFI 已入、簿记未竟的在跑客被误杀,出栈存得 ctl=0 按 RX 归类
+   停泊,sweep 永不再匹配(判据要 TIMER),单次蒸发即永眠。
+   修复:第三支只降线保挂,停泊落定后由 26 扫描接管再发现。
+5. **残余(未闭合)**:上述三修后,vm2 靴仍冻死在 SMP 交接窗
+   (~0.2s 内核时),同批含 vcpu0@cpu0 轮转世界与 vcpu0@cpu1
+   专泵两拓扑;62 门 [31] 区 vm2-Linux 控制台判据超时,双绿未达,
+   62→67 重编与 [53]/[65] SMP 判据暂缓(竞态致靴爬行/冻结)。
