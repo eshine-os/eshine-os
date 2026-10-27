@@ -100,6 +100,10 @@ void rt_shell_task(void *arg);
 void rt_fp_task(void *arg);
 void rt_fp_dual_task(void *arg);    /* 站十八C:Σ(i×0.5) 半值闭式 */
 void rt_fp_dual_a_task(void *arg);  /* 站十八C:Σi 复用,fpdual 独立针 */
+void rt_sync_fault(void);           /* 站19C:EC 0x07 FPEN 陷阱,轮转持有权 */
+extern rt_task_t *rt_fp_owner;      /* 站19C:单一持有者(vec.S 簿记符号契约) */
+extern u32 rt_fp_stat;              /* 站19C:切换计数(簿记 asm 自增) */
+extern u32 rt_fp_saves;             /* 站19C:持有权轮转数(fpstat 分子) */
 
 /* rt_main.c */
 rt_task_t *rt_irq_dispatch(void);  /* vec.S bl 目标:返回 0=续跑,否则=新任务 */

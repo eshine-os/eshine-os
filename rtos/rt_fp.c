@@ -42,6 +42,109 @@ void rt_fp_task(void *arg)
  * 两任务跨 tick 抢占交错,双结果皆精确 = per-task FP 帧无损;
  * 帧不保则先跑者的累加器被后者清零,必炸。 */
 
+/* ---- 站十九C:per-task FP lazy 化 ----
+ * fp_owner 单一持有:硬件 FP 现场永远只属于一个任务;切换只拨
+ * CPACR_EL1.FPEN(簿记),不搬帧。非持权任务首条 FP 指令陷阱
+ * EC 0x07 走 guest_sync → rt_sync_fault 轮转:存旧 owner 入其
+ * 帧(q[]/fpcr/fpsr,纯整数语境的 C 拷贝+显式 asm 存取控制寄存
+ * 器),装新 owner 帧,FPEN 开,原指令重执行。非 FP 任务零帧税。
+ * 计数:rt_fp_stat=切换次数(簿记 asm ++,分母)、rt_fp_saves=
+ * 持有权轮转数(分子,fpstat 判据 M<<N)。符号名与 vec.S 的
+ * ldr =rt_fp_owner/=rt_fp_stat 契约。 */
+rt_task_t *rt_fp_owner;                 /* bss 零 = 无持有者 */
+u32 rt_fp_stat;                         /* 切换计数(簿记 asm) */
+u32 rt_fp_saves;                        /* 持有权轮转计数 */
+
+/* 偏移即 rtos.h 断言的帧契约(q@96/fpcr@608/fpsr@616);此处直书常量,
+ * 断言变动即编译期炸,两处不会静默漂移。整仓 -mgeneral-regs-only:
+ * 编译器永不分配 v 寄存器,显式 asm 成对 stp/ldp 存取即全部真相。 */
+static void fp_frame_save(rt_task_t *t)
+{
+    __asm__ volatile(
+        "stp q0,  q1,  [%0, #(96+0)]\n\t"
+        "stp q2,  q3,  [%0, #(96+32)]\n\t"
+        "stp q4,  q5,  [%0, #(96+64)]\n\t"
+        "stp q6,  q7,  [%0, #(96+96)]\n\t"
+        "stp q8,  q9,  [%0, #(96+128)]\n\t"
+        "stp q10, q11, [%0, #(96+160)]\n\t"
+        "stp q12, q13, [%0, #(96+192)]\n\t"
+        "stp q14, q15, [%0, #(96+224)]\n\t"
+        "stp q16, q17, [%0, #(96+256)]\n\t"
+        "stp q18, q19, [%0, #(96+288)]\n\t"
+        "stp q20, q21, [%0, #(96+320)]\n\t"
+        "stp q22, q23, [%0, #(96+352)]\n\t"
+        "stp q24, q25, [%0, #(96+384)]\n\t"
+        "stp q26, q27, [%0, #(96+416)]\n\t"
+        "stp q28, q29, [%0, #(96+448)]\n\t"
+        "stp q30, q31, [%0, #(96+480)]\n\t"
+        "mrs x9, fpcr\n\t"
+        "mrs x10, fpsr\n\t"
+        "str x9, [%0, #608]\n\t"
+        "str x10, [%0, #616]"
+        :: "r"(t) : "x9", "x10", "memory");
+}
+
+static void fp_frame_load(rt_task_t *t)
+{
+    __asm__ volatile(
+        "ldp q0,  q1,  [%0, #(96+0)]\n\t"
+        "ldp q2,  q3,  [%0, #(96+32)]\n\t"
+        "ldp q4,  q5,  [%0, #(96+64)]\n\t"
+        "ldp q6,  q7,  [%0, #(96+96)]\n\t"
+        "ldp q8,  q9,  [%0, #(96+128)]\n\t"
+        "ldp q10, q11, [%0, #(96+160)]\n\t"
+        "ldp q12, q13, [%0, #(96+192)]\n\t"
+        "ldp q14, q15, [%0, #(96+224)]\n\t"
+        "ldp q16, q17, [%0, #(96+256)]\n\t"
+        "ldp q18, q19, [%0, #(96+288)]\n\t"
+        "ldp q20, q21, [%0, #(96+320)]\n\t"
+        "ldp q22, q23, [%0, #(96+352)]\n\t"
+        "ldp q24, q25, [%0, #(96+384)]\n\t"
+        "ldp q26, q27, [%0, #(96+416)]\n\t"
+        "ldp q28, q29, [%0, #(96+448)]\n\t"
+        "ldp q30, q31, [%0, #(96+480)]\n\t"
+        "ldr x9, [%0, #608]\n\t"
+        "ldr x10, [%0, #616]\n\t"
+        "msr fpcr, x9\n\t"
+        "msr fpsr, x10"
+        :: "r"(t) : "x9", "x10", "memory");
+}
+
+/* 站19C:guest_sync 入口(vec.S bl)。EC 0x07=CPACR FPEN 陷阱:
+ * 活 FP 现场此刻仍属旧持有者(本任务首条 FP 指令未执行),存旧装新
+ * 开 FPEN,返回后原指令重执行。未知 EC 停车(原 guest_park 语义)。 */
+void rt_sync_fault(void)
+{
+    u64 esr;
+
+    __asm__ volatile("mrs %0, esr_el1" : "=r"(esr));
+    if ((esr >> 26) == 0x07) {
+        rt_task_t *cur = rt_cur;
+        rt_task_t *old;
+
+        /* FPEN 必须先于任何帧指令(q 存取自身就是 FP 指令,关着执行
+         * = 自陷阱递归炸栈——探针实锤,cur/owner 恒初值)。 */
+        __asm__ volatile(
+            "mrs x9, cpacr_el1\n\t"
+            "orr x9, x9, #0x300000\n\t"
+            "msr cpacr_el1, x9\n\t"
+            "isb"
+            ::: "x9", "memory");
+        old = rt_fp_owner;
+        if (old && old != cur) {
+            fp_frame_save(old);        /* 现场此刻仍属旧持有者 */
+            rt_fp_saves++;
+        }
+        if (old != cur) {
+            fp_frame_load(cur);
+            rt_fp_owner = cur;
+        }
+    } else {
+        for (;;)
+            __asm__ volatile("wfi");
+    }
+}
+
 void rt_fp_dual_a_task(void *arg)
 {
     (void)arg;

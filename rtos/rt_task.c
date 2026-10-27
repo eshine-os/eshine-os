@@ -58,6 +58,10 @@ void rt_task_exit(void)             /* noreturn:DEAD 后必切走 */
     rt_cur->state = RT_DEAD;
     rdy_remove(rt_cur);              /* 站19:清自拣残令牌——否则摘头会
                                       * 摘到自己,DEAD 被复活的假醒 */
+    if (rt_fp_owner == rt_cur)       /* 站19C:持权者退场即弃权——槽位
+                                      * 会被 create 复用,stale owner 指
+                                      * 向复用后的活结构会错存帧 */
+        rt_fp_owner = NULL;
     next = rt_pick_ready();
     if (!next)
         rt_idle_loop();             /* 理论兜底:全灭时回 idle 轮询 */

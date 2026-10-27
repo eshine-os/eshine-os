@@ -101,6 +101,9 @@ static void shell_line(char *line)
         rt_demo_event();             /* 站十九B:事件组 AND/OR */
     } else if (streq(line, "queuedemo")) {
         rt_demo_queue();             /* 站十九B:消息队列满环阻塞 */
+    } else if (streq(line, "fpstat")) {
+        rt_puts_u64("lazy: ", rt_fp_stat, " switches, ");   /* 站19C:M<<N */
+        rt_puts_u64("", rt_fp_saves, " fp-saves\n");
     } else if (starts(line, "spawn ")) {
         static char spawn_name[12];     /* 单缓冲:并发 spawn 会互踩,
                                          * demo 尺度一次一个(记残余) */
@@ -138,7 +141,7 @@ static void shell_line(char *line)
         rt_puts("\n");
     } else if (line[0]) {
         rt_puts("rtos: try echo <t> | selftest | ps | spawn <n> | sleep [1-9]"
-                " | fp | fpdual | yield | semdemo | mutexdemo | pidemo"
+                " | fp | fpdual | fpstat | yield | semdemo | mutexdemo | pidemo"
                 " | eventdemo | queuedemo | host | exit\n");
     }
 }
