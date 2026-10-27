@@ -36,3 +36,44 @@ void rt_fp_task(void *arg)
     else
         rt_puts("fp FAIL: fp state corrupted\n");
 }
+
+/* 站十八C:fpdual 双 FP 任务并发自证——A 印独立针(复用 Σi 闭式),
+ * B 累加 Σ(i×0.5)(半值闭式:每项与部分和皆精确表示 <2^53)。
+ * 两任务跨 tick 抢占交错,双结果皆精确 = per-task FP 帧无损;
+ * 帧不保则先跑者的累加器被后者清零,必炸。 */
+
+void rt_fp_dual_a_task(void *arg)
+{
+    (void)arg;
+    if (fp_sum_check(1000000ULL, 500000500000ULL))
+        rt_puts("fpdual: A OK: 500000500000\n");
+    else
+        rt_puts("fpdual: A FAIL: fp state corrupted\n");
+}
+
+void rt_fp_dual_task(void *arg)
+{
+    u64 got;
+
+    (void)arg;
+    __asm__ volatile(
+        "fmov  d0, xzr\n\t"          /* acc = 0.0 */
+        "fmov  d2, #0.5\n\t"
+        "mov   x9, #1\n\t"
+        "1:\n\t"
+        "scvtf d1, x9\n\t"           /* d1 = (double)x9 */
+        "fmul  d1, d1, d2\n\t"       /* d1 = x9 * 0.5 */
+        "fadd  d0, d0, d1\n\t"
+        "add   x9, x9, #1\n\t"
+        "cmp   x9, %1\n\t"
+        "b.lt  1b\n\t"
+        "fcvtzu %0, d0\n\t"
+        : "=r"(got)
+        : "r"(1000001ULL)
+        : "v0", "v1", "v2", "x9", "cc");
+    __asm__ volatile("" : "+r"(got));   /* 活性屏:防比较被重排 */
+    if (got == 250000250000ULL)
+        rt_puts("fpdual: B OK: 250000250000\n");
+    else
+        rt_puts_u64("fpdual: B FAIL: ", got, "\n");
+}

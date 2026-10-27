@@ -83,13 +83,58 @@ guest_park:
 .endm
 
 /* 簿记:x0=新任务(C 已选好);保存旧任务帧顶,切 sp 与 rt_cur。
- * SP 不能直访内存,经 x3 中转。 */
+ * SP 不能直访内存,经 x3 中转。
+ * 站十八C:per-task FP 帧存取内嵌——两个切换点(rt_switch_to 与
+ * guest_irq)共用本宏,一处扩展双点生效。整数帧已压栈,x9/x10 作
+ * 临时自由;q 寄存器操作不碰整数现场;偏移契约 = rtos.h 断言。 */
+.equ RT_TASK_Q,    96
+.equ RT_TASK_FPCR, 608
 .macro RT_SWITCH_BOOKKEEP
     ldr     x1, =rt_cur
     ldr     x2, [x1]               /* x2 = 旧任务 */
     mov     x3, sp
     str     x3, [x2]               /* 旧->sp = 帧顶(sp 偏移 0 契约) */
+    stp     q0,  q1,  [x2, #(RT_TASK_Q+0)]
+    stp     q2,  q3,  [x2, #(RT_TASK_Q+32)]
+    stp     q4,  q5,  [x2, #(RT_TASK_Q+64)]
+    stp     q6,  q7,  [x2, #(RT_TASK_Q+96)]
+    stp     q8,  q9,  [x2, #(RT_TASK_Q+128)]
+    stp     q10, q11, [x2, #(RT_TASK_Q+160)]
+    stp     q12, q13, [x2, #(RT_TASK_Q+192)]
+    stp     q14, q15, [x2, #(RT_TASK_Q+224)]
+    stp     q16, q17, [x2, #(RT_TASK_Q+256)]
+    stp     q18, q19, [x2, #(RT_TASK_Q+288)]
+    stp     q20, q21, [x2, #(RT_TASK_Q+320)]
+    stp     q22, q23, [x2, #(RT_TASK_Q+352)]
+    stp     q24, q25, [x2, #(RT_TASK_Q+384)]
+    stp     q26, q27, [x2, #(RT_TASK_Q+416)]
+    stp     q28, q29, [x2, #(RT_TASK_Q+448)]
+    stp     q30, q31, [x2, #(RT_TASK_Q+480)]
+    mrs     x9, fpcr
+    mrs     x10, fpsr
+    str     x9, [x2, #RT_TASK_FPCR]      /* 64 位 stp 量程 ±504,608 用两条 */
+    str     x10, [x2, #(RT_TASK_FPCR+8)]
     str     x0, [x1]               /* rt_cur = 新 */
+    ldp     q0,  q1,  [x0, #(RT_TASK_Q+0)]
+    ldp     q2,  q3,  [x0, #(RT_TASK_Q+32)]
+    ldp     q4,  q5,  [x0, #(RT_TASK_Q+64)]
+    ldp     q6,  q7,  [x0, #(RT_TASK_Q+96)]
+    ldp     q8,  q9,  [x0, #(RT_TASK_Q+128)]
+    ldp     q10, q11, [x0, #(RT_TASK_Q+160)]
+    ldp     q12, q13, [x0, #(RT_TASK_Q+192)]
+    ldp     q14, q15, [x0, #(RT_TASK_Q+224)]
+    ldp     q16, q17, [x0, #(RT_TASK_Q+256)]
+    ldp     q18, q19, [x0, #(RT_TASK_Q+288)]
+    ldp     q20, q21, [x0, #(RT_TASK_Q+320)]
+    ldp     q22, q23, [x0, #(RT_TASK_Q+352)]
+    ldp     q24, q25, [x0, #(RT_TASK_Q+384)]
+    ldp     q26, q27, [x0, #(RT_TASK_Q+416)]
+    ldp     q28, q29, [x0, #(RT_TASK_Q+448)]
+    ldp     q30, q31, [x0, #(RT_TASK_Q+480)]
+    ldr     x9, [x0, #RT_TASK_FPCR]
+    ldr     x10, [x0, #(RT_TASK_FPCR+8)]
+    msr     fpcr, x9
+    msr     fpsr, x10
     ldr     x3, [x0]
     mov     sp, x3                 /* sp = 新帧顶 */
 .endm

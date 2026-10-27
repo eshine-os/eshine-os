@@ -144,3 +144,11 @@ void rt_demo_pi(void)
         !rt_task_create("pilow", pi_low, NULL, 9))
         rt_puts("pidemo: pool full\n");
 }
+
+/* ---- fpdual(站十八C):per-task FP 帧判据,双 FP 任务并发 ---- */
+void rt_demo_fpdual(void)
+{
+    if (!rt_task_create("fpdA", rt_fp_dual_a_task, NULL, 11) ||
+        !rt_task_create("fpdB", rt_fp_dual_task, NULL, 12))
+        rt_puts("fpdual: pool full\n");
+}

@@ -45,8 +45,19 @@ struct rt_task {
     char name[12];
     u32 base_prio;               /* 站十八B:PI 基准优先级(boost 还原用;
                                    * 置结构尾:前部偏移是 asm/帧契约不许动 */
+    /* per-task FP 帧(站十八C):16B 对齐 q 阵列,偏移 96 = vec.S 的
+     * .equ RT_TASK_Q asm 契约(下方 _Static_assert 钉死);帧即完备,
+     * 切换全量存取,泵 per-VM FP 同哲学第三兑。idle 同结构同享。 */
+    u64 q[64] __attribute__((aligned(16)));
+    u64 fpcr;
+    u64 fpsr;
 };
 typedef struct rt_task rt_task_t;
+
+/* asm 契约断言:vec.S 的 .equ RT_TASK_Q/FPCR/FPSR 必须与此一致
+ * (改结构必编译期炸——站 17 名字长度栈下标的教训:契约要机器盯) */
+_Static_assert(__builtin_offsetof(rt_task_t, q) == 96, "RT_TASK_Q=96");
+_Static_assert(__builtin_offsetof(rt_task_t, fpcr) == 608, "RT_TASK_FPCR=608");
 
 extern rt_task_t *volatile rt_cur;
 extern volatile u64 rt_ticks;
@@ -85,6 +96,8 @@ void rt_shell_task(void *arg);
 
 /* rt_fp.c */
 void rt_fp_task(void *arg);
+void rt_fp_dual_task(void *arg);    /* 站十八C:Σ(i×0.5) 半值闭式 */
+void rt_fp_dual_a_task(void *arg);  /* 站十八C:Σi 复用,fpdual 独立针 */
 
 /* rt_main.c */
 rt_task_t *rt_irq_dispatch(void);  /* vec.S bl 目标:返回 0=续跑,否则=新任务 */
