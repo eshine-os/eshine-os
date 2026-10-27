@@ -56,7 +56,7 @@ void el2_irq_host(void)
             vgic_wake_waiter();
         else if (vtimer_inflight()) {
             gicv3_eoi_drop(GIC_PPI_VTIMER);
-            sched_vtimer_recall = 1UL;
+            sched_vtimer_recall[cpu_id()] = 1UL;
         } else
             vgic_wake_waiter();
     } else if (intid != IAR_SPURIOUS) {

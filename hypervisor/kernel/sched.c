@@ -8,5 +8,12 @@
 volatile unsigned long sched_need_resched;   /* asm 桩出口检查(置帧转写) */
 unsigned long sched_preempts;                 /* 抢占计数(vmstat 判据) */
 struct vcpu *sched_console_owner;              /* UART RX 所有权(NULL=host) */
-volatile unsigned long sched_vtimer_recall;   /* 站十八A:在途回业主标志 */
-unsigned long sched_vtimer_last;               /* 站十八A:最后进场 VM id */
+volatile unsigned long sched_vtimer_recall[2]; /* 站十八A/D:在途回业主标志[cpu] */
+unsigned long sched_vtimer_last[2];            /* 站十八A/D:最后进场 VM id[cpu] */
+
+volatile unsigned long sched_cpu1_up;   /* 站十八D:CPU1 上线握手(main 有界等) */
+
+void sched_poke_cpu1(void)
+{
+    __asm__ volatile("sev");       /* WFE 事件寄存器:天然防丢醒 */
+}

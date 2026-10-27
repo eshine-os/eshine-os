@@ -38,5 +38,11 @@ SECTIONS
         __stack_top = .;
     } :data
 
+    .secstack (NOLOAD) : {
+        . = ALIGN(16);
+        . += 0x1000;                /* 站十八D:4 KB CPU1 EL2 栈 */
+        secondary_stack_top = .;
+    } :data
+
     /DISCARD/ : { *(.note*) *(.comment) *(.eh_frame*) }
 }

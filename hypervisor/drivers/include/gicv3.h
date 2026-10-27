@@ -25,7 +25,8 @@
  * vcpu_exit 恢复宿主态时必须回此值,不可清零。 */
 #define HCR_EL2_HOST 0x10UL
 
-void gicv3_init(void);                    /* dist/redist/cpuif,EOImode=1 */
+void gicv3_init(void);
+void gicv3_secondary_init(void);   /* 站十八D:CPU1 本核面(GICD 共享不动) */                    /* dist/redist/cpuif,EOImode=1 */
 u64  gicv3_claim(void);                   /* mrs ICC_IAR1_EL1 */
 void gicv3_eoi_dir(u64 intid);            /* 降优先级 + DIR 撤销(宿主自有) */
 void gicv3_eoi_drop(u64 intid);           /* 只降优先级(27 的物理线由 guest 虚 EOI 联动撤销) */

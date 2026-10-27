@@ -9,8 +9,17 @@
 .global el1_trap
 el1_trap:
     str     x0, [sp, #-16]!
-    adrp    x0, cur_vcpu
-    ldr     x0, [x0, :lo12:cur_vcpu]
+    /* 站十八D:per-CPU cur_vcpu(数组按 mpidr.aff0 索引)。x1 押栈
+     * 绕一圈:此时 guest x1 尚未入帧,不许直接拿来当 scratch——
+     * 首版教训:直接 mrs x1 会把 guest x1 砸成 cpu 号再进帧,MMIO
+     * 的 SRT=1 读 gprs[1] 恒得 1(vm2 全线 \x01、vm0 全哑)。 */
+    str     x1, [sp, #-16]!
+    mrs     x1, mpidr_el1
+    ubfx    x1, x1, #0, #8
+    adrp    x0, cur_vcpus
+    add     x0, x0, :lo12:cur_vcpus
+    ldr     x0, [x0, x1, lsl #3]
+    ldr     x1, [sp], #16          /* guest x1 原值回填 */
     stp     x1, x2,  [x0, #8]
     stp     x3, x4,  [x0, #24]
     stp     x5, x6,  [x0, #40]
@@ -36,12 +45,16 @@ el1_trap:
     str     x1, [x0, #256]
     mrs     x1, spsr_el2
     str     x1, [x0, #264]
-    /* SP_EL2 归位栈顶:handler 链不退栈,eret/retire 都不还 SP_EL2。
-     * 不归位则每次陷阱净泄一截,累计碾穿栈底踩进相邻 BSS(实测第 79 发)。*/
-    adrp    x1, excp_stack
-    add     x1, x1, :lo12:excp_stack
-    add     x1, x1, #0x1000           /* 512 * 8 */
-    mov     sp, x1                    /* SPSel=1 -> SP_EL2 */
+    /* SP_EL2 归位本核栈顶:handler 链不退栈,eret/retire 都不还
+     * SP_EL2。不归位则每次陷阱净泄一截,累计碾穿栈底踩进相邻 BSS
+     * (实测第 79 发)。站十八D:excp_stacks[cpu](每核一页)。 */
+    mrs     x1, mpidr_el1
+    ubfx    x1, x1, #0, #8
+    adrp    x9, excp_stacks
+    add     x9, x9, :lo12:excp_stacks
+    add     x9, x9, x1, lsl #12      /* cpu * 0x1000 */
+    add     x9, x9, #0x1000          /* 本核栈顶(512 * 8) */
+    mov     sp, x9                   /* SPSel=1 -> SP_EL2 */
     b       el1_sync                  /* x0 = vcpu;此路径不再返回 */
 
 /* ---- 续跑:帧即真相 -> 加载 -> eret(noreturn) ---- */

@@ -71,6 +71,7 @@ static void vuart_tx_emit(struct vuart *vu, u32 vmid)
 
     if (vu->tx_len == 0)
         return;
+    console_lock();                  /* 站十八D:整段冲刷行级原子 */
     if (vu->tx_tagged) {
         console_puts("[vm");
         util_putdec(vmid);
@@ -79,6 +80,7 @@ static void vuart_tx_emit(struct vuart *vu, u32 vmid)
     for (i = 0; i < vu->tx_len; i++)
         console_putc(vu->tx[i]);
     vu->tx_len = 0;
+    console_unlock();
 }
 
 u64 vuart_mmio_read(struct vuart *vu, u64 off)

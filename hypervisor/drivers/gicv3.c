@@ -20,20 +20,20 @@ static inline u32  rd32(u64 addr)          { return *(volatile u32 *)addr; }
 /* PPI 组/优先级/使能 —— mask 的 bit n = intid n(仅 16-31 有效)。
  * 先禁用并清 pending/active 到已知态,再配组与优先级,最后才使能;
  * 不碰 ICFGR:定时器类 PPI 复位即电平触发,是硬件默认语义。 */
-static void ppi_configure(u32 mask)
+static void ppi_configure(u64 sgi_base, u32 mask)
 {
     u32 group = 0;
     u32 id;
 
-    wr32(GICR_SGI_BASE + GICR_ICENABLER0, mask);    /* 已知态:先关 */
-    wr32(GICR_SGI_BASE + GICR_ICPENDR0, mask);       /* 清挂起 */
-    wr32(GICR_SGI_BASE + GICR_ICACTIVER0, mask);    /* 清活动 */
+    wr32(sgi_base + GICR_ICENABLER0, mask);    /* 已知态:先关 */
+    wr32(sgi_base + GICR_ICPENDR0, mask);       /* 清挂起 */
+    wr32(sgi_base + GICR_ICACTIVER0, mask);    /* 清活动 */
     for (id = 16; id < 32; id++) {
         if (!(mask & (1u << id)))
             continue;
         group |= 1u << id;                          /* Group 1(NS) */
         {
-            u64 addr = GICR_SGI_BASE + GICR_IPRIORITYR(id);
+            u64 addr = sgi_base + GICR_IPRIORITYR(id);
             u32 shift = 8 * (id & 3);
             u32 prio = rd32(addr);
 
@@ -41,8 +41,8 @@ static void ppi_configure(u32 mask)
             wr32(addr, prio);
         }
     }
-    wr32(GICR_SGI_BASE + GICR_IGROUPR0, group);
-    wr32(GICR_SGI_BASE + GICR_ISENABLER0, mask);
+    wr32(sgi_base + GICR_IGROUPR0, group);
+    wr32(sgi_base + GICR_ISENABLER0, mask);
 }
 
 void gicv3_init(void)
@@ -50,7 +50,8 @@ void gicv3_init(void)
     (void)rd32(GICR_RD_BASE + GICR_TYPER);          /* CPU0 redistributor 在位探测 */
     wr32(GICD_BASE + GICD_CTLR, 0);                 /* 配置期先关 */
     wr32(GICR_RD_BASE + GICR_WAKER, 0);             /* ProcessorSleep=0 */
-    ppi_configure((1u << GIC_PPI_HPTIMER) | (1u << GIC_PPI_VTIMER));
+    ppi_configure(GICR_SGI_BASE,
+                  (1u << GIC_PPI_HPTIMER) | (1u << GIC_PPI_VTIMER));
 
     /* CPU interface:sysreg 直访 + 全优先级放行 + EOImode=1(EOIR 只降优先级) */
     __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_EL2_HOST)); /* 见 gicv3.h */
@@ -162,4 +163,27 @@ void gicv3_eoi_dir(u64 intid)
 void gicv3_eoi_drop(u64 intid)
 {
     __asm__ volatile("msr icc_eoir1_el1, %0" :: "r"(intid));
+}
+
+void gicv3_secondary_init(void)
+{
+    /* 站十八D:CPU1 自配——GICD 共享不动(CPU0 已开,重复写会闪断
+     * CPU0 的中断面);本核重分发帧(RD+SGI 各 64KB,CPU n @
+     * 0x080A0000+n*0x20000);只配 PPI27(vm2 vtimer 生命线;PPI26
+     * 不配=专泵无量子);CPU interface/虚拟面 per-CPU 硬件同款。 */
+    u64 rd = GICR_RD_BASE + 0x20000UL;
+
+    (void)rd32(rd + GICR_TYPER);              /* 在位探测(与 CPU0 同款) */
+    wr32(rd + GICR_WAKER, 0);                 /* ProcessorSleep=0 */
+    ppi_configure(rd + 0x10000UL, (1u << GIC_PPI_VTIMER));
+    __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_EL2_HOST));
+    __asm__ volatile("msr icc_sre_el2, %0" :: "r"(3UL));
+    __asm__ volatile("isb");
+    __asm__ volatile("msr icc_pmr_el1, %0" :: "r"(0xFFUL));
+    __asm__ volatile("msr icc_ctlr_el1, %0" :: "r"(2UL));  /* EOImode=1 */
+    __asm__ volatile("msr icc_igrpen1_el1, %0" :: "r"(1UL));
+    __asm__ volatile("msr cnthctl_el2, %0" :: "r"(3UL));
+    __asm__ volatile("msr cptr_el2, xzr");   /* 站十六:TFP 归零防御 */
+    __asm__ volatile("isb");
+    vgic_enable();
 }

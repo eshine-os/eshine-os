@@ -10,6 +10,13 @@ _start:
     cmp     x0, #0x8                    /* EL2 ? */
     bne     1f                          /* 非 EL2:原地 wfi 停车 */
 
+    /* 站十八D:非 boot 核门——防"全体进进口"形态下次核重跑 CPU0
+     * 的 boot(bss 再清/栈互踩)。实测 QEMU virt 次核上电即 PSCI
+     * off,此门是防御性收敛。 */
+    mrs     x0, mpidr_el1    /* EL2 可读同值;mpidr_el2 名字 armv8-a GAS 不认 */
+    and     x0, x0, #0xff
+    cbnz    x0, 1f
+
     msr     daifset, #0xf               /* 关全部中断(本周轮询模型) */
 
     /* 清 BSS */
@@ -37,3 +44,17 @@ _start:
     b       main
 1:  wfi
     b       1b
+
+/* 站十八D:次核入口(PSCI CPU_ON 的 entry_point;QEMU 上电即置
+ * EL2,与 CPU0 复位同级;x0=context_id)。栈/向量/泵逐步就位。 */
+.global secondary_entry
+secondary_entry:
+    mrs     x0, CurrentEL
+    and     x0, x0, #0xc
+    cmp     x0, #0x8
+    bne     1b                          /* 理论不到:停车 */
+    msr     daifset, #0xf
+    msr     spsel, #1                   /* 宿主 C 世界驻 SP_EL2(站十四) */
+    ldr     x0, =secondary_stack_top
+    mov     sp, x0
+    b       secondary_main

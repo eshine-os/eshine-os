@@ -85,6 +85,20 @@ void vcpu_enter_guest(struct vcpu *v);   /* 正常"返回"= guest 已 retire */
 void trap_resume(struct vcpu *v) __attribute__((noreturn));
 void vcpu_return_host(struct vcpu *v) __attribute__((noreturn));
 
-extern struct vcpu *cur_vcpu;   /* asm 桩引用;单活跃 vCPU(无 SMP) */
+/* 站十八D:per-CPU(0/1)。cur_vcpus[] 按 mpidr.aff0 索引;旧名
+ * cur_vcpu 保留为宏,存量 C 引用零改动。asm 桩直用数组符号
+ * (MPIDR 索引),见 vcpu_entry.S/irq_entry.S。 */
+extern struct vcpu *cur_vcpus[2];
+extern u64 excp_stacks[2][512];
+
+static inline u32 cpu_id(void)
+{
+    u64 m;
+
+    __asm__ volatile("mrs %0, mpidr_el1" : "=r"(m));
+    return (u32)(m & 0xffUL);
+}
+
+#define cur_vcpu (cur_vcpus[cpu_id()])
 
 #endif /* ESHINE_VCPU_H */

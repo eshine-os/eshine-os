@@ -74,9 +74,13 @@ el2_trap_guest:
      * 不还,vcpu_exit noreturn 后续跑泵链,SP 棘轮每发 guest-tick 净泄
      * 256B——裸机站 tick 节奏无感,Linux 全程 RUNNING,16s 碾穿 4KB
      * 栈底踩进 .data,cur_vcpu 遭灾成 guest 内核 VA,宿主崩于 EL2)。 */
-    adrp    x0, excp_stack
-    add     x0, x0, :lo12:excp_stack
-    add     x0, x0, #0x1000             /* 栈顶 = excp_stack + 512*8 */
+    /* 站十八D:归位到本核 excp_stacks[cpu] 栈顶 */
+    mrs     x1, mpidr_el1
+    ubfx    x1, x1, #0, #8
+    adrp    x0, excp_stacks
+    add     x0, x0, :lo12:excp_stacks
+    add     x0, x0, x1, lsl #12
+    add     x0, x0, #0x1000             /* 本核栈顶(512*8) */
     mov     sp, x0
     bl      vcpu_exit                   /* noreturn:PREEMPT 让位 */
 9:
@@ -103,8 +107,12 @@ el2_trap_guest:
  * gprs[31]@0..240 sp@248 pc@256 pstate@264。 */
 .global preempt_save_frame
 preempt_save_frame:
-    ldr     x29, =cur_vcpu
-    ldr     x29, [x29]
+    /* 站十八D:per-CPU cur_vcpu(数组按 mpidr.aff0 索引) */
+    mrs     x1, mpidr_el1
+    ubfx    x1, x1, #0, #8
+    adrp    x29, cur_vcpus
+    add     x29, x29, :lo12:cur_vcpus
+    ldr     x29, [x29, x1, lsl #3]
     ldp     x0, x1,  [sp]               /* guest x29,x30(帧头) */
     stp     x0, x1,  [x29, #232]
     ldp     x0, x1,  [sp, #16]
