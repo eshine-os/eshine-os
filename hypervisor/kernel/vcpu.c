@@ -4,13 +4,13 @@
 #include "drivers/include/gicv3.h"
 #include "kernel/include/vcpu.h"
 
-struct vcpu *cur_vcpus[2];            /* 站十八D:per-CPU;宏 cur_vcpu 保持旧名 */
+struct vcpu *cur_vcpus[3];            /* 站十八D per-CPU;站19D 三核;宏 cur_vcpu 保持旧名 */
 
 /* EL2-from-EL1 异常落点专用栈(硬件强制 SPSel=1 -> SP_EL2)。
  * 站十八D:per-CPU,每核一页(512*8);asm 桩按 mpidr.aff0 索引,
  * 归位到本核栈顶 —— handler 链不退栈,eret/retire 都不还 SP_EL2,
  * 不归位则每次陷阱净泄一截,累计碾穿栈底。 */
-u64 excp_stacks[2][512] __attribute__((aligned(16)));
+u64 excp_stacks[3][512] __attribute__((aligned(16)));
 
 /* HCR_EL2(guest): RW(64-bit EL1) | VM(stage-2) | IMO(ICV 重定向+IRQ 路由)
  * | AMO(物理 SError 路由 EL2——第十四站:Linux 的 S1 走表访问在 QEMU 侧

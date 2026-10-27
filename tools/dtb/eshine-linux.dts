@@ -60,7 +60,11 @@
 
 	psci {
 		compatible = "arm,psci-1.0\0arm,psci-0.2\0arm,psci";	/* QEMU -smp 3 dumpdtb 原形 */
-		method = "smc";			/* EL2 截获(EC 0x17)转发,站19D */
+		method = "hvc";			/* 站19D 探针定谳:QEMU 机器级 PSCI 截获
+						 * EL1 的 SMC(TCG conduit 优先于 EL2 陷入,
+						 * 零 [PSCI] 打印实证),HVC 才到我们的
+						 * EL2(EC 0x16 imm#0 分发)——站18 设计
+						 * 预留的兜底路径启用 */
 		cpu_suspend = <0xc4000001>;	/* standby 空转返回 0(power_level>0 残余) */
 		cpu_off = <0x84000002>;		/* 返回 -1(不支持,Linux 热插拔用不到) */
 		cpu_on = <0xc4000003>;		/* 置 vm2.vcpus[1] 帧 + poke pcpu2 */

@@ -26,6 +26,8 @@
 #define VGIC_SPI_WORDS 1     /* ISENABLER 字数:覆盖 INTID 32-63(通道 33/35) */
 #define VGIC_SGI_BYTES 32    /* SGI 面优先级字节:INTID 0-31 */
 
+#define VGIC_MAX_FRAMES 2                 /* 站19D:每 VM 至多 2 vCPU 帧 */
+
 struct vgic {
     /* GICD 面(SPI:INTID 32 起) */
     u32 dist_ctlr;
@@ -35,28 +37,40 @@ struct vgic {
     u32 dist_iactiver[VGIC_SPI_WORDS];
     u8  dist_ipriorityr[32 * VGIC_SPI_WORDS];
     u32 dist_icfgr[VGIC_SPI_WORDS];
-    /* GICR RD 面 */
-    u32 rd_ctlr;
-    u32 rd_waker;
-    /* GICR SGI 面(INTID 0-31) */
-    u32 sgi_igroupr0;
-    u32 sgi_isenabler0;
-    u32 sgi_ipendr0;
-    u32 sgi_iactiver0;
-    u8  sgi_ipriorityr[VGIC_SGI_BYTES];
-    u32 sgi_icfgr0;                     /* SGI:1 bit/INTID */
-    u32 sgi_icfgr1;                     /* PPI:2 bit/INTID,vtimer 27=level(bit55:54=00) */
+    /* 站十九D:RD/SGI 面 per-vCPU 帧(帧号=off>>17;单 vCPU VM 只有
+     * 帧 0 在用,nframes=1——Linux 的重分发帧发现按 TYPER 亲和
+     * (Aff0=帧号,位[39:32],MPIDR 同构;基准 gic_v3.c 实证
+     * cpu_mpidr=typer>>32)+ Last(末帧)逐帧匹配)。 */
+    u32 nframes;
+    u32 rd_ctlr[VGIC_MAX_FRAMES];
+    u32 rd_waker[VGIC_MAX_FRAMES];
+    /* GICR SGI 面(INTID 0-31)per 帧 */
+    u32 sgi_igroupr0[VGIC_MAX_FRAMES];
+    u32 sgi_isenabler0[VGIC_MAX_FRAMES];
+    u32 sgi_ipendr0[VGIC_MAX_FRAMES];
+    u32 sgi_iactiver0[VGIC_MAX_FRAMES];
+    u8  sgi_ipriorityr[VGIC_MAX_FRAMES][VGIC_SGI_BYTES];
+    u32 sgi_icfgr0[VGIC_MAX_FRAMES];   /* SGI:1 bit/INTID */
+    u32 sgi_icfgr1[VGIC_MAX_FRAMES];   /* PPI:2 bit/INTID,vtimer 27=level */
 };
 
-void vgic_reset(struct vgic *g);
+void vgic_reset(struct vgic *g, u32 nframes);   /* 站19D:面随 VM 的 vCPU 数 */
 u64  vgic_dist_mmio_read(struct vgic *g, u32 off, u32 size);
 void vgic_dist_mmio_write(struct vgic *g, u32 off, u64 val, u32 size);
-u64  vgic_redist_mmio_read(struct vgic *g, u32 off, u32 size);
-void vgic_redist_mmio_write(struct vgic *g, u32 off, u64 val, u32 size);
+u64  vgic_redist_mmio_read(struct vgic *g, u32 frame, u32 off, u32 size);
+void vgic_redist_mmio_write(struct vgic *g, u32 frame, u32 off, u64 val,
+                            u32 size);
 
 /* 泵注入门控:distributor 是权威(guest 使能了才注入) */
 bool vgic_spi_enabled(const struct vgic *g, u32 intid);   /* INTID 32-63 */
 bool vgic_ppi_enabled(const struct vgic *g, u32 intid);   /* INTID 0-31 */
 u8    vgic_ppi_prio(const struct vgic *g, u32 intid);     /* 注入 LR 优先级镜像 */
+
+/* 站十九D:SGI 面(guest 的 IPI 通道)。SGIR 写经 GICD 解码目标帧置
+ * 挂起;泵入场按帧取走(最低位且已使能者)注 LR2(纯虚拟),
+ * 挂起位取走即清——与 uart 同律,LR 单通道一次一条。 */
+bool vgic_sgi_take(struct vgic *g, u32 frame, u32 *intid, u8 *prio);
+u32   vgic_sgi1r_write(struct vgic *g, u64 val);  /* 站19D:EL2 截获转发,
+                                                    * 返回命中帧掩码 */
 
 #endif /* ESHINE_VGIC_H */

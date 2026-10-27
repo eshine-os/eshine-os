@@ -44,10 +44,12 @@ static void bytes_write(u8 *base, u32 off, u32 size, u64 val)
         base[off + i] = (u8)(val >> (i * 8UL));
 }
 
-void vgic_reset(struct vgic *g)
+void vgic_reset(struct vgic *g, u32 nframes)
 {
-    unsigned int i;
+    unsigned int i, f;
 
+    g->nframes = nframes > VGIC_MAX_FRAMES ? VGIC_MAX_FRAMES
+                                           : (nframes ? nframes : 1u);
     g->dist_ctlr = 0;
     for (i = 0; i < VGIC_SPI_WORDS; i++) {
         g->dist_igroupr[i] = 0;
@@ -58,16 +60,18 @@ void vgic_reset(struct vgic *g)
     }
     for (i = 0; i < sizeof(g->dist_ipriorityr); i++)
         g->dist_ipriorityr[i] = 0;
-    g->rd_ctlr = 0;
-    g->rd_waker = 0;
-    g->sgi_igroupr0 = 0;
-    g->sgi_isenabler0 = 0;
-    g->sgi_ipendr0 = 0;
-    g->sgi_iactiver0 = 0;
-    for (i = 0; i < sizeof(g->sgi_ipriorityr); i++)
-        g->sgi_ipriorityr[i] = 0;
-    g->sgi_icfgr0 = 0;
-    g->sgi_icfgr1 = 0;        /* PPI 全 level:与树里 PPI11 level 声明一致 */
+    for (f = 0; f < VGIC_MAX_FRAMES; f++) {
+        g->rd_ctlr[f] = 0;
+        g->rd_waker[f] = 0;
+        g->sgi_igroupr0[f] = 0;
+        g->sgi_isenabler0[f] = 0;
+        g->sgi_ipendr0[f] = 0;
+        g->sgi_iactiver0[f] = 0;
+        g->sgi_icfgr0[f] = 0;
+        g->sgi_icfgr1[f] = 0;    /* PPI 全 level:与树里 PPI11 level 声明一致 */
+        for (i = 0; i < VGIC_SGI_BYTES; i++)
+            g->sgi_ipriorityr[f][i] = 0;
+    }
 }
 
 /* ---- GICD(SPI 面:寄存器 n 覆盖 INTID 32(n+1) 起) ----
@@ -144,6 +148,31 @@ void vgic_dist_mmio_write(struct vgic *g, u32 off, u64 val, u32 size)
         word_write(&g->dist_ctlr, off, size, val & 1);
         return;
     }
+    if (off == 0xF00u) {                 /* GICD_SGIR(站19D):TargetListFilter
+                                          * [25:24](0=显式列表/1=除己外全
+                                          * 部/2=己);CPUTargetList[15:0];
+                                          * INTID[3:0]。置目标帧 SGI 挂起,
+                                          * 醒由泵注入(LR2)——IPI 通道。 */
+        u32 v = (u32)val;
+        u32 intid = v & 0xFu;
+        u32 tlf = (v >> 24) & 3u;
+        u32 list = (v >> 16) & 0xFFu;
+        u32 f;
+
+        for (f = 0; f < g->nframes; f++) {
+            int hit = (tlf == 0u && ((list >> f) & 1u)) ||
+                     (tlf == 1u) || (tlf == 2u && 0);
+
+            if (tlf == 1u)
+                hit = 1;                /* 广播:演示面全收(发送者不回环
+                                          * 分辨——per-帧未记归属,记残余) */
+            if (tlf == 2u)
+                hit = 0;                /* 发给自己:发送者帧未知,弃(残) */
+            if (hit)
+                g->sgi_ipendr0[f] |= 1u << intid;
+        }
+        return;
+    }
     if (off >= 0x400u && off + size <= 0x400u + sizeof(g->dist_ipriorityr)) {
         bytes_write(g->dist_ipriorityr, off - 0x400u, size, val);
         return;
@@ -197,83 +226,99 @@ void vgic_dist_mmio_write(struct vgic *g, u32 off, u64 val, u32 size)
 
 #define GICR_SGI 0x10000u
 
-u64 vgic_redist_mmio_read(struct vgic *g, u32 off, u32 size)
+u64 vgic_redist_mmio_read(struct vgic *g, u32 frame, u32 off, u32 size)
 {
+    if (frame >= g->nframes)
+        return 0;                        /* 越窗帧:RAZ */
     if (off == 0xFFE8u)                  /* PIDR2:GICv3 判据位 [7:4]=3——RD 帧
                                           * 身份证;Linux gic_iterate_rdists
                                           * 先验它再谈 TYPER(本站战况:漏配
                                           * 它 ="No redistributor present") */
         return 0x30u;
-    if (off == 0x008u)                   /* TYPER:亲和全 0,ProcessorNumber=0,
-                                          * Last(bit4)=1:单帧单核 */
-        return word_read(0x10u, off, size);
+    if (off == 0x008u) {                 /* TYPER(站19D per 帧):Aff0=帧号,
+                                          * 位[39:32](MPIDR 同构;基准
+                                          * gic_v3.c 实证 cpu_mpidr=typer>>32);
+                                          * 末帧 Last(bit4)。单帧 VM 即旧值
+                                          * 0x10,零行为漂移。 */
+        u64 t = ((u64)frame << 32) |
+                (frame + 1u >= g->nframes ? 0x10u : 0x0u);
+
+        if (size == 8u)
+            return t;
+        return word_read((u32)t, off, size);
+    }
     if (off == 0x004u)                   /* IIDR */
         return word_read(0x45533000u, off, size);
     if (off == 0x000u)                   /* CTLR:Enable 位(RWP 恒 0) */
-        return word_read(g->rd_ctlr, off, size);
+        return word_read(g->rd_ctlr[frame], off, size);
     if (off == 0x014u)                   /* WAKER:存储回读(清睡眠即零,
                                           * ChildrenAsleep 跟随写值) */
-        return word_read(g->rd_waker, off, size);
+        return word_read(g->rd_waker[frame], off, size);
     if (off >= GICR_SGI + 0x400u &&
-        off + size <= GICR_SGI + 0x400u + sizeof(g->sgi_ipriorityr))
-        return bytes_read(g->sgi_ipriorityr, off - (GICR_SGI + 0x400u), size);
+        off + size <= GICR_SGI + 0x400u + sizeof(g->sgi_ipriorityr[frame]))
+        return bytes_read(g->sgi_ipriorityr[frame],
+                          off - (GICR_SGI + 0x400u), size);
     if (off >= GICR_SGI && (off & 3UL) == 0) {
         u32 so = off - GICR_SGI;         /* SGI 帧:INTID 0-31 */
 
         if (so == 0x080u)
-            return word_read(g->sgi_igroupr0, so, size);
+            return word_read(g->sgi_igroupr0[frame], so, size);
         if (so == 0x100u || so == 0x180u)   /* I/ICENABLER0 读同使能态 */
-            return word_read(g->sgi_isenabler0, so, size);
+            return word_read(g->sgi_isenabler0[frame], so, size);
         if (so == 0x200u || so == 0x280u)   /* I/ICPENDR0 读同挂起态 */
-            return word_read(g->sgi_ipendr0, so, size);
+            return word_read(g->sgi_ipendr0[frame], so, size);
         if (so == 0x300u || so == 0x380u)   /* I/ICACTIVER0 读同活跃态 */
-            return word_read(g->sgi_iactiver0, so, size);
+            return word_read(g->sgi_iactiver0[frame], so, size);
         if (so == 0xC00u)
-            return word_read(g->sgi_icfgr0, so, size);
+            return word_read(g->sgi_icfgr0[frame], so, size);
         if (so == 0xC04u)
-            return word_read(g->sgi_icfgr1, so, size);
+            return word_read(g->sgi_icfgr1[frame], so, size);
     }
     return 0;                            /* 未知:RAZ */
 }
 
-void vgic_redist_mmio_write(struct vgic *g, u32 off, u64 val, u32 size)
+void vgic_redist_mmio_write(struct vgic *g, u32 frame, u32 off, u64 val,
+                             u32 size)
 {
     u32 v = (u32)val;
 
+    if (frame >= g->nframes)
+        return;                          /* 越窗帧:WI */
     if (off == 0x000u) {
-        word_write(&g->rd_ctlr, off, size, val & 1);
+        word_write(&g->rd_ctlr[frame], off, size, val & 1);
         return;
     }
     if (off == 0x014u) {
-        word_write(&g->rd_waker, off, size, val);
+        word_write(&g->rd_waker[frame], off, size, val);
         return;
     }
     if (off >= GICR_SGI + 0x400u &&
-        off + size <= GICR_SGI + 0x400u + sizeof(g->sgi_ipriorityr)) {
-        bytes_write(g->sgi_ipriorityr, off - (GICR_SGI + 0x400u), size, val);
+        off + size <= GICR_SGI + 0x400u + sizeof(g->sgi_ipriorityr[frame])) {
+        bytes_write(g->sgi_ipriorityr[frame],
+                    off - (GICR_SGI + 0x400u), size, val);
         return;
     }
     if (off >= GICR_SGI && (off & 3UL) == 0) {
         u32 so = off - GICR_SGI;
 
         if (so == 0x080u)                /* IGROUPR0:直写 */
-            word_write(&g->sgi_igroupr0, so, size, val);
+            word_write(&g->sgi_igroupr0[frame], so, size, val);
         else if (so == 0x100u)           /* ISENABLER0:写置位(PPI 27=bit27) */
-            g->sgi_isenabler0 |= v;
+            g->sgi_isenabler0[frame] |= v;
         else if (so == 0x180u)           /* ICENABLER0:写清位 */
-            g->sgi_isenabler0 &= ~v;
+            g->sgi_isenabler0[frame] &= ~v;
         else if (so == 0x200u)
-            g->sgi_ipendr0 |= v;
+            g->sgi_ipendr0[frame] |= v;
         else if (so == 0x280u)
-            g->sgi_ipendr0 &= ~v;
+            g->sgi_ipendr0[frame] &= ~v;
         else if (so == 0x300u)
-            g->sgi_iactiver0 |= v;
+            g->sgi_iactiver0[frame] |= v;
         else if (so == 0x380u)
-            g->sgi_iactiver0 &= ~v;
+            g->sgi_iactiver0[frame] &= ~v;
         else if (so == 0xC00u)
-            word_write(&g->sgi_icfgr0, so, size, val);
+            word_write(&g->sgi_icfgr0[frame], so, size, val);
         else if (so == 0xC04u)
-            word_write(&g->sgi_icfgr1, so, size, val);
+            word_write(&g->sgi_icfgr1[frame], so, size, val);
         return;
     }
     /* 未知/只读(TYPER/IIDR):WI */
@@ -294,7 +339,7 @@ bool vgic_ppi_enabled(const struct vgic *g, u32 intid)
 {
     if (intid >= 32u)
         return false;
-    return (g->sgi_isenabler0 >> intid) & 1u;
+    return (g->sgi_isenabler0[0] >> intid) & 1u;
 }
 
 /* 站十四:guest 自配的 PPI 优先级(IPRIORITYR SGI 帧镜像)。
@@ -304,5 +349,49 @@ u8 vgic_ppi_prio(const struct vgic *g, u32 intid)
 {
     if (intid >= 32u)
         return 0u;
-    return g->sgi_ipriorityr[intid];
+    return g->sgi_ipriorityr[0][intid];
+}
+
+/* ---- 站十九D:SGI 面:泵取走即清(LR2 单通道,一次一条) ---- */
+
+/* 站十九D:ICC_SGI1R_EL1 写转发(EL2 EC 0x18 截获,基准参考实现同构:
+ * 该写无 vGIC 硬件面可用——QEMU 虚拟面语义外,EL1 直写会陷 EL2)。
+ * 值域:IHI0069——TargetList[15:0] / Aff1[23:16](本系恒 0)/ INTID
+ * [27:24] / IRM[40](位路由=全部);Aff2/3[39:32]/[55:48] 本系恒 0
+ * (VMPIDR 只虚拟化 Aff0)。置目标帧 SGI 挂起,回命中帧掩码供
+ * 调用方唤醒等待者。 */
+u32 vgic_sgi1r_write(struct vgic *g, u64 val)
+{
+    u32 intid = (u32)((val >> 24) & 0xFu);
+    u32 list = (u32)(val & 0xFFFFu);
+    int irm = (int)((val >> 40) & 1u);
+    u32 hits = 0, f;
+
+    for (f = 0; f < g->nframes; f++) {
+        if (irm || ((list >> f) & 1u)) {
+            g->sgi_ipendr0[f] |= 1u << intid;
+            hits |= 1u << f;
+        }
+    }
+    return hits;
+}
+
+bool vgic_sgi_take(struct vgic *g, u32 frame, u32 *intid, u8 *prio)
+{
+    u32 pend, i;
+
+    if (frame >= g->nframes)
+        return false;
+    pend = g->sgi_ipendr0[frame] & g->sgi_isenabler0[frame]
+           & 0xFFFFu;                    /* SGI 0-15(INTID 16+ 是 PPI 面) */
+    if (!pend)
+        return false;
+    i = (u32)__builtin_ctz(pend);        /* 最低位即取(多 SGI 并挂的
+                                          * 精确路由记残余) */
+    g->sgi_ipendr0[frame] &= ~(1u << i);
+    if (intid)
+        *intid = i;
+    if (prio)
+        *prio = g->sgi_ipriorityr[frame][i];
+    return true;
 }

@@ -54,6 +54,8 @@ struct vcpu {
     u64 tcr;
     u64 lr_vtimer;               /* ICH_LR0 快照(泵边装存) */
     u64 vmcr;                    /* ICH_VMCR 快照(泵边装存) */
+    u64 idx;                     /* 站19D:VM 内 vCPU 序(0/1;VMPIDR 低
+                                 * 位与 vgic 帧身份);帧尾,asm 不触及 */
 };
 
 /* 退回宿主的原因码(vcpu_run 返回值) */
@@ -85,11 +87,11 @@ void vcpu_enter_guest(struct vcpu *v);   /* 正常"返回"= guest 已 retire */
 void trap_resume(struct vcpu *v) __attribute__((noreturn));
 void vcpu_return_host(struct vcpu *v) __attribute__((noreturn));
 
-/* 站十八D:per-CPU(0/1)。cur_vcpus[] 按 mpidr.aff0 索引;旧名
- * cur_vcpu 保留为宏,存量 C 引用零改动。asm 桩直用数组符号
- * (MPIDR 索引),见 vcpu_entry.S/irq_entry.S。 */
-extern struct vcpu *cur_vcpus[2];
-extern u64 excp_stacks[2][512];
+/* 站十八D per-CPU(0/1);站19D 扩至三核(0/1/2)。cur_vcpus[] 按
+ * mpidr.aff0 索引;旧名 cur_vcpu 保留为宏,存量 C 引用零改动。
+ * asm 桩直用数组符号(MPIDR 索引),见 vcpu_entry.S/irq_entry.S。 */
+extern struct vcpu *cur_vcpus[3];         /* 站19D:0/1/2 三物理核 */
+extern u64 excp_stacks[3][512];
 
 static inline u32 cpu_id(void)
 {

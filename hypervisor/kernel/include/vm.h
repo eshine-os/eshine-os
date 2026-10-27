@@ -12,7 +12,12 @@
 #include "kernel/include/vcpu.h"
 
 #define ESHINE_MAX_VMS    3           /* 槽 0/1 裸机双客;槽 2 Linux(第十四站) */
-#define ESHINE_MAX_VCPUS  1           /* 本站每 VM 1 vCPU */
+#define ESHINE_MAX_VCPUS  2           /* 站19D:vm2 双 vCPU;vm0/vm1 仍单 */
+extern u32 vm_cpu_map[ESHINE_MAX_VMS][ESHINE_MAX_VCPUS];
+/* 站19D 拓扑:vm_cpu_map[vm][vcpu] = 归属物理核。
+ *   pcpu0:宿主 shell + 泵{vm0.v0, vm1.v0}(1s 量子,现状)
+ *   pcpu1:专泵 vm2.vcpu0(跑到出)
+ *   pcpu2:专泵 vm2.vcpu1(guest 的 PSCI CPU_ON 后才有帧,跑到出) */
 #define ESHINE_MAX_MEM    4
 #define ESHINE_MAX_DEV    4
 
@@ -56,6 +61,7 @@ void vm_state_demo(void);
 int  vm_create(u32 id);
 int  vm_start(u32 id);           /* 异步启动:置 RUNNING 立即回 */
 struct vcpu *vm_vcpu(u32 id);         /* id -> vcpu(console owner 用) */
+struct vcpu *vm_vcpu_idx(u32 id, u32 vidx);  /* 站19D:(id,vidx) -> vcpu */
 struct eshine_vm *vm_of_vcpu(struct vcpu *v);   /* vcpu -> 所属 VM(mmio 分发用) */
 u64 vm_ipa_to_pa(struct eshine_vm *vm, u64 ipa, u64 size);  /* 静态翻译(virtio/vuart 设备数据面) */
 int  vm_kill(u32 id);

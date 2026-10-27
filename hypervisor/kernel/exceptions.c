@@ -211,6 +211,88 @@ void el1_sync(struct vcpu *v)
             console_puts("console -> host\n");
         }
         resume_or_preempt(v);
+    } else if (ec == 0x17 || (ec == 0x16 && imm == 0)) {
+                                          /* SMC(0x17)/HVC#0(0x16):PSCI 转发
+                                           * (站19D)——guest 视角固件即我们;
+                                           * 探针实证 QEMU 机器级截获 EL1 的
+                                           * SMC(TCG conduit 优先),故树走
+                                           * method=hvc;0x17 分支留真硬件形。
+                                           * 完成型调用:ELR 已在下条,x0 回写
+                                           * 帧后续跑 */
+        u64 fn = v->gprs[0];
+
+        if (fn == 0x84000000UL) {
+            v->gprs[0] = 0x00010001UL;     /* PSCI_VERSION:1.1 */
+        } else if (fn == 0xc4000003UL) {  /* CPU_ON:置 vm2.vcpu1 帧 + poke */
+            struct vcpu *tv = vm_vcpu_idx(2, 1);
+
+            if (vm_of_vcpu(tv)->state != VM_RUNNING || tv->wait_state != 1UL ||
+                (v->gprs[1] & 0xffUL) != 1UL) {
+                v->gprs[0] = 0xfffffff6UL;    /* DENIED */
+            } else {
+                memset(tv->gprs, 0, sizeof(tv->gprs));
+                tv->pc = v->gprs[2];           /* entry_point */
+                tv->sp = 0UL;                  /* secondary_boot 自配 */
+                tv->pstate = 0x3C5UL;          /* EL1h + DAIF 全掩 */
+                tv->gprs[0] = v->gprs[3];      /* context_id 捎带 */
+                tv->exit_reason = VCPU_EXIT;
+                tv->vtimer_ctl = 0UL;
+                tv->vtimer_cval = 0UL;
+                tv->sp_el0 = 0UL;
+                tv->wait_reason = 0UL;
+                tv->wait_state = 0UL;          /* 出泊:CPU2 专泵即扫即跑 */
+                v->gprs[0] = 0UL;              /* PSCI_SUCCESS */
+                sched_poke_cpu2();
+            }
+        } else if (fn == 0x84000010UL) {  /* PSCI_FEATURES:全不掲,按位
+                                           * 探测降级(cpuidle 各态即哑) */
+            v->gprs[0] = ~0UL;
+        } else if (fn == 0xc4000001UL) {  /* CPU_SUSPEND:standby 空转语义 */
+            v->gprs[0] = 0UL;               /* power_level>0 未建,残余记册 */
+        } else {                            /* CPU_OFF/MIGRATE/SYSTEM_*:不支持 */
+            v->gprs[0] = ~0UL;
+        }
+        resume_or_preempt(v);
+    } else if (ec == 0x18) {               /* 系统寄存器陷阱(站19D):唯一
+                                           * 在用例=ICC_SGI1R_EL1 写(Linux
+                                           * SMP 引导期 IPI;sysreg(3,0,
+                                           * 12,11,5),ISS 场位按基准参考实现
+                                           * traps.c 实证布局解码)——EL1
+                                           * 直写无 vGIC 硬件面,截获转
+                                           * vgic 挂起面,泵走 LR2 注入。 */
+        u32 iss = (u32)esr;
+        u32 rt = (iss >> 5) & 0x1Fu;
+        u32 op0 = (iss >> 20) & 0xFu;
+        u32 op1 = (iss >> 14) & 0x7u;
+        u32 op2 = (iss >> 17) & 0x7u;
+        u32 crn = (iss >> 10) & 0xFu;
+        u32 crm = (iss >> 1) & 0xFu;
+
+        if ((iss & 1u) == 0u && op0 == 3u && op1 == 0u &&
+            crn == 12u && crm == 11u && op2 == 5u) {
+            struct eshine_vm *vm = vm_of_vcpu(v);
+            u32 hits = vgic_sgi1r_write(&vm->vgic,
+                                        rt == 31u ? 0UL : v->gprs[rt]);
+            u32 f;
+
+            for (f = 0; f < ESHINE_MAX_VCPUS; f++) {
+                if ((hits >> f) & 1u) {
+                    struct vcpu *tv = &vm->vcpus[f];
+
+                    if (tv->wait_state == 1UL) {
+                        tv->wait_state = 0UL;   /* SGI 即中断:直通唤醒 */
+                        tv->wait_reason = 0UL;
+                    }
+                    /* SEV 本就广播:双 poke 皆发,泵自判归属
+                     * (免 vm_table 越权引用,vm_of_vcpu 无 id 面) */
+                    sched_poke_cpu1();
+                    sched_poke_cpu2();
+                }
+            }
+            v->pc += 4UL;                    /* MSR 型写:代 retire 续跑 */
+            resume_or_preempt(v);
+        }
+        guest_fault(v, esr);                 /* 其余系统寄存器:默认拒绝 */
     } else if (ec == 0x24) {               /* data abort(EL1):仿真窗口分发 */
         mmio_dispatch(v, esr);             /* 命中 EMULATED 设备则仿真续跑,
                                            * 无窗/无现场回落 guest_fault */

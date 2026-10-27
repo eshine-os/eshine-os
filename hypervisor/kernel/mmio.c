@@ -78,14 +78,24 @@ void mmio_dispatch(struct vcpu *v, u64 esr)
                                                         (u32)(ipa - d->ipa),
                                                         size);
                 break;
-            case VM_DEV_VGICR:           /* vGIC redistributor 面(RD+SGI 帧) */
-                if (wnr)
-                    vgic_redist_mmio_write(&vm->vgic, (u32)(ipa - d->ipa),
-                                           v->gprs[srt], size);
-                else if (srt != 31)
-                    v->gprs[srt] = vgic_redist_mmio_read(&vm->vgic,
-                                                         (u32)(ipa - d->ipa),
-                                                         size);
+            case VM_DEV_VGICR:           /* vGIC redistributor 面(站19D:
+                                          * RD+SGI 帧 × nframes;帧号=off>>17,
+                                          * 帧内偏移取低 17 位——每帧
+                                          * RD 64KB+SGI 64KB 的树窗口契约) */
+                {
+                    u64 roff = ipa - d->ipa;
+                    u32 frame = (u32)(roff >> 17);
+
+                    if (wnr)
+                        vgic_redist_mmio_write(&vm->vgic, frame,
+                                               (u32)(roff & 0x1FFFFUL),
+                                               v->gprs[srt], size);
+                    else if (srt != 31)
+                        v->gprs[srt] = vgic_redist_mmio_read(&vm->vgic,
+                                                             frame,
+                                                             (u32)(roff & 0x1FFFFUL),
+                                                             size);
+                }
                 break;
             default:
                 guest_fault(v, esr);      /* 表内未知设备:不变量破坏 */

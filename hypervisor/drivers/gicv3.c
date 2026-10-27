@@ -122,6 +122,20 @@ void vgic_inject_vtimer(u8 prio)
     __asm__ volatile("isb");
 }
 
+void vgic_inject_sgi(u32 intid, u8 prio)
+{
+    /* 站十九D:SGI 注入,LR2 通道(与 LR0 vtimer-HW、LR1 uart 分道)。
+     * 纯虚拟:Group+State 置足,bit61(HW)不置——HW LR 的挂起跟随
+     * 物理线,物理侧无源即永不投递(HW 试探版实测教训);guest 虚
+     * EOI 即撤。优先级随 guest 自配镜像(同 vtimer 注入纪律)。 */
+    u64 lr = (u64)(intid & 0xFu)
+           | ((u64)(prio & 0xFFu) << 48)
+           | ICH_LR_GROUP1 | ICH_LR_PENDING;
+
+    __asm__ volatile("msr ich_lr2_el2, %0" :: "r"(lr));
+    __asm__ volatile("isb");
+}
+
 void vgic_inject_uart(void)
 {
     /* 纯虚拟 SPI(无 HW 位——HW LR 的挂起跟随物理线,物理侧无源即
@@ -165,13 +179,14 @@ void gicv3_eoi_drop(u64 intid)
     __asm__ volatile("msr icc_eoir1_el1, %0" :: "r"(intid));
 }
 
-void gicv3_secondary_init(void)
+void gicv3_secondary_init(u32 cpu)
 {
-    /* 站十八D:CPU1 自配——GICD 共享不动(CPU0 已开,重复写会闪断
-     * CPU0 的中断面);本核重分发帧(RD+SGI 各 64KB,CPU n @
-     * 0x080A0000+n*0x20000);只配 PPI27(vm2 vtimer 生命线;PPI26
-     * 不配=专泵无量子);CPU interface/虚拟面 per-CPU 硬件同款。 */
-    u64 rd = GICR_RD_BASE + 0x20000UL;
+    /* 站十八D:次核自配;站十九D 参数化(CPU1/CPU2)——GICD 共享
+     * 不动(CPU0 已开,重复写会闪断 CPU0 的中断面);本核重分发帧
+     * (RD+SGI 各 64KB,CPU n @ 0x080A0000+n*0x20000);只配 PPI27
+     * (vm2 vtimer 生命线;PPI26 不配=专泵无量子);CPU interface/
+     * 虚拟面 per-CPU 硬件同款。 */
+    u64 rd = GICR_RD_BASE + (u64)cpu * 0x20000UL;
 
     (void)rd32(rd + GICR_TYPER);              /* 在位探测(与 CPU0 同款) */
     wr32(rd + GICR_WAKER, 0);                 /* ProcessorSleep=0 */

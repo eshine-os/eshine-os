@@ -26,14 +26,15 @@
 #define HCR_EL2_HOST 0x10UL
 
 void gicv3_init(void);
-void gicv3_secondary_init(void);   /* 站十八D:CPU1 本核面(GICD 共享不动) */                    /* dist/redist/cpuif,EOImode=1 */
+void gicv3_secondary_init(u32 cpu);   /* 站19D:帧号=本核 */   /* 站十八D:CPU1 本核面(GICD 共享不动) */                    /* dist/redist/cpuif,EOImode=1 */
 u64  gicv3_claim(void);                   /* mrs ICC_IAR1_EL1 */
 void gicv3_eoi_dir(u64 intid);            /* 降优先级 + DIR 撤销(宿主自有) */
 void gicv3_eoi_drop(u64 intid);           /* 只降优先级(27 的物理线由 guest 虚 EOI 联动撤销) */
 void vgic_enable(void);                    /* B 相:ICH_VMCR/ICH_HCR 虚拟面开 */
 void vgic_inject_vtimer(u8 prio);
 bool vtimer_inflight(void);        /* 站十六:vm27 挂起在途(抢占守门) */         /* B 相:LR0 HW 映射注入 vINTID 27 */
-void vgic_inject_uart(void);              /* 第八站:LR1 纯虚拟注入 vINTID 33 */
+void vgic_inject_uart(void);
+void vgic_inject_sgi(u32 intid, u8 prio);   /* 站19D:LR2 通道 */              /* 第八站:LR1 纯虚拟注入 vINTID 33 */
 void vgic_inject_virtio(void);             /* 第十站:LR3 纯虚拟注入 vINTID 35 */
 void vgic_wake_waiter(void);              /* 27 到点:关 CNTV 降线+降优先级(WOKE 交泵注入) */
 
