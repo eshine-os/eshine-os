@@ -43,6 +43,8 @@ struct rt_task {
     struct rt_task *next;        /* 就绪 FIFO 尾链(非环,摘除简单) */
     struct rt_task *wq_next;     /* 同步对象等待队列链(第十七站) */
     char name[12];
+    u32 base_prio;               /* 站十八B:PI 基准优先级(boost 还原用;
+                                   * 置结构尾:前部偏移是 asm/帧契约不许动 */
 };
 typedef struct rt_task rt_task_t;
 
@@ -66,6 +68,7 @@ rt_task_t *rt_idle_task(void);
 void rt_sched(void);             /* 让出点:C 选,asm 换 */
 rt_task_t *rt_pick_ready(void);  /* 就绪摘头;空则 NULL */
 void rt_ready_push(rt_task_t *t);
+void rdy_remove(rt_task_t *t);   /* 站十八B:PI 降级摘除(就绪链中摘人) */
 void rt_wake_rx(void);
 void rt_tick_bookkeep(void);     /* tick ISR:唤醒/轮转/切判 */
 int  rt_need_switch(void);
@@ -125,5 +128,7 @@ long rt_mutex_give(rt_mutex_t *m);/* 非拥有者 -1;nest 归零让渡+唤醒 */
 /* rt_demo.c(第十七站):演示即判据 */
 void rt_demo_sem(void);
 void rt_demo_mutex(void);
+void rt_demo_pi(void);           /* 站十八B:PI 饥饿反转 */
+void rt_demo_fpdual(void);       /* 站十八C:per-task FP 并发自证 */
 
 #endif /* RTOS_H */

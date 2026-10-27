@@ -71,6 +71,33 @@ rt_task_t *rt_pick_ready(void)
     return t;
 }
 
+/* 站十八B:PI 降级摘除——READY 任务被 boost 前摘出原优先级链
+ * (单级链表扫描,池 ≤8 非热点);同款 DAIF 临界段。 */
+void rdy_remove(rt_task_t *t)
+{
+    u32 p = t->prio;
+    rt_task_t *cur = rdy_head[p], *prev = NULL;
+    u64 d = rt_daif_save();
+
+    while (cur) {
+        if (cur == t) {
+            if (prev)
+                prev->next = t->next;
+            else
+                rdy_head[p] = t->next;
+            if (rdy_tail[p] == t)
+                rdy_tail[p] = prev;
+            t->next = NULL;
+            if (!rdy_head[p])
+                rdy_map &= ~(1u << p);
+            break;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+    rt_daif_load(d);
+}
+
 /* 就绪最高位是否比 cur 高(数字更小即优先级更高) */
 static int higher_ready_than(rt_task_t *cur)
 {

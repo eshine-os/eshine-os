@@ -93,6 +93,8 @@ static void shell_line(char *line)
         rt_demo_sem();               /* 站十七:演示即判据 */
     } else if (streq(line, "mutexdemo")) {
         rt_demo_mutex();
+    } else if (streq(line, "pidemo")) {
+        rt_demo_pi();                /* 站十八B:PI 饥饿反转 */
     } else if (starts(line, "spawn ")) {
         static char spawn_name[12];     /* 单缓冲:并发 spawn 会互踩,
                                          * demo 尺度一次一个(记残余) */
@@ -130,7 +132,7 @@ static void shell_line(char *line)
         rt_puts("\n");
     } else if (line[0]) {
         rt_puts("rtos: try echo <t> | selftest | ps | spawn <n> | sleep [1-9]"
-                " | fp | yield | semdemo | mutexdemo | host | exit\n");
+                " | fp | yield | semdemo | mutexdemo | pidemo | host | exit\n");
     }
 }
 

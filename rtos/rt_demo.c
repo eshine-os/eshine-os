@@ -85,3 +85,62 @@ void rt_demo_mutex(void)
         !rt_task_create("waiter", waiter_task, NULL, 8))
         rt_puts("mutexdemo: pool full\n");
 }
+
+/* ---- pidemo(站十八B):PI 饥饿反转——mid 抢死 low,high 挂等
+ * boost low 9->6 反超完工。优先级:high 6 / mid 7 / low 9(shell 5
+ * 恒最高);墙钟忙旋读 rt_ticks,时序确定性全靠这张表。 ---- */
+static rt_mutex_t pi_mutex;
+
+static void pi_high(void *arg)
+{
+    (void)arg;
+    rt_sleep_ticks(100);            /* 让 low 先进临界区 */
+    rt_puts("pi: high wants lock\n");
+    rt_mutex_take(&pi_mutex);       /* 挂等:boost low 9->6 */
+    rt_puts("pi: high got lock (after boost)\n");
+    rt_mutex_give(&pi_mutex);
+}
+
+static void pi_mid(void *arg)
+{
+    u64 t0;
+    u64 last = 0;
+
+    (void)arg;
+    rt_sleep_ticks(50);             /* t=50 醒:7 压 9,饿死 low */
+    rt_puts("pi: mid spinning (starving low)\n");
+    t0 = rt_ticks;
+    while (rt_ticks - t0 < 400) {
+        if (rt_ticks != t0 && (rt_ticks - t0) % 100 == 0 &&
+            rt_ticks != last) {
+            last = rt_ticks;
+            rt_puts("pi: mid spinning\n");
+        }
+    }
+    rt_puts("pi: mid done\n");
+}
+
+static void pi_low(void *arg)
+{
+    u64 t0;
+
+    (void)arg;
+    rt_mutex_take(&pi_mutex);       /* t=0 即进临界区 */
+    rt_puts("pi: low in CS at prio 9\n");
+    t0 = rt_ticks;
+    while (rt_ticks - t0 < 150)
+        ;                           /* 临界区忙旋;boost 后反超 mid 完工 */
+    rt_puts("pi: low running at prio 6 (boosted)\n");
+    rt_puts("pi: low done (boosted)\n");
+    rt_mutex_give(&pi_mutex);       /* 还继承:low 回 9 */
+    rt_puts("pi: low restored prio 9\n");
+}
+
+void rt_demo_pi(void)
+{
+    rt_mutex_init(&pi_mutex);
+    if (!rt_task_create("pihigh", pi_high, NULL, 6) ||
+        !rt_task_create("pimid", pi_mid, NULL, 7) ||
+        !rt_task_create("pilow", pi_low, NULL, 9))
+        rt_puts("pidemo: pool full\n");
+}

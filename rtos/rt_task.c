@@ -40,6 +40,7 @@ rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
     t->entry = entry;
     t->arg = arg;
     t->prio = prio < RT_NPRIO ? prio : RT_NPRIO - 1;
+    t->base_prio = t->prio;          /* 站十八B:PI 基准 */
     t->state = RT_READY;
     t->wait_mask = 0;
     t->wq_next = NULL;            /* 站十七:同步队列链,复用槽必清 */

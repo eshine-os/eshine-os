@@ -119,6 +119,19 @@ long rt_mutex_take(rt_mutex_t *m)
         rt_daif_load(d);
         if (got)
             return 0;
+        /* 站十八B:单级优先级继承——挂等前把 owner 提到我的优先级
+         * (取最强,重复 boost 不降级);owner 在就绪链上需摘出重挂
+         * (位图位随 prio 变)。锁链不传递(参考RTOS 裁剪,记残余)。 */
+        if (m->owner->prio > rt_cur->prio) {
+            rt_task_t *o = m->owner;
+            u32 np = rt_cur->prio;
+
+            if (o->state == RT_READY)
+                rdy_remove(o);
+            o->prio = np;
+            if (o->state == RT_READY)
+                rt_ready_push(o);
+        }
         rt_pend(&m->wq_head, &m->wq_tail);
     }
 }
@@ -135,6 +148,27 @@ long rt_mutex_give(rt_mutex_t *m)
     if (--m->nest > 0) {
         rt_daif_load(d);
         return 0;
+    }
+    /* 站十八B:还继承——先回 base,再按剩余挂等者取最强重升(多等待
+     * 者公平);本人 READY(被切走的 RR 语境)则摘出重挂。 */
+    {
+        rt_task_t *w = m->wq_head;
+        u32 np = rt_cur->base_prio;
+        u64 d2 = rt_daif_save();
+
+        while (w) {
+            if (w->prio < np)
+                np = w->prio;
+            w = w->wq_next;
+        }
+        if (np != rt_cur->prio) {
+            if (rt_cur->state == RT_READY)
+                rdy_remove(rt_cur);
+            rt_cur->prio = np;
+            if (rt_cur->state == RT_READY)
+                rt_ready_push(rt_cur);
+        }
+        rt_daif_load(d2);
     }
     m->owner = NULL;                 /* 归零让渡;被醒者重检环里重占 */
     w = wq_pop(&m->wq_head, &m->wq_tail);
