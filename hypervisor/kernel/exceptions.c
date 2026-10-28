@@ -222,6 +222,16 @@ void el1_sync(struct vcpu *v)
             console_puts("console -> host\n");
         }
         resume_or_preempt(v);
+    } else if (ec == 0x16 && imm == 5) {    /* HVC #5 fg 查询(站20,心跳
+                                             * 门控的宿主侧只读面):x0=1
+                                             * 本 vCPU 是 console owner。
+                                             * 用户令:vmrun 后台期心跳
+                                             * 印字骚扰宿主/他客串口,
+                                             * 客自问前台才印(交互噪音
+                                             * 归零,门禁并发判据窗内
+                                             * vmconsole 0 照见) */
+        v->gprs[0] = (v == sched_console_owner) ? 1UL : 0UL;
+        resume_or_preempt(v);
     } else if (ec == 0x17 || (ec == 0x16 && imm == 0)) {
                                           /* SMC(0x17)/HVC#0(0x16):PSCI 转发
                                            * (站19D)——guest 视角固件即我们;

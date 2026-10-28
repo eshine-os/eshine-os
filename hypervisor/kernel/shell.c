@@ -58,7 +58,7 @@ static void cmd_help(void)
     console_puts("  smp: Brought up 1 node, 2 CPUs -> 第二 vCPU 上线 [53]\n");
     console_puts("  vm1 复活 spin 独占 CPU0,vm2 行进=真并行       [54]\n");
     console_puts("  Machine model / arch_timer / GICv3          [55-57]\n");
-    console_puts("  心跳夹 boot 流      -> 双客并发时序证明        [58]\n");
+    console_puts("  前台心跳夹 boot 流  -> 双客并发时序证明        [58]\n");
     console_puts("  ttyAMA0 / vda 128 blocks / initramfs / busybox 壳 [59-62]\n");
     console_puts("    (0x1d Ctrl-] = 宿主夺回;owner 不再自动归还)\n");
     console_puts("  echo TOKEN / cat /proc/cpuinfo(cpuinfo 0xd07) [63-64]\n");

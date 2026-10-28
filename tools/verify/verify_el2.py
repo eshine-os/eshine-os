@@ -799,6 +799,12 @@ def main():
             p2 = len(buf)
             s.sendall(b"host\n")          # 交还宿主:后续并发判据窗口要有 vm0 心跳
             buf = read_until(s, buf, b"console -> host", time.time() + 10, start=p2)
+            # 站20:心跳前台门控后,并发判据窗口须 vm0 前台化才有
+            # 心跳行(站十九前 vmrun 后台即印——用户令改,免扰宿主/
+            # 他客串口);vm2 靴流后台照常(tag 行不受影响)
+            p2 = len(buf)
+            s.sendall(b"vmconsole 0\n")
+            buf = read_until(s, buf, b"console -> vm", time.time() + 10, start=p2)
 
             pos = len(buf)
             buf = read_until(s, buf, b"Machine model: eshine-os,vm", time.time() + 30)
@@ -854,6 +860,10 @@ def main():
             print("  [61/67] initramfs chain: DTB initrd props -> unpack -> /init takes over")
 
             # 直落 Linux shell(owner 路由;RX 环->vSPI33->tty->sh 全链)
+            pos = len(buf)
+            s.sendall(b"\x1d")   # 站20:vm0 前台期(心跳窗),先逃生夺回
+            buf = read_until(s, buf, b"console -> host (escape)", time.time() + 15,
+                             start=pos)
             pos = len(buf)
             s.sendall(b"vmconsole 2\n")
             buf = read_until(s, buf, b"console -> vm", time.time() + 30, start=pos)

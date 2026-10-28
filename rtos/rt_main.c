@@ -6,6 +6,7 @@
 #include "timer.h"
 #include "virtio.h"
 #include "fdt.h"
+#include "hvc.h"
 #include "kernel/include/version.h"
 
 /* eshine-rtos bring-up:与裸机客同一套设备自证链(同一 ABI 头),
@@ -74,8 +75,12 @@ static void heartbeat_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        rt_sleep_ticks(50);          /* 0.5s 一行:任务级交错的可见判据 */
-        rt_puts_u64("rtos: alive tick=", rt_ticks, "\n");
+        rt_sleep_ticks(50);          /* 0.5s 一拍:任务级交错的可见判据 */
+        if (hvc_fg())                /* 站20:前台门控(HVC#5 只读问询)
+                                      * ——vmrun 后台期静默,宿主/他客
+                                      * 串口免骚扰(用户令);vmconsole 0
+                                      * 前台化即恢复可见 */
+            rt_puts_u64("rtos: alive tick=", rt_ticks, "\n");
     }
 }
 

@@ -350,8 +350,10 @@ arch_timer virt 62.50MHz + arch_sys_counter clocksource → GICv3
 redistributor 探测（word1=0x104 规范译码）→ **guest SMP 上线（站
 十九D：smp: Brought up 1 node, 2 CPUs 真行判据，第二 vCPU 经
 PSCI(hvc) 真起）→ **双客并发时序证明
-（第十六站：活 RTOS 的 rtos: alive 心跳行必须夹在 Linux boot 行流
-之间——串行 log 顺序即证）** → ttyAMA0 enabled → vda 128 blocks →
+（第十六站立判、站二十修订：活 RTOS 的 rtos: alive 心跳行必须夹在
+Linux boot 行流之间——串行 log 顺序即证；心跳印字站二十起前台
+门控（HVC #5 只读问询，vmrun 后台静默免扰宿主/他客串口），判据
+窗前 vmconsole 0 前台化才可见）** → ttyAMA0 enabled → vda 128 blocks →
 **initramfs 接管（第十五站）→ vmconsole 2 直落 ~ # 壳 → 壳内
 token 双回显 → cat /proc/cpuinfo CPU part 0xd07 用户态自证 →
 **cat /proc/cpuinfo processor 1（站十九D：双核用户态自证，guest 内
