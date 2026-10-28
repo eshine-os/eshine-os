@@ -395,3 +395,16 @@ bool vgic_sgi_take(struct vgic *g, u32 frame, u32 *intid, u8 *prio)
         *prio = g->sgi_ipriorityr[frame][i];
     return true;
 }
+
+/* 站20:本帧已使能的挂起 SGI 在否(停泊复查判据)。发送窗落在目标
+ * 跑动期、目标随后先停泊后进场的竞态里,IPI 搁浅在软件挂起位——
+ * 进场取走只对过复查者发生,复查不看 SGI 即死锁(主核 csd 等待
+ * 自旋 + 副核 tickless 空闲睡 = 整靴冻死,实测)。TIMER 停泊者同
+ * 判:早醒无害,ctx 定时器进场照装,拍不丢。 */
+bool vgic_sgi_pending(const struct vgic *g, u32 frame)
+{
+    if (frame >= g->nframes)
+        return false;
+    return (g->sgi_ipendr0[frame] & g->sgi_isenabler0[frame] & 0xFFFFu)
+           != 0u;
+}

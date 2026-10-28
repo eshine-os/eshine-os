@@ -37,10 +37,27 @@ void secondary_main(u32 cpu)
      * 同源:WFE 睡泵也靠 26 拍醒。CNTHP 是本核硬件,timer_init 天然
      * per-CPU。 */
     timer_init();
-    sched_cpu_up[cpu] = 1UL;          /* 先握手再自报:CPU0 出提示符前等我 */
-    console_puts("cpu");
-    util_putdec(cpu);
-    console_puts(": online (psci cpu_on)\n");
+    {   /* 站20:三核并发自报必须行原子(console_puts 每次调用各持锁,
+         * 分段印在三核并发下会行内互串,-smp 3 门禁 [3] 实测抓出);
+         * 本地拼整行一次 puts——锁区间即整行,天然原子 */
+        char rep[32];
+        unsigned int r = 0, i;
+        u32 v = cpu;
+
+        rep[r++] = 'c'; rep[r++] = 'p'; rep[r++] = 'u';
+        for (i = 0; i < 3 && (v >> (8 * (2 - i))) == 0; i++)
+            ;                                   /* 前导零跳过 */
+        for (; i < 3; i++)
+            rep[r++] = (char)('0' + ((v >> (8 * (2 - i))) & 0xFu));
+        for (i = 0; i < 23; i++)            /* ": online (psci cpu_on)\n"
+                                          * 整串 23 字符(旧 18 截断雷) */
+            rep[r++] = ": online (psci cpu_on)\n"[i];
+        rep[r] = '\0';
+        console_puts(rep);
+    }
+    sched_cpu_up[cpu] = 1UL;          /* 站20:自报后再握手——main 的
+                                      * 有界等覆盖整行,CPU0 提示符不
+                                      * 会抢在自报前出([3] 三核实测) */
     __asm__ volatile("msr daifclr, #2");   /* 解 IRQ:27/邮箱生命线 */
     pump_cpu(cpu);                        /* noreturn:各跑自家 (vm,vcpu) */
 }

@@ -148,8 +148,12 @@ void rt_demo_pi(void)
 /* ---- fpdual(站十八C):per-task FP 帧判据,双 FP 任务并发 ---- */
 void rt_demo_fpdual(void)
 {
+    /* 站20:B 12->11 同级:RR 量子交织 A/B,每片边界一次持有权
+     * 轮转(fp-saves 递增),fpstat 判据 M<<N 才有非零分子;异级
+     * 串行(A 先跑完退场清主,B 才起步)首陷阱恒见旧主 NULL,
+     * saves 恒 0——[34] 门禁实测抓出,双任务语义不变仍双精确。 */
     if (!rt_task_create("fpdA", rt_fp_dual_a_task, NULL, 11) ||
-        !rt_task_create("fpdB", rt_fp_dual_task, NULL, 12))
+        !rt_task_create("fpdB", rt_fp_dual_task, NULL, 11))
         rt_puts("fpdual: pool full\n");
 }
 

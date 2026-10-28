@@ -72,5 +72,12 @@ u8    vgic_ppi_prio(const struct vgic *g, u32 intid);     /* 注入 LR 优先级
 bool vgic_sgi_take(struct vgic *g, u32 frame, u32 *intid, u8 *prio);
 u32   vgic_sgi1r_write(struct vgic *g, u64 val);  /* 站19D:EL2 截获转发,
                                                     * 返回命中帧掩码 */
+bool  vgic_sgi_pending(const struct vgic *g, u32 frame); /* 站20:停泊复查
+                                                    * 判据——发送窗落在
+                                                    * 目标跑动期、目标又
+                                                    * 先停泊后进场的竞态,
+                                                    * IPI 搁浅在软件挂起位
+                                                    * 无人取(实测 csd 锁
+                                                    * 死锁冻靴) */
 
 #endif /* ESHINE_VGIC_H */

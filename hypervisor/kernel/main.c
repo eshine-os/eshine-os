@@ -33,11 +33,30 @@ static void smp_boot_secondary(u64 mpidr, u64 ctx)
     u64 ret = 0xdeadbeef;
 
     psci_cpu_on(mpidr, ctx, &ret);
-    console_puts("psci cpu_on (");
-    util_putdec((u32)mpidr);
-    console_puts(") -> ");
-    console_puthex(ret);               /* 0 = PSCI_SUCCESS */
-    console_puts("\n");
+    {   /* 站20:三核并发下整行原子(同 smp.c 自报,分段印会互串) */
+        char rep[48];
+        unsigned int r = 0, i;
+        static const char head[] = "psci cpu_on (";
+        static const char mid[] = ") -> ";
+        const char hx[] = "0123456789abcdef";
+        u64 v = ret;
+
+        for (i = 0; i < sizeof(head) - 1; i++)
+            rep[r++] = head[i];
+        if (mpidr <= 9u) {
+            rep[r++] = (char)('0' + (u32)mpidr);
+        } else {
+            rep[r++] = '1';
+            rep[r++] = (char)('0' + ((u32)mpidr - 10u));
+        }
+        for (i = 0; i < sizeof(mid) - 1; i++)
+            rep[r++] = mid[i];
+        for (i = 0; i < 16; i++)
+            rep[r++] = hx[(v >> (60 - 4 * i)) & 0xFu];
+        rep[r++] = '\n';
+        rep[r] = '\0';
+        console_puts(rep);
+    }
 }
 
 void main(void)

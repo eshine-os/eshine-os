@@ -421,7 +421,15 @@ u32 sched_vtimer_sweep(void)
             if (!(v->vtimer_ctl & 1UL) || v->vtimer_cval > now)
                 continue;
             v->wait_state = 2UL;          /* WOKE:泵轮到时注 LR */
-            v->vtimer_ctl = 0UL;          /* ctx 熄火:防切入装回过期值即重挂 */
+            /* 站20 定谳:ctx 不许熄火(撤站十八A 的 ctl=0)。熄火后泵
+             * 进场装回 ctl=0,被唤醒的 guest 收到注入的 v27 却读到
+             * ISTATUS=0——轮询式 handler 判 IRQ_NONE 丢 tick,不重装
+             * 下一拍,jiffies 冻死,整靴停在首个 msleep(实测两 vCPU
+             * 双双 ws=1/reason=RX/ctl=0 停在 cpu_do_idle,站 14 注释
+             * 早写下的死法)。装回武装过期值:进场线重挂,HW LR 重锁
+             * pending,guest 认账(ISATATUS=1)重装即闭环;重挂窗
+             * (进场→guest 重装,µs 级)的重复 27 由 el2_irq_guest
+             * 27 分支幂等吸收,自限。 */
             woke++;
         }
     }
@@ -446,12 +454,18 @@ static bool pump_run_vcpu(u32 id, u32 vi)
         /* 设备中断等待者(RX/virtio 完成等非 TIMER 源)仍有待取
          * 事件(注入与消费的时序缝隙的兜底网):再唤醒,本轮流到
          * 它时注入+消费;TIMER 睡眠与无事件者继续让位。
-         * 第十二站:再唤醒同律过门控(guest 使能了才算"待取") */
-        if (v->wait_reason != VCPU_WAIT_TIMER &&
-            ((vuart_rx_irq_ready(&vm->vu) &&
-              vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) ||
-             (virtio_irq_ready(vm) &&
-              vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO))))
+         * 第十二站:再唤醒同律过门控(guest 使能了才算"待取")。
+         * 站20:SGI 搁浅判据前置且不限 reason——发送窗落在目标跑动
+         * 期、目标先停泊后进场的竞态里,IPI 搁浅在软件挂起位,
+         * 取走只发生在进场路径,此复查不看即死锁(主核 csd 自旋
+         * 等 ack + 副核 tickless 空闲睡 = 整靴冻死,实测);TIMER
+         * 停泊者早醒无害,进场照装 ctx 定时器,拍不丢。 */
+        if (vgic_sgi_pending(&vm->vgic, vi) ||
+            (v->wait_reason != VCPU_WAIT_TIMER &&
+             ((vuart_rx_irq_ready(&vm->vu) &&
+               vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) ||
+              (virtio_irq_ready(vm) &&
+               vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO)))))
             v->wait_state = 0UL;
         else {
             return false;
@@ -491,8 +505,9 @@ static bool pump_run_vcpu(u32 id, u32 vi)
         u32 sintid;
         u8 sprio;
 
-        if (vgic_sgi_take(&vm->vgic, vi, &sintid, &sprio))
+        if (vgic_sgi_take(&vm->vgic, vi, &sintid, &sprio)) {
             vgic_inject_sgi(sintid, sprio);
+        }
     }
     if (vi == 0 && vuart_rx_irq_ready(&vm->vu) &&
         vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) {

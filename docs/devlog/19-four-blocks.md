@@ -86,3 +86,62 @@
   等待队列机器复用,eventdemo/queuedemo 双 demo)。
 - C:per-task FP lazy(fp_owner 单一持有 + FPEN 拨杆 + EC 0x07
   陷阱轮转,fpstat 计数判据 M<<N)。
+
+## 追记(2026-10-28):tick 坍缩真凶定谳,五修全链闭环
+
+> 上一收口(6e5f1ef)把 SMP 交接窗竞态立为站二十首项。本日追查
+> 定谳:不是单一竞态,是**五层叠加**——每一层单独都能冻靴。
+
+### 真凶链(按揭开的顺序)
+
+1. **TLB 风暴**(6e5f1ef 已修):每 exit/entry 无条件
+   `tlbi vmalls12e1is` 在 QEMU TCG 是三线程同步全量 flush。
+2. **专泵缺 26**(6e5f1ef 已修):到期扫描唯一周期驱动源缺失。
+3. **搁浅 SGI**(本日修):发送窗落在目标跑动期、目标又先停泊后
+   进场,IPI 搁浅在软件挂起位无人取——泵的停泊复查只查串口/
+   virtio,从不查 SGI,取走只发生在进场路径。主核 csd 自旋等
+   ack + 副核 tickless 卸甲睡 = 整靴冻死。修:`vgic_sgi_pending()`
+   入停泊复查判据(不限 reason;TIMER 停泊者早醒无害,ctx 照装)。
+4. **sweep ctx 熄火**(本日修,撤站 18A 的 `vtimer_ctl=0`):熄火
+   后进场装回 ctl=0,被唤醒的 guest 收到注入的 v27 却读到
+   ISTATUS=0——轮询式 handler 判 IRQ_NONE 丢 tick,不重装下一拍,
+   jiffies 冻死,两 vCPU 双双 ws=1/reason=RX/ctl=0 停在
+   cpu_do_idle(直读帧现场定谳;站 14 注释早写下的死法)。
+   修:撤熄火,装回武装过期值,进场线重挂,guest 认账(ISATATUS=1)
+   重装即闭环;重挂窗的重复 27 由 el2_irq_guest 27 分支幂等吸收。
+5. **三核并发自报互串**(本日修):console_puts 每次调用各持锁,
+   分段印在三核下行内互串(`cpu`+`1` 被隔断,门禁 [3] 抓出)。
+   修:自报与 psci 结果行本地拼整行一次 puts;自报后再握手
+   (main 有界等覆盖整行)。
+
+### 验收:靴通到用户态
+
+vm2 双 vCPU 全靴:/init +2.0s 级,`cat /proc/cpuinfo` 出
+**processor 0 + processor 1** 双行,`uname -a` 确认 #2 SMP PREEMPT
+——站 19 D 块的原始判据([53]/[65])实体达成。62 门旧判据
+(单 CPU 靴路径)全绿一次;67 门(62→67 重编 + -smp 3 +
+[32]eventdemo/[33]queuedemo/[34]fpstat/[53]SMP/[65]cpuinfo 双核)
+新判据逐段全过,其中 [53]/[65] 为站 19 核心目标的门禁化。
+
+### fpdual 与 fpstat 的判据课(两段改写的雷)
+
+fpdual 旧 11/12 异级串行(A 跑完退场清主 B 才起步),首陷阱恒见
+旧主 NULL,saves 恒 0——fpstat 判据 M<<N 失去分子。第一版分段
+sleep 强交织改写连爆三雷:asm `fadd %0,%0,d0` 把 GPR 传给 fadd
+(编译炸,且 **rt_fp.c 编译失败后陈旧 rtos.bin 害测三轮**——
+make 对 rtos 子构建的静默沿用,教训入册)、`fcvtzu "+r"` 覆写
+非累加、段界 off-by-one。定稿:同优先级 11/11 + 两段精确分割
+(Σ(1..700000)+Σ(700001..1000000) 恒等精确),段间一次
+sleep 强制交替——**A/B 双精确 + 2 fp-saves << 26 switches**,
+懒惰 FP 判据非零分子闭环。B 的跨段累加教训:v 寄存器跨 C 调用
+是 caller-clobbered,活状态必须落在帧(GPR 只收口)。
+
+### 残余(诚实,接 [41] 观察哨)
+
+**[41] 闪断家族未死**:-smp 3 下被放大,随机打在门禁任意阶段
+(两轮 67 门:一次 [63] vm2 echo 后无提示符、一次 [37] vm0 token
+单见;探针流程多轮过)——站 18 e1 的同形(token 单见 1/3)。
+双绿未达;67 门与三处同步(verify/shell help/ARCHITECTURE,
+含 -smp 2→3 与 make run 同构)已随本日工作落盘,机制定谳
+移交站二十(候选窗:LR2 单槽多 SGI 排队、fork/exec 的跨核
+唤醒路径、console 锁 WFE)。

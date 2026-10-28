@@ -145,38 +145,82 @@ void rt_sync_fault(void)
     }
 }
 
+/* 站20:fpdual A/B 同优先级(11/11)+两段精确分割(段间 rt_sleep_ticks(1)
+ * 强制交替):持有权轮转确定性非零(fp-saves 有分子),值恒精确——
+ * 分割点 700000,Σ(1..700000)+Σ(700001..1000000)=500000500000,
+ * Σ(i*0.5) 同律分半;段和 <2^53 double 精确,fcvtzu 入 GPR 收口。
+ * (旧 11/12 异级串行:A 先跑完退场清主 B 才起步,首陷阱恒见旧主
+ * NULL,saves 恒 0,fpstat 判据失去分子,门禁实测;第一版分段改写
+ * 的 asm 两雷——fadd 吃 FP 寄存器编译炸、fcvtzu "+r" 覆写非累加,
+ * 且段界 off-by-one——本版全数修正。) */
+static void fpdual_range_sum(u64 lo, u64 hi, u64 *acc)
+{
+    u64 tmp;
+
+    __asm__ volatile(
+        "fmov  d0, xzr\n\t"
+        "mov   x9, %1\n\t"
+        "1:\n\t"
+        "scvtf d1, x9\n\t"
+        "fadd  d0, d0, d1\n\t"
+        "add   x9, x9, #1\n\t"
+        "cmp   x9, %2\n\t"
+        "b.le  1b\n\t"
+        "fcvtzu %0, d0\n\t"
+        : "=r"(tmp)
+        : "r"(lo), "r"(hi)
+        : "v0", "v1", "x9", "cc");
+    *acc += tmp;
+}
+
+static void fpdual_range_half(u64 lo, u64 hi, u64 *acc)
+{
+    u64 tmp;
+
+    __asm__ volatile(
+        "fmov  d0, xzr\n\t"
+        "fmov  d2, #0.5\n\t"
+        "mov   x9, %1\n\t"
+        "1:\n\t"
+        "scvtf d1, x9\n\t"
+        "fmul  d1, d1, d2\n\t"
+        "fadd  d0, d0, d1\n\t"
+        "add   x9, x9, #1\n\t"
+        "cmp   x9, %2\n\t"
+        "b.le  1b\n\t"
+        "fcvtzu %0, d0\n\t"
+        : "=r"(tmp)
+        : "r"(lo), "r"(hi)
+        : "v0", "v1", "v2", "x9", "cc");
+    *acc += tmp;
+}
+
 void rt_fp_dual_a_task(void *arg)
 {
+    u64 got = 0;
+
     (void)arg;
-    if (fp_sum_check(1000000ULL, 500000500000ULL))
+    fpdual_range_sum(1ULL, 700000ULL, &got);
+    rt_sleep_ticks(1);               /* 段界让位:A/B 必交替 */
+    fpdual_range_sum(700001ULL, 1000000ULL, &got);
+    if (got == 500000500000ULL)
         rt_puts("fpdual: A OK: 500000500000\n");
     else
-        rt_puts("fpdual: A FAIL: fp state corrupted\n");
+        rt_puts_u64("fpdual: A FAIL: ", got, "\n");
 }
 
 void rt_fp_dual_task(void *arg)
 {
-    u64 got;
+    u64 got = 0;
 
     (void)arg;
-    __asm__ volatile(
-        "fmov  d0, xzr\n\t"          /* acc = 0.0 */
-        "fmov  d2, #0.5\n\t"
-        "mov   x9, #1\n\t"
-        "1:\n\t"
-        "scvtf d1, x9\n\t"           /* d1 = (double)x9 */
-        "fmul  d1, d1, d2\n\t"       /* d1 = x9 * 0.5 */
-        "fadd  d0, d0, d1\n\t"
-        "add   x9, x9, #1\n\t"
-        "cmp   x9, %1\n\t"
-        "b.lt  1b\n\t"
-        "fcvtzu %0, d0\n\t"
-        : "=r"(got)
-        : "r"(1000001ULL)
-        : "v0", "v1", "v2", "x9", "cc");
-    __asm__ volatile("" : "+r"(got));   /* 活性屏:防比较被重排 */
+    fpdual_range_half(1ULL, 700000ULL, &got);
+    rt_sleep_ticks(1);               /* 段界让位(同 A) */
+    fpdual_range_half(700001ULL, 1000000ULL, &got);
     if (got == 250000250000ULL)
         rt_puts("fpdual: B OK: 250000250000\n");
     else
         rt_puts_u64("fpdual: B FAIL: ", got, "\n");
 }
+
+

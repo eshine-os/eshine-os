@@ -188,3 +188,30 @@ git show --stat 验三件在——站 17 教训)。
    (~0.2s 内核时),同批含 vcpu0@cpu0 轮转世界与 vcpu0@cpu1
    专泵两拓扑;62 门 [31] 区 vm2-Linux 控制台判据超时,双绿未达,
    62→67 重编与 [53]/[65] SMP 判据暂缓(竞态致靴爬行/冻结)。
+
+## 9. 追谳(2026-10-28):五层真凶链与双核用户态达成
+
+1. **搁浅 SGI**(§8 残余的解):发送窗落在目标跑动期、目标又先
+   停泊后进场,IPI 搁浅在软件挂起位——泵停泊复查原只查串口/
+   virtio。修 = `vgic_sgi_pending()` 入复查判据(不限 reason)。
+2. **sweep ctx 熄火撤除**:站 18A 的 `vtimer_ctl=0` 让被唤醒的
+   guest 收 v27 读 ISTATUS=0 判 IRQ_NONE 丢 tick,两 vCPU 全
+   RX 卸甲睡死 cpu_do_idle(帧直读定谳)。修 = 装回武装过期值。
+3. **三核自报行原子**:console_puts 分段调用行内互串([3] 实测),
+   整行拼串一次 puts + 自报后握手。
+4. **验收**:vm2 双 vCPU 全靴至用户态,cpuinfo 双 processor,
+   uname #2 SMP PREEMPT——[53]/[65] 实体达成。
+5. **fpdual 修**:同优先级 11/11 + 两段精确分割(700000 分点,
+   值恒精确),段间 sleep 强交替——saves 2 << switches 26。
+   改写过程三雷入册(fadd GPR 编译炸/陈旧 rtos.bin 害测/
+   fcvtzu "+r" 覆写),教训:rtos 子构建失败 make 静默沿用
+   旧 bin,改 RTOS 源后必须 rm rtos/*.o 强制重建。
+6. **门禁**:62→67 重编落地(映射:N≤31 同;32-49 +3;50-60
+   +4;61,62 +5;新 [32][33][34][53][65];50-52 空号留给后
+   续),verify/-smp 3/make run 同构,shell help 67 步表,
+   ARCHITECTURE 验证节同步。62 旧判据全绿一次;67 门全链逐段
+   过,**双绿未达**:[41] 闪断家族在 -smp 3 下放大(随机阶段
+   token 单见/echo 后失声,~1/2 两轮),接站十八观察哨移交
+   站二十定谳。判据行实况:"Bringing up 1 secondary CPU(s)"
+   不存在已入 §8;本节落 [53] 用真行 "smp: Brought up 1 node,
+   2 CPUs"。
