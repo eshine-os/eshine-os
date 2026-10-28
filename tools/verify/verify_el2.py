@@ -135,10 +135,20 @@ def send_guest(s, data):
         time.sleep(0.05)
 
 
+_HB_RE = re.compile(rb"rtos: alive tick=\d+\r?\n")
+
+
 def token_echo(s, buf, tok, deadline=10):
     """发送 echo <tok>,循环等 token 出现两次(回显+输出);返回 buf。
     注意不能用 read_until(\n) 两连:第一个 \n 在旧数据里,第二次匹配
-    会立即返回而不收新输出(实测踩过)。"""
+    会立即返回而不收新输出(实测踩过)。
+    站20 [41] 定谳:计数对心跳行鲁棒。vm0 前台期心跳(0.5s 一拍,
+    合法并发输出)恰落型键回显段中间时,token 字节被劈成两半
+    ("echo GOK"+心跳行+"A41226"),朴素 count 把健康客判成 token
+    单见闪断([37] 三连"失败"全息画像:回显劈半/输出完整/提示符在,
+    rrx/vuart 环/LR1 三面皆空,壳 BLOCK 等 RX 是健康息态)。剥除
+    心跳行再计,劈半即愈合;双回显语义不变,真死客(计数仍 <2)
+    照样必炸。"""
     p = len(buf)
     # 站十四:命令分块发——QEMU pl011 RX FIFO 16 字节,guest 在跑时宿主
     # 排空慢,一次性 sendall 长命令会丢尾(Linux panic 后实测)。
@@ -147,10 +157,12 @@ def token_echo(s, buf, tok, deadline=10):
         s.sendall(cmd[i:i + 8])
         time.sleep(0.03)
     end = time.time() + deadline
-    while buf[p:].count(tok.encode()) < 2:
+    while _HB_RE.sub(b"", buf[p:]).count(tok.encode()) < 2:
         if time.time() > end:
-            raise AssertionError("token %r seen %d time(s)\nraw tail: %r"
-                                 % (tok, buf[p:].count(tok.encode()),
+            raise AssertionError("token %r seen %d time(s) after strip\n"
+                                 "raw tail: %r"
+                                 % (tok,
+                                    _HB_RE.sub(b"", buf[p:]).count(tok.encode()),
                                     buf[p:][-160:]))
         s.settimeout(1.0)
         try:
@@ -313,7 +325,12 @@ def main():
             buf = read_until(s, buf, b"console -> vm", time.time() + 10, start=pos)
             p2 = len(buf)
             s.sendall(b"\n")   # RTOS 壳任务 BLOCK 中:入环即唤醒,重打 prompt
-            buf = read_until(s, buf, b"rtos> ", time.time() + 20, start=p2)
+            # 站20:锚取"回显+提示符"成对(CRLF 是壳对本 '\n' 的回显)。
+            # vmconsole 切换随带冲刷的启动期半行是 "[vm0] rtos> "(带
+            # tag,CRLF 后跟 '[' 不匹配),裸 "rtos> " 锚会误吞它,整条
+            # 判据链错位一格([21] "ps 行缺失"闪断即此,实测全息画像)。
+            # 配对锚只认本 '\n' 换来的真提示符。
+            buf = read_until(s, buf, b"\r\nrtos> ", time.time() + 20, start=p2)
             print("  [19/67] RX wake chain: push -> irq -> shell task READY -> prompt")
 
             p = len(buf)

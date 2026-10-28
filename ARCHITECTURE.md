@@ -209,7 +209,13 @@ RX 所有权（`sched_console_owner` = vcpu 指针，NULL=宿主）：前台模�
 （`vmconsole <id>` 后不再按 WAIT 原因自动归还——真 Linux 壳恒
 250Hz armed，timer 睡即被收台则 owner 形同虚设，实测；归还三口 =
 `vmconsole host` / **逃生字符 0x1d（Ctrl-]）**/ VM 死亡；裸机客另有
-host HVC#4 自报）。
+host HVC#4 自报）。**站二十：TX 前台判定按 VM 对齐**——vuart 陷阱
+的 fg 旗（mmio_dispatch）从"v==owner"改为"VM 相等"：双 vCPU 客
+的进程上下文会被内核调度漂到任一 vCPU（vm2 的 sh 实测漂到 vcpu1），
+旧比法把业主 VM 自家另一帧的输出判成后台，无换行的 busybox 提示符
+滞留 bg 行缓冲永不再冲刷——与泵侧站 19D 的"双 vCPU 同 VM 皆前台"
+（过滤按 VM）补齐一致。诊断面：`vmrx`（RX 两域现场 + GICR/CNTV）
+与 `vmtrail`（事件迹环）宿主命令。
 
 WAIT/WOKE（两源，第六-八站三段演化）：WFI 陷阱 → VCPU_WAIT → 泵置
 wait_state=1 +pc+=4（代完成）+ **wait_reason 判定**（切出保存的本人

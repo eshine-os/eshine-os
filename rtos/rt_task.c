@@ -82,9 +82,23 @@ void rt_sleep_ticks(u64 n)
 
 void rt_block_rx(void)
 {
+    u64 d = rt_daif_save();
+
+    /* 站20 [41] 闪断定谳:壳在 rt_getc_nb 判空与发布 BLOCK 之间存在
+     * 无屏窗——UART ISR 恰落窗内:字节已入 rrx 环,而 wake_all 只认
+     * BLOCK 态,RUN 态任务收到唤醒即吞,壳照旧挂起。末字节入环而壳
+     * 永睡,vCPU 心跳照跳 = 门禁 [37] "token 单见" 的全息画像(原生
+     * 唤醒源只有后续 IRQ,末字节无后继,永不自愈)。判空+发布+摘队
+     * 同入 DAIF 屏蔽窗:窗内终判环已非空则不挂起,回调用者重查即得;
+     * 窗后挂起已可见,ISR 唤醒走回流令牌兑付(rt_sched 自拣支)。 */
+    if (rt_rx_pending()) {
+        rt_daif_load(d);
+        return;                      /* 迟到字节:不挂起,壳循环顶再取 */
+    }
     rt_cur->wait_mask = RT_RX_BIT;
     rt_cur->state = RT_BLOCK;
     rdy_remove(rt_cur);              /* 站19:同上,真阻塞必清令牌 */
+    rt_daif_load(d);                /* 窗闭合:此后 ISR 见 BLOCK 即正确唤醒 */
     rt_sched();
 }
 

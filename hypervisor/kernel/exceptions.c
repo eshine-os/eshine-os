@@ -37,6 +37,7 @@ void el2_irq_host(void)
 
     if (intid == GIC_PPI_HPTIMER) {
         timer_handler();
+        trail_add(11, timer_ticks(), cur_vcpu ? 1 : 0);
         /* HVC 风暴的宿主段也是 guest 活负载:计入其量子。
          * PREEMPT 的扳机在 HVC 出口(resume_or_preempt)。 */
         if (cur_vcpu && cur_vcpu->slice_left > 0)
@@ -44,6 +45,7 @@ void el2_irq_host(void)
         sched_vtimer_sweep();               /* 每拍表扫:多等待者到期判定 */
         gicv3_eoi_dir(intid);
     } else if (intid == GIC_PPI_VTIMER) {
+        trail_add(15, timer_ticks(), cur_vcpu ? 1 : 0);
         /* 站十八A三分支:真唤醒了睡客才关线(睡客没人替它落线);
          * RUNNING 轮转客的未认领在途拍不碰物理线——HW LR pending 由
          * 物理线驱动,关了即蒸发([53] 闪断根因:站16 注释宣称"关线只
@@ -52,12 +54,15 @@ void el2_irq_host(void)
          * 进场消费(线挂期间重复 27 由本分支廉价吸收;泵由 shell 每圈
          * 必调,无死循环路径);无睡客无在途=无主陈旧挂起,熄线收尸
          * (老行为)。 */
-        if (sched_vtimer_sweep())
+        if (sched_vtimer_sweep()) {
+            trail_add(6, 1, 0);
             vgic_wake_waiter();
-        else if (vtimer_inflight()) {
+        } else if (vtimer_inflight()) {
+            trail_add(7, 0, 0);
             gicv3_eoi_drop(GIC_PPI_VTIMER);
             sched_vtimer_recall[cpu_id()] = 1UL;
         } else {
+            trail_add(8, 0, 0);
             /* 站19D 收口:无主挂起不再就地收尸。收尸写 CNTV_CTL=0
              * 是 per-pCPU 的:此窗 sweep 只认停泊者,ws 仍在 0 的
              * 在跑客(WFI 已入、簿记未竟)会被误杀线,出栈存得
@@ -84,6 +89,7 @@ void el2_irq_guest(void)
 
     if (intid == GIC_PPI_HPTIMER) {
         timer_handler();
+        trail_add(13, timer_ticks(), cur_vcpu ? 1 : 0);
         if (cur_vcpu->slice_left > 0)
             cur_vcpu->slice_left--;
         if (cur_vcpu->slice_left == 0) {
@@ -104,6 +110,7 @@ void el2_irq_guest(void)
          * 物理 RPR 不还,后续 26/27 全哑(物理 active 位不撤无妨,
          * active+pending 照常可投)。 */
         gicv3_eoi_drop(GIC_PPI_VTIMER);
+        trail_add(14, timer_ticks(), cur_vcpu ? 1 : 0);
         vgic_inject_vtimer(vgic_ppi_prio(&vm_of_vcpu(cur_vcpu)->vgic,
                                          GIC_PPI_VTIMER));
     } else if (intid != IAR_SPURIOUS) {

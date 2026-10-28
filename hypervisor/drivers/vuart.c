@@ -40,15 +40,26 @@ void vuart_init(struct vuart *vu)
     vu->dmacr = 0;
 }
 
+/* 站20:三物理核下 vuart 状态面出现真并发写者——CPU0 宿主 shell
+ * (rx_push/冲刷)与 CPU1/CPU2 专泵上的 guest 陷阱(DR 读弹环重评
+ * ris / bg TX 追加)。裸奔实测两处血案:push 的 ris|= 与 DR 读的
+ * ris=0 整写赛跑,字节在环而挂起清零,注入永不再来=真死客(e1
+ * "无回声"形的机制面);bg 追加与 vmconsole 冲刷对 tx_len 无序交
+ * 错,半行被复制/字节丢失([62] 提示符错形)。console 锁(站18D,
+ * 同 CPU 递归、跨 CPU 互斥)串行化;单核拓扑两写者同核本无并发,
+ * 行为零变。 */
 void vuart_rx_push(struct vuart *vu, char c)
 {
-    u32 n = (vu->rx_h + 1) % VUART_RX_SIZE;
+    u32 n;
 
-    if (n == vu->rx_t)
-        return;                        /* 环满即丢:64B 对人类敲键是天文数字 */
-    vu->rx[vu->rx_h] = c;
-    vu->rx_h = n;
-    vu->ris |= IRQ_RX;                 /* 有数据到:原始挂起(真 PL011 同律) */
+    console_lock();
+    n = (vu->rx_h + 1) % VUART_RX_SIZE;
+    if (n != vu->rx_t) {
+        vu->rx[vu->rx_h] = c;
+        vu->rx_h = n;
+        vu->ris |= IRQ_RX;             /* 有数据到:原始挂起(真 PL011 同律) */
+    }                                  /* 环满即丢:64B 对人类敲键是天文数字 */
+    console_unlock();
 }
 
 bool vuart_rx_has_data(const struct vuart *vu)
@@ -87,11 +98,14 @@ u64 vuart_mmio_read(struct vuart *vu, u64 off)
 {
     switch (off) {
     case UART_DR: {
-        u64 v = vuart_rx_has_data(vu) ? vuart_rx_pop(vu) : 0UL;
+        u64 v;
 
+        console_lock();                /* 站20:弹环+ris 重评与 push 互斥 */
+        v = vuart_rx_has_data(vu) ? vuart_rx_pop(vu) : 0UL;
         /* 读 DR 重评 RX 挂起(真 PL011 同律:环内仍有数据则保持)——
          * 多字符爆发:每注一发弹一个,泵入口见 irq_ready 续注直至排空 */
         vu->ris = vuart_rx_has_data(vu) ? IRQ_RX : 0u;
+        console_unlock();
         return v;
     }
     case UART_IMSC:
@@ -178,11 +192,19 @@ void vuart_mmio_write(struct vuart *vu, u32 vmid, u64 off, u64 val, bool fg)
         console_putc(c);
         return;
     }
+    console_lock();                   /* 站20:bg 追加与冲刷/vuart_tx_emit
+                                        * 共锁串行(同 CPU 递归,emit 复入
+                                        * 只增嵌套);跨 CPU 半行不再
+                                        * 被对面的冲刷撕开 */
     if (vu->tx_len == 0)
         vu->tx_tagged = true;          /* 行首定 tag:整行按后台格式冲 */
     vu->tx[vu->tx_len++] = c;
-    if (c == '\n' || vu->tx_len == VUART_TX_SIZE)
+    if (c == '\n' || vu->tx_len == VUART_TX_SIZE) {
+        console_unlock();
         vuart_tx_emit(vu, vmid);
+        return;
+    }
+    console_unlock();
 }
 
 void vuart_tx_flush(struct vuart *vu, u32 vmid)

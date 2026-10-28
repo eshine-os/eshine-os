@@ -33,6 +33,11 @@ int rt_getc_nb(void)
     return (unsigned char)rrx[t];
 }
 
+int rt_rx_pending(void)
+{
+    return rrx_h != rrx_t;
+}
+
 /* 行级打印临界区:多任务并发打印以行原子(心跳/自证/壳不打架),
  * 行间交错正是并发判据。窗口 = 一行几十次 MMIO 陷阱,100Hz demo
  * 尺度无延迟之虞。 */

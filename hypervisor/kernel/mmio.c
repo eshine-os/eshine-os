@@ -22,6 +22,8 @@ void mmio_dispatch(struct vcpu *v, u64 esr)
 {
     u64 iss = esr & 0x1FFFFFFUL;
     struct eshine_vm *vm = vm_of_vcpu(v);
+    struct eshine_vm *own_vm = sched_console_owner ?
+                               vm_of_vcpu(sched_console_owner) : NULL;
     u64 hpfar, far, ipa;
     u32 i;
 
@@ -57,7 +59,17 @@ void mmio_dispatch(struct vcpu *v, u64 esr)
             case VM_DEV_VUART:
                 if (wnr)
                     vuart_mmio_write(&vm->vu, (u32)vm->vmid, ipa - d->ipa,
-                                     v->gprs[srt], v == sched_console_owner);
+                                     v->gprs[srt],
+                                     /* 站20 [63] 定谳:前台语义与泵的 fg 过滤
+                                      * 对齐——按 VM 比,不再按 vCPU 比。双
+                                      * vCPU 客的进程上下文会被内核调度到任一
+                                      * vCPU(vm2 的 sh 实测漂到 vcpu1),旧比
+                                      * 法把业主 VM 自家另一帧的 TX 判成后台
+                                      * ——无换行的 busybox 提示符入 bg 行
+                                      * 缓冲,永不再冲刷,[62] 后的 shell 交互
+                                      * 全部失锚。泵侧站19D 已按 VM(sched.c
+                                      * "双 vCPU 同 VM 皆前台"),此处补齐。 */
+                                     own_vm == vm);
                 else if (srt != 31)      /* SRT=31 -> xzr,不回填 */
                     v->gprs[srt] = vuart_mmio_read(&vm->vu, ipa - d->ipa);
                 break;

@@ -66,5 +66,8 @@ struct eshine_vm *vm_of_vcpu(struct vcpu *v);   /* vcpu -> 所属 VM(mmio 分发
 u64 vm_ipa_to_pa(struct eshine_vm *vm, u64 ipa, u64 size);  /* 静态翻译(virtio/vuart 设备数据面) */
 int  vm_kill(u32 id);
 void vm_list(void);
+void vm_rx_dump(void);
+void vm_trail_dump(void);          /* 站20:事件迹环([41] 探针) */
+void trail_add(u32 ev, u64 a, u64 b);              /* 站20:RX 链两域现场(取证) */
 
 #endif /* ESHINE_VM_H */

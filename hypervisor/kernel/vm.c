@@ -400,12 +400,62 @@ u64 vm_ipa_to_pa(struct eshine_vm *vm, u64 ipa, u64 size)
  * (vgic_wake_waiter 只属真正响过的物理 27 路径);拍频 = 1 tick,
  * 与泵粒度同阶——WOKE 的生效本就要等下一次泵轮到它,与即时判定
  * 等效(单核调度的本质粒度)。 */
+/* 站20 [41] 取证探针:事件迹环(64 槽,溢出覆写;写入点跨三核,环头
+ * 竞态可容忍——探针尺度的诚实记录)。诊断命令 vmtrail 打印。 */
+#define TRAIL_N 64
+struct trail_slot {
+    u32 cpu;
+    u32 ev;
+    u64 a, b;
+};
+static struct trail_slot trail[TRAIL_N];
+static u32 trail_h;
+
+void trail_add(u32 ev, u64 a, u64 b)
+{
+    struct trail_slot *s = &trail[trail_h++ % TRAIL_N];
+
+    s->cpu = cpu_id();
+    s->ev = ev;
+    s->a = a;
+    s->b = b;
+}
+
+void vm_trail_dump(void)
+{
+    u32 i;
+
+    console_puts("vmtrail: h=");
+    util_putdec(trail_h);
+    console_puts("\n");
+    if (trail_h > TRAIL_N)
+        i = trail_h - TRAIL_N;           /* 环已覆写:只余最近 TRAIL_N 条 */
+    else
+        i = 0;
+    for (; i < trail_h; i++) {
+        struct trail_slot *s = &trail[i % TRAIL_N];
+
+        console_puts("  #");
+        util_putdec(i);
+        console_puts(" cpu");
+        util_putdec(s->cpu);
+        console_puts(" ev");
+        util_putdec(s->ev);
+        console_puts(" a=");
+        console_puthex(s->a);
+        console_puts(" b=");
+        console_puthex(s->b);
+        console_puts("\n");
+    }
+}
+
 u32 sched_vtimer_sweep(void)
 {
     u64 now;
     u32 id, woke = 0;
 
     __asm__ volatile("mrs %0, cntvct_el0" : "=r"(now));
+    trail_add(12, now, woke);
     for (id = 0; id < ESHINE_MAX_VMS; id++) {
         u32 vi;
 
@@ -431,6 +481,7 @@ u32 sched_vtimer_sweep(void)
              * (进场→guest 重装,µs 级)的重复 27 由 el2_irq_guest
              * 27 分支幂等吸收,自限。 */
             woke++;
+            trail_add(2, ((u64)id << 4) | vi, now);
         }
     }
     return woke;
@@ -471,6 +522,8 @@ static bool pump_run_vcpu(u32 id, u32 vi)
             return false;
         }
     }
+    trail_add(3, ((u64)id << 4) | vi,
+              (v->wait_state << 8) | v->wait_reason);
     sched_vtimer_last[cpu_id()] = (id << 4) | vi;   /* 站十八A/D+19D:
                                         * 物理 CNTV 归属随本核进场;
                                         * (vm,vcpu) 打包进 last */
@@ -491,6 +544,7 @@ static bool pump_run_vcpu(u32 id, u32 vi)
                 vgic_inject_vtimer(vgic_ppi_prio(&vm->vgic,
                                                  GIC_PPI_VTIMER));/* per-pCPU 单 LR 只能泵挂 */
             }
+            trail_add(5, v->vtimer_ctl, v->vtimer_cval);
         }
         v->wait_state = 0UL;
         v->wait_reason = 0UL;
@@ -515,6 +569,7 @@ static bool pump_run_vcpu(u32 id, u32 vi)
          * 站19D:SPI(串口/块)归 vcpu0 面(DTB 中断路由的诚实镜像)。
          * RIS 在 DR 读时重评定:多字符爆发每注一发弹一个,续注排空 */
         vgic_inject_uart();
+        trail_add(4, (u64)vm->vu.rx_h, vm->vu.rx_t);
     }
     if (vi == 0 && virtio_irq_ready(vm) &&
         vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO)) {
@@ -582,6 +637,7 @@ static bool pump_run_vcpu(u32 id, u32 vi)
          * (宿主睡期间要能敲命令,回收出口在 guest 的 host 命令)。 */
         v->wait_reason = (v->vtimer_ctl & 1UL) ? VCPU_WAIT_TIMER
                                                : VCPU_WAIT_RX;
+        trail_add(1, v->wait_reason, v->vtimer_cval);
         /* 站十五撤自动归还:真 Linux 壳恒 250Hz armed,timer 睡
          * 即被收台,输入永远喂给宿主 shell(owner 形同虚设)。
          * owner 从此是显式接管,归还只走 vmconsole host / 逃生
@@ -725,6 +781,105 @@ void vm_list(void)
             console_puthex(vm->vcpus[0].pc);
         }
         console_putc('\n');
+    }
+}
+
+/* 站20 [41] 取证面:RX 链两域现场的宿主半边。命令语境 = 宿主 shell
+ * (EL2,LR 面直接可读);owner=guest 时进不来(0x1d 逃生后可用)。
+ * 壳层另一半(rrx 环/任务态)在客内存,由门禁 debug 变体经 QMP 读。
+ * 用途:token 单见类闪断,定位字节搁浅在 vuart 环(宿主域)还是
+ * 已入 rrx(客域)。 */
+void vm_rx_dump(void)
+{
+    static const char hex[] = "0123456789abcdef";
+    u32 i;
+    u64 lr0, lr1, lr2, lr3;
+
+    __asm__ volatile("mrs %0, ich_lr0_el2" : "=r"(lr0));
+    __asm__ volatile("mrs %0, ich_lr1_el2" : "=r"(lr1));
+    __asm__ volatile("mrs %0, ich_lr2_el2" : "=r"(lr2));
+    __asm__ volatile("mrs %0, ich_lr3_el2" : "=r"(lr3));
+    console_puts("vmrx: owner=");
+    if (sched_console_owner)
+        console_puthex((u64)sched_console_owner);
+    else
+        console_puts("host");
+    console_puts(" lr0=");
+    console_puthex(lr0);
+    console_puts(" lr1=");
+    console_puthex(lr1);
+    console_puts(" lr2=");
+    console_puthex(lr2);
+    console_puts(" lr3=");
+    console_puthex(lr3);
+    console_puts("\n");
+    for (i = 0; i < ESHINE_MAX_VMS; i++) {
+        struct eshine_vm *vm = &vm_table[i];
+        u32 k = vm->vu.rx_t;
+
+        if (vm->state == VM_INIT)
+            continue;
+        console_puts("  [");
+        util_putdec(i);
+        console_puts("] h=");
+        util_putdec(vm->vu.rx_h);
+        console_puts(" t=");
+        util_putdec(vm->vu.rx_t);
+        console_puts(" ris=");
+        console_puthex(vm->vu.ris);
+        console_puts(" imsc=");
+        console_puthex(vm->vu.imsc);
+        console_puts(" cr=");
+        console_puthex(vm->vu.cr);
+        console_puts(" rx:");
+        while (k != vm->vu.rx_h) {
+            u8 b = (u8)vm->vu.rx[k];
+
+            console_putc(hex[(b >> 4) & 0xFu]);
+            console_putc(hex[b & 0xFu]);
+            console_putc(' ');
+            k = (k + 1u) % VUART_RX_SIZE;
+        }
+        console_puts("\n");
+    }
+    {
+        /* 站20 [41] 收口取证:CPU0 重分发帧 PPI 物理面(挂起/活动/使能/
+         * 优先级——ICC_* 系统寄存器在 EL2(non-VHE) 读到的是虚面,
+         * 物理真相只有 MMIO)。26=bit26,27=bit27。 */
+        u64 sgi = 0x080A0000UL + 0x10000UL;
+#define RD32(a) (*(volatile u32 *)(a))
+
+        {
+            u64 vc, vv, vs;
+
+            __asm__ volatile("mrs %0, cntv_ctl_el0" : "=r"(vc));
+            __asm__ volatile("mrs %0, cntv_cval_el0" : "=r"(vv));
+            __asm__ volatile("mrs %0, cntvct_el0" : "=r"(vs));
+            console_puts("  cntv: ctl=");
+            console_puthex(vc);
+            console_puts(" cval=");
+            console_puthex(vv);
+            console_puts(" now=");
+            console_puthex(vs);
+            console_puts(" hpctl=");
+            __asm__ volatile("mrs %0, cnthp_ctl_el2" : "=r"(vc));
+            console_puthex(vc);
+            console_puts(" hpcval=");
+            __asm__ volatile("mrs %0, cnthp_cval_el2" : "=r"(vv));
+            console_puthex(vv);
+            console_puts("\n");
+        }
+        console_puts("  gicr0: pend=");
+        console_puthex(RD32(sgi + 0x200));
+        console_puts(" act=");
+        console_puthex(RD32(sgi + 0x300));
+        console_puts(" en=");
+        console_puthex(RD32(sgi + 0x100));
+        console_puts(" p26=");
+        console_puthex(RD32(sgi + 0x418));
+        console_puts(" p27=");
+        console_puthex(RD32(sgi + 0x41c));
+        console_puts("\n");
     }
 }
 

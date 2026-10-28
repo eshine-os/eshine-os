@@ -92,6 +92,7 @@ void rt_puts(const char *s);     /* 行级临界区(DAIF 屏蔽)打印 */
 void rt_puts_u64(const char *pfx, u64 v, const char *sfx);
 void rt_uart_drain_isr(void);    /* IRQ 上下文:排空 DR 入 RTOS 环 */
 int  rt_getc_nb(void);           /* 空环返回 -1,不阻塞 */
+int  rt_rx_pending(void);        /* 环非空即 1:挂起前终判([41] 修复判据) */
 
 /* rt_shell.c */
 void rt_shell_task(void *arg);

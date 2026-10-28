@@ -17,7 +17,7 @@ static char linebuf[SHELL_BUF_MAX];
 static void cmd_help(void)
 {
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
-    console_puts("          vmrun <id> vmconsole <id|host> vmstat vmkill <id>\n");
+    console_puts("          vmrun <id> vmconsole <id|host> vmstat vmrx vmtrail vmkill <id>\n");
     console_puts("    (前台会话期 Ctrl-](0x1d)=宿主夺回控制台)\n");
     console_puts("guest:    selftest sleep [N] spin dwrite dread fault echo <text> host exit\n");
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
@@ -142,6 +142,10 @@ static void dispatch(char *line)
         cmd_tick();
     } else if (strncmp(line, "vmls", 64) == 0) {
         vm_list();
+    } else if (strncmp(line, "vmrx", 64) == 0) {
+        vm_rx_dump();
+    } else if (strncmp(line, "vmtrail", 64) == 0) {
+        vm_trail_dump();
     } else if (strncmp(line, "vmcreate", 64) == 0) {
         bool ok;
         u32 id = parse_id(args, &ok);
@@ -186,11 +190,17 @@ static void dispatch(char *line)
                 } else {
                     /* 新 owner 若在 WAIT 即唤醒(RX 等待者输入已可入环;
                      * TIMER 等待者醒后自查 wake_count,空转一轮无害)。 */
-                    vuart_tx_flush(&vm->vu, id);   /* 先冲半行再切 owner */
                     sched_console_owner = vm_vcpu(id);
                     if (sched_console_owner->wait_state == 1UL)
                         sched_console_owner->wait_state = 0UL;
                     console_puts("console -> vm\n");
+                    /* 站20:半行冲刷移到 owner 落位与切换消息之后——旧序
+                     * (先冲再切)下,三核并发里新 owner 的在途半行会被
+                     * "console -> vm" 消息从中间劈开(busybox 提示符
+                     * "~ # " 无换行,恰跨切换即碎,门禁 [62] 锚实测)。
+                     * 新序:消息先行,半行整体随冲刷(或首笔 fg 直写)在后
+                     * 面世,字节序恒完整。 */
+                    vuart_tx_flush(&vm->vu, id);
                 }
             } else {
                 console_puts("usage: vmconsole <id|host>\n");
@@ -251,6 +261,14 @@ void shell_run(void)
                 vuart_rx_push(&vm->vu, c);
                 if (v->wait_state == 1UL && v->wait_reason == VCPU_WAIT_RX)
                     v->wait_state = 0UL;    /* 直通 runnable:注入即取 */
+                {
+                    u64 rpr, ctl, pmr;
+
+                    __asm__ volatile("mrs %0, icc_rpr_el1" : "=r"(rpr));
+                    __asm__ volatile("mrs %0, icc_ctlr_el1" : "=r"(ctl));
+                    __asm__ volatile("mrs %0, icc_pmr_el1" : "=r"(pmr));
+                    trail_add(9, rpr, (ctl << 32) | (pmr << 16) | v->wait_reason);
+                }
                 if (vm->vmid == 2)
                     sched_poke_cpu1();  /* 站十八D:RX 直通 CPU1 专泵 */
                 continue;
