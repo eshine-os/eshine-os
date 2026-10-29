@@ -27,6 +27,8 @@ struct vuart {
     u32  imsc;                       /* 中断屏蔽:仅 RXIM(bit4)建模 */
     u32  ris;                        /* 原始挂起:RX(bit4),读 DR 自动清 */
     u32  cr, ibrd, fbrd, lcr_h, ifls, dmacr;   /* 第十三站:控制族存储回读 */
+    u64  flush_at;                   /* 站23C:泊位延迟冲刷死线
+                                      * (CNTPOCT 计数;0=未武装) */
 };
 
 void vuart_init(struct vuart *vu);

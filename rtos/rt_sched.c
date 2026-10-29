@@ -253,6 +253,43 @@ void rt_tick_bookkeep(void)
      * 对同一睡客双推(rt_ready_push 状态门挡住第二次,但队链会
      * 双挂——单扫根除)。 */
     if (c == 0) {
+        char *lim = rt_cur_stack_limit();
+        char *sp = rt_cur_sp();
+
+        /* 站23B:live-sp 守卫——历史水位(margin)量过去,守卫量
+         * 此刻:tick 异常帧+扫描/回调链(RT_ISR_BUDGET=384)落点
+         * 低于可用底即写进 magic 区,下一拍哨兵扫描必 panic;告警
+         * 线再加打印链/帧漂移余量(RT_GUARD_LINE=640),低于即
+         * 一次性 warn。deepdiver 的封窗深潜 tick 看不见(站21
+         * DAIF 窗),零假阳性;idle 语境 lim=NULL 免。 */
+        if (lim && sp < lim + RT_GUARD_LINE && !rt_cur->low_warned) {
+            /* 评审修真:整行先组后一发——三段各自 rt_puts 是三次锁
+             * 窗,同 VM 跨核打印可把 [44] needle 劈中间(本仓纪律:
+             * rt_puts_u64 注释/smpdemo 定谳);顺带压 ~90B 低栈链深。
+             * 数字自 line 尾倒序生成后前拼,栈账仅 line[96]。 */
+            char line[96];
+            u64 m = (u64)(sp - lim);
+            unsigned int n = 0, i = sizeof(line) - 1, j;
+
+            line[i] = '\0';
+            do {
+                line[--i] = (char)('0' + (m % 10));
+                m /= 10;
+            } while (m);
+            while (n < i && "stk: lowmargin "[n]) {
+                line[n] = "stk: lowmargin "[n];
+                n++;
+            }
+            for (j = 0; rt_cur->name[j] && n < sizeof(line) - 2; j++)
+                line[n++] = rt_cur->name[j];
+            line[n++] = ' ';
+            for (j = i; line[j] && n < sizeof(line) - 2; j++)
+                line[n++] = line[j];
+            line[n++] = '\n';
+            line[n] = '\0';
+            rt_cur->low_warned = 1;
+            rt_puts(line);
+        }
         rt_task_wake_sleepers();    /* 到期睡客 -> READY(入各自队) */
         rt_timer_tick();            /* 站22B:软定时器到点回调(同单写者环) */
     }

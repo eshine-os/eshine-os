@@ -64,6 +64,7 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
     t->pend_qt = NULL;
     t->pend_owner = NULL;
     t->timed_out = 0;
+    t->low_warned = 0;              /* 站23B:守卫一次性旗,复用槽必清 */
     t->entry = entry;
     t->arg = arg;
     t->prio = prio < RT_NPRIO ? prio : RT_NPRIO - 1;

@@ -38,6 +38,7 @@ void vuart_init(struct vuart *vu)
     vu->lcr_h = 0;
     vu->ifls = 0x12u;                   /* 真复位值:默认 FIFO 水位 */
     vu->dmacr = 0;
+    vu->flush_at = 0;                /* 站23C:延迟冲刷未武装 */
 }
 
 /* 站20:三物理核下 vuart 状态面出现真并发写者——CPU0 宿主 shell

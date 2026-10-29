@@ -364,8 +364,25 @@ void el1_sync(struct vcpu *v)
                 break;
             }
         }
-        if (peers_parked && !vuart_rx_has_data(&pvm->vu))
-            vuart_tx_flush(&pvm->vu, (u32)pvm->vmid);
+        /* 站23C:泊位冲刷延迟化——不再即时冲,改武装 20ms 死线
+         * (flush_at=CNTPOCT+延迟),泵入口扫描(vuart_flush_sweep)
+         * 到期才冲。chardev 分块缝(µs-ms 级)被吸收:块内续收的
+         * 行完整后才见天日,回显不再碎([54] 残余收编);人类敲键
+         * 间隙 100ms+ → 照常 ≤20ms 见回显。时间基=vm0 RTOS 100Hz
+         * tick 恒拍 cpu0 泵,无事件死区(boot 序 vm0 恒最先起)。
+         * CNTPOCT 自由读=零宿主时钟手术(站22 残余的可行性关键)。 */
+        if (peers_parked && !vuart_rx_has_data(&pvm->vu)) {
+            u64 now, freq;
+
+            /* 评审修真:武装入 console_lock——与泵扫描的判-清
+             * (vm.c)互斥;无锁清零可吞并发武装(读旧死线→他核
+             * 泊位武装→清零),该行的吸收窗失效即 [54] 复发面。 */
+            console_lock();
+            __asm__ volatile("mrs %0, cntpct_el0" : "=r"(now));
+            __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
+            pvm->vu.flush_at = now + freq / 50UL;   /* 20ms */
+            console_unlock();
+        }
         v->exit_reason = VCPU_WAIT;
         vcpu_exit();
     } else {                                /* guest fault:诊断 -> VM 隔离死 */

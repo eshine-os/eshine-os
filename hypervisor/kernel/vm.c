@@ -330,6 +330,8 @@ static void vm_finish(u32 id, u64 reason)
     struct eshine_vm *vm = &vm_table[id];
     bool paused = false, dead = false;
 
+    vm->vu.flush_at = 0;                /* 站23C:即冲口同步熄武装——陈旧
+                                           * 死线不得再对死台开冲(评审 c) */
     vuart_tx_flush(&vm->vu, id);        /* 死/停前冲尾:半行不吞(tag 定前缀) */
     vm_state_lock_take();
     if (vm->state != VM_RUNNING) {
@@ -675,11 +677,60 @@ static bool pump_run_vcpu(u32 id, u32 vi)
     return true;
 }
 
+/* 站23C:全帧泊位判(武装与 fire 时刻共用同一静默判)——任一
+ * vCPU 未泊位(含 runnable 未跑:下一片即续写)= 行或在途,
+ * 不冲。单帧 VM 恒过(无同侪)。 */
+static bool vm_all_parked(struct eshine_vm *vm)
+{
+    u32 vn = vm_vcpu_count(vm->vmid);
+    u32 vi;
+
+    for (vi = 0; vi < vn; vi++) {
+        if (vm->vcpus[vi].wait_state != 1UL)
+            return false;
+    }
+    return true;
+}
+
 bool sched_pump(void)
 {
     static u32 rr_next;
     bool progressed = false;
     u32 n;
+
+    /* 站23C:延迟冲刷扫描(泵入口)——泊位武装的 flush_at 到期
+     * 即冲。评审修真二连:
+     * (a) fire 时刻复验武装时刻的同一静默判(全帧泊位+RX 环空)
+     *     ——陈旧武装(泊后自醒长跑、死线已过)在行在途时拦腰
+     *     冲出半行 = [54] 双雷复发(新路径共享旧状态);不满足则
+     *     保留武装,下一泵入口复扫,行 '\n' 收口后自然变 no-op。
+     * (b) 判-清入 console_lock,与泊位武装(exceptions.c 同锁)
+     *     互斥——无锁清零可吞并发武装,该行吸收窗失效。
+     * 时间基面:CPU0 宿主壳忙自旋(shell_run 每迭代一圈本函数,
+     * µs 级,boot 序即恒在,不倚 vm0 tick);长量子期间扫描停摆
+     * ≤1 量子,(a) 复验下迟冲无害。先清后冲,他核同到双冲无
+     * 害(emit 空缓冲早退)。仅查已建 VM(state 门挡表垃圾)。 */
+    {
+        u64 now;
+
+        __asm__ volatile("mrs %0, cntpct_el0" : "=r"(now));
+        for (n = 0; n < ESHINE_MAX_VMS; n++) {
+            struct eshine_vm *fvm = &vm_table[n];
+
+            if (fvm->state != VM_RUNNING)
+                continue;
+            if (fvm->vu.flush_at && (long long)(now - fvm->vu.flush_at) >= 0) {
+                console_lock();
+                if (vm_all_parked(fvm) && !vuart_rx_has_data(&fvm->vu)) {
+                    fvm->vu.flush_at = 0;
+                    console_unlock();
+                    vuart_tx_flush(&fvm->vu, n);
+                } else {
+                    console_unlock();   /* 行或在途:留武装,复扫 */
+                }
+            }
+        }
+    }
 
     /* 站十八A:在途回业主——27 三分支置的标志,本圈以最后进场者为
      * 旋转起点(首圈即回业主消费自己的拍;重装帧 ctl=1+过期 cval,

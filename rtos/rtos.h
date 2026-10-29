@@ -64,6 +64,9 @@ struct rt_task {
                                   * sem/queue=NULL(typedef 于 struct 后,
                                   * 同 next/wq_next 用 struct 形) */
     u32 timed_out;               /* 扫描置位,take 环消费 */
+    u32 low_warned;              /* 站23B:live-sp 守卫一次性告警旗
+                                  * (create 清零;deepdiver 封窗深潜
+                                  * tick 看不见,零假阳性) */
 };
 typedef struct rt_task rt_task_t;
 
@@ -88,6 +91,16 @@ static inline u32 rt_cpu_id(void)
 }
 
 #define rt_cur (rt_cur_arr[rt_cpu_id()])   /* C 树零改动:读写点全保旧名 */
+
+/* 站23B:当前 SP 直读(asm;判深/守卫共用——__builtin_frame_address
+ * 在 -O2 无帧指针下不可用,站21 实测定谳)。 */
+static inline char *rt_cur_sp(void)
+{
+    char *p;
+
+    __asm__ volatile("mov %0, sp" : "=r"(p));
+    return p;
+}
 
 /* rt_task.c */
 rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
@@ -310,5 +323,29 @@ void rt_timer_stop(rt_timer_t *t);
 void rt_timer_tick(void);            /* 核 0 单写者扫描:到期即回调 */
 
 void rt_demo_swt(void);              /* 站22B:swtdemo 判据 */
+
+/* rt_main.c(站23A):irq handler 注册表。替换式登记(一 intid 一槽,
+ * 重复登记=替换,返回旧 isr 供链式包装/恢复);IAR→查表→isr 先行,
+ * 掩码后醒(rt_task_wake_all(mask)——RT_RX_BIT 泛化至此);无登记
+ * intid 一行报(默认拒绝面诚实化)。登记窗口期(替换瞬间)同核
+ * 序贯,IRQ 走新旧槽皆可,语义无害。 */
+#define RT_IRQ_MAX 8
+void (*rt_irq_register(u32 intid, void (*isr)(void), u32 wake_mask))(void);
+void (*rt_irq_swap_uart(void (*isr)(void)))(void);  /* 站23A:33 号槽
+                                   * 换钩助手(demo 面;掩码恒 RT_RX_BIT) */
+
+/* 站23B:水位守卫预算(评审 disassembly 定谳账目)。守卫链=vec.S
+ * 异常帧 272+dispatch 48+isr_vtimer 0(尾调)+bookkeep 64=384
+ * ——恰 RT_ISR_BUDGET;sp(真值)低于可用底+384 时 ISR 链写到
+ * magic 区,下一拍哨兵扫描即 panic(**任务真 sp 系**危险线)。
+ * 守卫告警线=危险线+读点差 D≈350→734 取整 640——**守卫读点系**
+ * (读点在真 sp 下方 D);打印链(组串后单 rt_puts)实测 ~160B
+ * 自读点向下,640−384=256 即其+帧漂移余量。两线分属两坐标系,
+ * 勿混比(评审余量算术定谳:旧注"打印链 ~100B"实测 160,已正)。 */
+#define RT_ISR_BUDGET  384u
+#define RT_GUARD_LINE  640u
+
+void rt_demo_irq(void);              /* 站23A:irqdemo(注册表活证) */
+void rt_demo_low(void);              /* 站23B:lowdemo(贴线守卫) */
 
 #endif /* RTOS_H */

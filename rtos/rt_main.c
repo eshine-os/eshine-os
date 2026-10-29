@@ -77,35 +77,108 @@ void rtos_secondary_main(u32 cpu)
     rt_idle_loop();                  /* noreturn:idle1 即本核引导语境 */
 }
 
+/* ---- 站23A:irq handler 注册表 ----
+ * 硬编码四分支(27/0/33/35)退役:登记表替换式(一 intid 一槽,重复
+ * 登记=替换,返回旧 isr 供链式包装/恢复——irqdemo 判据面);IAR→
+ * 查表→isr 先行、掩码后醒(RT_RX_BIT 等待位泛化至此,uart 登记
+ * 携带,余为 0);无登记 intid 一行报(默认拒绝面诚实化,rt_puts
+ * ISR 安全同站二十二契约)。登记窗口期(替换瞬间)同核序贯,IRQ
+ * 走新旧槽皆可,语义无害。 */
+static struct {
+    u32 intid;
+    void (*isr)(void);
+    u32 wake_mask;
+} rt_irq_tab[RT_IRQ_MAX];
+
+void (*rt_irq_register(u32 intid, void (*isr)(void), u32 wake_mask))(void)
+{
+    void (*old)(void) = NULL;
+    unsigned int i;
+
+    for (i = 0; i < RT_IRQ_MAX; i++) {
+        if (rt_irq_tab[i].intid == intid && rt_irq_tab[i].isr) {
+            old = rt_irq_tab[i].isr;
+            rt_irq_tab[i].isr = isr;
+            rt_irq_tab[i].wake_mask = wake_mask;
+            return old;
+        }
+    }
+    for (i = 0; i < RT_IRQ_MAX; i++) {
+        if (!rt_irq_tab[i].isr) {
+            rt_irq_tab[i].intid = intid;
+            rt_irq_tab[i].isr = isr;
+            rt_irq_tab[i].wake_mask = wake_mask;
+            break;
+        }
+    }
+    return old;                      /* 空槽登记:无旧主(NULL) */
+}
+
+/* 登记期四 isr(原内联逻辑原样移槽;唤醒走表掩码,不再各写各的) */
+static void isr_vtimer(void)
+{
+    u64 period = vtimer_freq() / RT_HZ;
+    u64 cval;
+
+    /* 站二十:全局 tick 记账单写者化(核 0 独记,核 1 只读)。 */
+    if (rt_cpu_id() == 0)
+        rt_ticks++;
+    __asm__ volatile("mrs %0, cntv_cval_el0" : "=r"(cval));
+    /* 周期重臂:上拍到期值为基(+period),零漂移;泵扫描注入路径
+     * 可能已熄 ctl,一并点回。 */
+    __asm__ volatile("msr cntv_cval_el0, %0" :: "r"(cval + period));
+    __asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(1UL));
+    rt_tick_bookkeep();
+}
+
+static void isr_uart(void)
+{
+    rt_uart_drain_isr();
+}
+
+static void isr_ipi(void)
+{
+    rt_resched_ipi();                /* 站二十:重调度判+收拍计数 */
+}
+
+static void isr_virtio(void)
+{
+    virtio_isr();
+}
+
+/* 站23A:uart 槽换钩助手——INTID 常量留 gic.h 的合法 TU
+ * (gic.h 是单含静态头,拖进 rt_demo.c 会产未用静态警);demo 经
+ * 此换/恢复 33 号槽(RT_RX_BIT 唤醒掩码恒由 uart 面携带)。 */
+void (*rt_irq_swap_uart(void (*isr)(void)))(void)
+{
+    return rt_irq_register(GUEST_INTID_UART, isr, RT_RX_BIT);
+}
+
 rt_task_t *rt_irq_dispatch(void)
 {
     u64 iar = gic_claim();
+    unsigned int i;
+    int hit = 0;
 
-    if (iar == GUEST_INTID_VTIMER) {
-        u64 period = vtimer_freq() / RT_HZ;
-        u64 cval;
+    for (i = 0; i < RT_IRQ_MAX; i++) {
+        if (rt_irq_tab[i].isr && rt_irq_tab[i].intid == (u32)iar) {
+            rt_irq_tab[i].isr();
+            if (rt_irq_tab[i].wake_mask)
+                rt_task_wake_all(rt_irq_tab[i].wake_mask);
+            hit = 1;
+            break;
+        }
+    }
+    if (!hit && iar != GUEST_INTID_SPURIOUS) {
+        /* 站23 评审:报面默认拒绝=诚实,但持续未知源在 ISR 语境
+         * 行级洪泛;同源抑制一静态量(首发必报,重复源静默——
+         * 变换源仍各报一次,残余面记 devlog)。 */
+        static u32 unclaimed_prev;
 
-        /* 站二十:全局 tick 记账单写者化(核 0 独记,核 1 只读
-         * ——宿主三核一钟同律,防双计互踩)。本核重臂照旧。 */
-        if (rt_cpu_id() == 0)
-            rt_ticks++;
-        __asm__ volatile("mrs %0, cntv_cval_el0" : "=r"(cval));
-        /* 周期重臂:上拍到期值为基(+period),零漂移。泵的每拍扫描
-         * 醒来注入路径可能已把 ctl 熄火(站七形态),一并点回。 */
-        __asm__ volatile("msr cntv_cval_el0, %0" :: "r"(cval + period));
-        __asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(1UL));
-        rt_tick_bookkeep();
-    }
-    if (iar == GUEST_INTID_UART) {
-        rt_uart_drain_isr();
-        rt_wake_rx();
-    }
-    if (iar == GUEST_INTID_IPI) {
-        rt_resched_ipi();            /* 站二十:跨核唤醒落本核——
-                                      * 重调度判 + 收拍计数(demo 面) */
-    }
-    if (iar == GUEST_INTID_VIRTIO) {
-        virtio_isr();
+        if (iar != unclaimed_prev) {
+            unclaimed_prev = (u32)iar;
+            rt_puts_u64("irq: unclaimed ", iar, "\n");
+        }
     }
     if (iar != GUEST_INTID_SPURIOUS)
         gic_eoir(iar);
@@ -179,6 +252,12 @@ void guest_main(void)
     rt_task_create("shell", rt_shell_task, NULL, 5);
     rt_task_create("heartbeat", heartbeat_task, NULL, 10);
 
+    /* 站23A:四路登记(解 IRQ 前无中断,序贯免锁)——27 tick 单
+     * 写者面/0 SGI 重调度/33 uart drain+RX 唤醒/35 virtio 完成。 */
+    rt_irq_register(GUEST_INTID_VTIMER, isr_vtimer, 0);
+    rt_irq_register(GUEST_INTID_IPI, isr_ipi, 0);
+    rt_irq_register(GUEST_INTID_UART, isr_uart, RT_RX_BIT);
+    rt_irq_register(GUEST_INTID_VIRTIO, isr_virtio, 0);
     vtimer_arm_periodic();            /* 100Hz tick 起拍 */
     gic_guest_enable();              /* 解 IRQ:此后 tick/RX 走真中断 */
 

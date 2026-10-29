@@ -574,3 +574,93 @@ void rt_demo_swt(void)
     if (!rt_task_create("swtdrv", swt_driver_task, NULL, 9))
         rt_puts("swtdemo: pool full\n");
 }
+
+/* ---- 站23A:irqdemo——注册表活证(链式包装/计数/恢复) ----
+ * 计数由探针 x 的 UART IRQ 供给(门判 0.1s 延迟补发:命令字节
+ * 在换钩前已被壳消费殆尽——首版以为命令自身 IRQ 会流入 wrap,
+ * 两轮探针定谳为假;同拍爆发整批被换钩前 ISR 消费同理);
+ * restore 后原 drain 语义不变,壳继续可用即证。登记窗口期同核
+ * 序贯,IRQ 走新旧槽皆可(注册表 A1 契约)。 */
+static volatile unsigned int irq_chain_count;
+static void (*irq_uart_prev)(void);
+
+static void irq_wrap_uart(void)
+{
+    irq_chain_count++;
+    if (irq_uart_prev)
+        irq_uart_prev();              /* 链式:原 drain 仍活(RX 面不断) */
+}
+
+static void irqdemo_task(void *arg)
+{
+    int budget = 40;
+
+    /* 自同步(评审 5):探针到位才收摊——固定 30 tick 窗(0.3s)对
+     * 手动走查过苛(人类手速贴刀锋,0.1s 门判补发同理);改 5 tick
+     * 一探预算 2s,门判/手动/迟探皆成,超时保底打印(诚实 0 也报)。 */
+    (void)arg;
+    while (!irq_chain_count && --budget)
+        rt_sleep_ticks(5);
+    rt_puts_u64("irq: chained ", irq_chain_count, "\n");
+    rt_irq_swap_uart(irq_uart_prev);   /* 恢复原 drain 语义 */
+    rt_puts("irqdemo: done\n");       /* 恢复后壳继续可用(判据) */
+}
+
+void rt_demo_irq(void)
+{
+    irq_chain_count = 0;
+    /* 评审修真:先建任务后换钩——池满路径不再把 33 号槽永久留
+     * wrap(登记面不被 demo 污染)。 */
+    if (!rt_task_create("irqdemo", irqdemo_task, NULL, 9)) {
+        rt_puts("irqdemo: pool full\n");
+        return;
+    }
+    irq_uart_prev = rt_irq_swap_uart(irq_wrap_uart);
+}
+
+/* ---- 站23B:lowdemo——贴线守卫判据 ----
+ * lowrunner 以 asm-SP 判深递归;停点在告警线外侧
+ * (stop=lim+RT_GUARD_LINE+256=lim+896)。实测账(评审 disassembly
+ * 定谳:帧 64B/级——站21 的 96B/级推断错一级,勿再引;守卫链
+ * 272+48+0+64=384 恰 RT_ISR_BUDGET;打印链组串后 ~160B):本
+ * build warn 打印 400(守卫读点系)→ 打印链底 ~240,余量足;停点
+ * 保底:读点 640−打印链 160−漂移 >256B 不碰 magic。初版 lim+600
+ * 实测仅 +48B 余量(量化运气过线,评审抓出),重锚于此。最深
+ * 层 busy 旋 30 tick 不封窗 → tick 必在深 sp 处命中守卫 →
+ * 一次性 warn → 解栈回浅收尾。deepdiver 照旧封窗,守卫看不到
+ * 它,零假阳性。 */
+static void low_recurse(char *stop, u64 *acc)
+{
+    volatile u64 pad[4];
+
+    pad[0] = 1;
+    if (rt_cur_sp() > stop) {
+        low_recurse(stop, acc);
+    } else {
+        u64 end = rt_ticks + 30;
+
+        while ((long long)(rt_ticks - end) < 0)
+            pad[0] = pad[0] * 3 + 1;  /* 深度处忙旋:tick 在此命中 */
+    }
+    *acc += pad[0];
+}
+
+static void lowrunner_task(void *arg)
+{
+    char *lim = rt_cur_stack_limit();
+    u64 acc = 0;
+
+    (void)arg;
+    if (!lim) {
+        rt_puts("lowdemo: no pool stack\n");
+        return;
+    }
+    low_recurse(lim + RT_GUARD_LINE + 256, &acc);
+    rt_puts("lowdemo: done\n");
+}
+
+void rt_demo_low(void)
+{
+    if (!rt_task_create("lowrunner", lowrunner_task, NULL, 11))
+        rt_puts("lowdemo: pool full\n");
+}
