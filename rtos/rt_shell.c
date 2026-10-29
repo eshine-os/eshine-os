@@ -101,8 +101,15 @@ static void shell_line(char *line)
         rt_demo_event();             /* 站十九B:事件组 AND/OR */
     } else if (streq(line, "queuedemo")) {
         rt_demo_queue();             /* 站十九B:消息队列满环阻塞 */
+    } else if (streq(line, "smpdemo")) {
+        rt_demo_smp();               /* 站二十:双核计数交错 */
+    } else if (streq(line, "ipidemo")) {
+        rt_demo_ipi();               /* 站二十:SGI 跨核唤醒全链 */
+    } else if (streq(line, "fpsmp")) {
+        rt_demo_fpsmp();             /* 站二十:per-CPU FP 双精确 */
     } else if (streq(line, "fpstat")) {
-        rt_puts_u64("lazy: ", rt_fp_stat, " switches, ");   /* 站19C:M<<N */
+        rt_puts_u64("lazy: ", rt_fp_stat_total(), " switches, ");  /* 站20:
+                                        * M<<N;两核求和(per-CPU asm 计数) */
         rt_puts_u64("", rt_fp_saves, " fp-saves\n");
     } else if (starts(line, "spawn ")) {
         static char spawn_name[12];     /* 单缓冲:并发 spawn 会互踩,
@@ -142,7 +149,8 @@ static void shell_line(char *line)
     } else if (line[0]) {
         rt_puts("rtos: try echo <t> | selftest | ps | spawn <n> | sleep [1-9]"
                 " | fp | fpdual | fpstat | yield | semdemo | mutexdemo | pidemo"
-                " | eventdemo | queuedemo | host | exit\n");
+                " | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | host"
+                " | exit\n");
     }
 }
 

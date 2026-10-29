@@ -21,11 +21,12 @@ static void cmd_help(void)
     console_puts("    (前台会话期 Ctrl-](0x1d)=宿主夺回控制台)\n");
     console_puts("guest:    selftest sleep [N] spin dwrite dread fault echo <text> host exit\n");
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
-    console_puts("          mutexdemo pidemo eventdemo queuedemo host exit\n");
-    console_puts("make verify walkthrough (67 步;与 make run 同一构建,可手动过;\n");
+    console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
+    console_puts("          host exit\n");
+    console_puts("make verify walkthrough (72 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
-    console_puts("  cpu1 online         -> psci cpu_on 次核起立   [3]\n");
+    console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
     console_puts("  tick x2             -> ticks 递增             [5]\n");
     console_puts("  vmls / vmcreate 0   -> 空表 / CREATED         [6-7]\n");
     console_puts("  vmconsole 0         -> denied: not running    [8]\n");
@@ -44,35 +45,41 @@ static void cmd_help(void)
     console_puts("  eventdemo           -> AND 双拍齐醒+OR 单拍即醒 [32]\n");
     console_puts("  queuedemo           -> 16 条环+满发阻塞        [33]\n");
     console_puts("  fpstat              -> lazy: M fp-saves << N switches [34]\n");
-    console_puts("  vmcreate 1 / vmrun 1 / vmconsole 1          [35-36]\n");
-    console_puts("  vm0 echo / vm1 dwrite+dread / vm1 echo     [37-39]\n");
-    console_puts("  vm1 spin -> spun(preempts 差>=2)            [40]\n");
-    console_puts("  vm0 sleep 公平+vm1 后台醒                    [41-42]\n");
-    console_puts("  双睡醒序(rtos 2s 先于 vm1 one-shot 4s)      [43]\n");
-    console_puts("  双醒后双活 echo                                [44]\n");
-    console_puts("  持久化:重建后旧数据仍在                       [45]\n");
-    console_puts("  fault -> vm1 隔离死,宿主无损                  [46]\n");
-    console_puts("  vmls(rtos RUNNING 留活)/宿主完整/退场后 tick   [47-49]\n");
-    console_puts("  vmkill 拒绝路径 / vmstat 收尾                 [50-51]\n");
-    console_puts("  vmcreate 2 / vmrun 2 -> Booting Linux          [52]\n");
-    console_puts("  smp: Brought up 1 node, 2 CPUs -> 第二 vCPU 上线 [53]\n");
-    console_puts("  vm1 复活 spin 独占 CPU0,vm2 行进=真并行       [54]\n");
-    console_puts("  Machine model / arch_timer / GICv3          [55-57]\n");
-    console_puts("  前台心跳夹 boot 流  -> 双客并发时序证明        [58]\n");
-    console_puts("  ttyAMA0 / vda 128 blocks / initramfs / busybox 壳 [59-62]\n");
+    console_puts("  cpu1 online(rtos psci) -> 次核自报+GIC 帧1 回读 [35]\n");
+    console_puts("  smpdemo             -> 双核计数行交错(cpu1>=2)  [36]\n");
+    console_puts("  ipidemo             -> SGI 往返>=20+跨核唤醒 3   [37]\n");
+    console_puts("  fpsmp               -> per-CPU FP 帧双精确       [38]\n");
+    console_puts("  ps / fpstat         -> 次核在线主核不回归       [39]\n");
+    console_puts("  vmcreate 1 / vmrun 1 / vmconsole 1          [40-41]\n");
+    console_puts("  vm0 echo / vm1 dwrite+dread / vm1 echo     [42-44]\n");
+    console_puts("  vm1 spin -> spun(preempts 差>=2)            [45]\n");
+    console_puts("  vm0 sleep 公平+vm1 后台醒                    [46-47]\n");
+    console_puts("  双睡醒序(rtos 2s 先于 vm1 one-shot 4s)      [48]\n");
+    console_puts("  双醒后双活 echo                                [49]\n");
+    console_puts("  持久化:重建后旧数据仍在                       [50]\n");
+    console_puts("  fault -> vm1 隔离死,宿主无损                  [51]\n");
+    console_puts("  vmls(rtos RUNNING 留活)/宿主完整/退场后 tick   [52-54]\n");
+    console_puts("  vmkill 拒绝路径 / vmstat 收尾                 [55-56]\n");
+    console_puts("  vmcreate 2 / vmrun 2 -> Booting Linux          [57]\n");
+    console_puts("  smp: Brought up 1 node, 2 CPUs -> 第二 vCPU 上线 [58]\n");
+    console_puts("  vm1 复活 spin 独占 CPU0,vm2 行进=真并行       [59]\n");
+    console_puts("  Machine model / arch_timer / GICv3          [60-62]\n");
+    console_puts("  前台心跳夹 boot 流  -> 双客并发时序证明        [63]\n");
+    console_puts("  ttyAMA0 / vda 128 blocks / initramfs / busybox 壳 [64-67]\n");
     console_puts("    (0x1d Ctrl-] = 宿主夺回;owner 不再自动归还)\n");
-    console_puts("  echo TOKEN / cat /proc/cpuinfo(cpuinfo 0xd07) [63-64]\n");
-    console_puts("  cat /proc/cpuinfo -> processor 1(双核用户态)  [65]\n");
-    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [66]\n");
-    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [67]\n");
+    console_puts("  echo TOKEN / cat /proc/cpuinfo(cpuinfo 0xd07) [68-69]\n");
+    console_puts("  cat /proc/cpuinfo -> processor 1(双核用户态)  [70]\n");
+    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [71]\n");
+    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [72]\n");
 }
 
 static void cmd_version(void)
 {
     console_puts(ESHINE_BANNER "\n");
     console_puts("  hypervisor:  " ESHINE_VERSION_STR "\n");
-    console_puts("  rtos:        eshine-rtos on VM0 (bitmap+tick+sem/mutex+PI+per-task FP)\n");
-    console_puts("  smp:         2 pCPUs (CPU0: host+vm0+vm1; CPU1: vm2 via PSCI cpu_on)\n");
+    console_puts("  rtos:        eshine-rtos on VM0 (bitmap+tick+sync+per-task FP, dual-core SMP)\n");
+    console_puts("  smp:         4 pCPUs (CPU0: host+vm0.v0+vm1; CPU1/2: vm2 via PSCI;\n");
+    console_puts("                CPU3: vm0.v1 dedicated pump via PSCI cpu_on)\n");
     console_puts("  guest-linux: Linux 6.6 LTS + busybox PID 1 userland (slot 2)\n");
 }
 

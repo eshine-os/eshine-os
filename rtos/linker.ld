@@ -25,5 +25,8 @@ SECTIONS
     . = ALIGN(8);
     __bss_end = .;
     .stack (NOLOAD) : { . = ALIGN(16); . += 0x2000; __stack_top = .; } :data
+    .cpu1stack (NOLOAD) : { . = ALIGN(16); . += 0x1000; __cpu1_stack_top = .; } :data
+    /* 站二十:次核引导栈一页(入口 asm 驻→首个 rt_sched 切走即换
+     * idle1 帧栈;idle1 就地转正仍驻本页)。 */
     /DISCARD/ : { *(.note*) *(.comment) *(.eh_frame*) }
 }

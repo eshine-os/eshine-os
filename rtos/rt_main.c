@@ -23,6 +23,60 @@ static void vtimer_arm_periodic(void)
     __asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(1UL));
 }
 
+/* 站二十:次核上线(PSCI CPU_ON,SMC conduit 走 EL2 EC 0x17 转发,
+ * 19D 机制)。x1=客视角 MPIDR(VMPIDR=0x80000000|1),x2=入口,
+ * x3=context_id=核号(次核入口 asm 拿它写 TPIDR_EL1)。 */
+static u64 psci_rtos_cpu_on(u64 target, void *entry, u64 ctx)
+{
+    register u64 x0 __asm__("x0") = 0xc4000003UL;
+    register u64 x1 __asm__("x1") = target;
+    register u64 x2 __asm__("x2") = (u64)entry;
+    register u64 x3 __asm__("x3") = ctx;
+
+    __asm__ volatile("hvc #0"      /* 站二十:SMC 会被 QEMU 机器级
+                                    * PSCI 截获(19D 实证:TCG conduit
+                                    * 优先),hvc #0 才落我们的
+                                    * EC 0x16 imm=0 PSCI 转发分支 */
+                     : "+r"(x0)
+                     : "r"(x1), "r"(x2), "r"(x3)
+                     : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
+                       "x12", "x13", "x14", "x15", "x16", "x17", "memory");
+    return x0;
+}
+
+/* 站二十:次核世界(EL2 置帧后 poke,本核自此活)。引导语境就地
+ * 转正 idle1(池外伪任务,栈=链接器 .cpu1stack,入口 asm 已驻);
+ * GIC 本核 ICV 面 + 自臂 vtimer + FPEN 自设,与主核引导同律。 */
+void rtos_secondary_main(u32 cpu)
+{
+    rt_task_t *idle = rt_idle1_task();
+
+    (void)cpu;                       /* tpidr 已在入口 asm 登记为 1 */
+    rt_cur = idle;
+    idle->entry = (void (*)(void *))rt_idle_loop;
+    idle->prio = RT_NPRIO - 1;
+    idle->state = RT_RUN;
+    idle->cpu = 1;
+    idle->name[0] = 'c'; idle->name[1] = 'p'; idle->name[2] = 'u';
+    idle->name[3] = '1'; idle->name[4] = ' '; idle->name[5] = 'i';
+    idle->name[6] = 'd'; idle->name[7] = 'l'; idle->name[8] = 'e';
+    idle->name[9] = '\0';
+    idle->slice_left = RT_SLICE;
+    __asm__ volatile("msr cpacr_el1, %0" :: "r"(3UL << 20));
+    __asm__ volatile("isb");
+    gic_secondary_frame_init(1);    /* 站二十:帧 1 GICR 面(WAKER/
+                                      * SGI0+PPI27 使能——ipidemo rx=0
+                                      * 定谳:次核不开自家帧,SGI 取走
+                                      * 被 isenabler 门滤掉) */
+    gic_guest_enable();              /* 本核 ICV 面(PMR/IGRPEN/解掩) */
+    vtimer_arm_periodic();           /* 本核 tick 起拍:RT_HZ 同律 */
+    rt_puts_u64("cpu1: online (rtos psci) gicr1_en=",
+                (u64)vgicr_read(0x20000UL + GICR_SGI + GICR_ISENABLER0),
+                "\n");              /* 站二十:帧 1 使能回读自证
+                                      * (SGI0|PPI27 应见 0x08000001) */
+    rt_idle_loop();                  /* noreturn:idle1 即本核引导语境 */
+}
+
 rt_task_t *rt_irq_dispatch(void)
 {
     u64 iar = gic_claim();
@@ -31,7 +85,10 @@ rt_task_t *rt_irq_dispatch(void)
         u64 period = vtimer_freq() / RT_HZ;
         u64 cval;
 
-        rt_ticks++;
+        /* 站二十:全局 tick 记账单写者化(核 0 独记,核 1 只读
+         * ——宿主三核一钟同律,防双计互踩)。本核重臂照旧。 */
+        if (rt_cpu_id() == 0)
+            rt_ticks++;
         __asm__ volatile("mrs %0, cntv_cval_el0" : "=r"(cval));
         /* 周期重臂:上拍到期值为基(+period),零漂移。泵的每拍扫描
          * 醒来注入路径可能已把 ctl 熄火(站七形态),一并点回。 */
@@ -42,6 +99,10 @@ rt_task_t *rt_irq_dispatch(void)
     if (iar == GUEST_INTID_UART) {
         rt_uart_drain_isr();
         rt_wake_rx();
+    }
+    if (iar == GUEST_INTID_IPI) {
+        rt_resched_ipi();            /* 站二十:跨核唤醒落本核——
+                                      * 重调度判 + 收拍计数(demo 面) */
     }
     if (iar == GUEST_INTID_VIRTIO) {
         virtio_isr();
@@ -94,6 +155,9 @@ void guest_main(void)
 {
     rt_task_t *idle = rt_idle_task();
 
+    __asm__ volatile("msr tpidr_el1, %0" :: "r"(0UL));  /* 站二十:本核
+                                              * 索引登记(簿记宏/rt_cur 宏;
+                                              * 次核入口自写 1) */
     uart_pl011_init();                /* 站13:身份证+开机(先开机才有输出) */
     rt_puts("eshine-rtos " ESHINE_VERSION_STR " @EL1 via stage-2 (vuart @trap)\n");
     /* RTOS 世界先立(引导语境转正 idle):任何潜在 IRQ 到达前,rt_cur 必须有效 */
@@ -121,6 +185,11 @@ void guest_main(void)
     rt_puts("uart irq on\n");         /* 与裸机同 needle(RXIM 已使能) */
     rt_puts("virtio blk on\n");
     rt_puts("rtos: up (eshine-rtos " ESHINE_VERSION_STR ") 32-prio bitmap, tick 100Hz\n");
+
+    /* 站二十:次核上线(世界已立:调度器/队/锁/SGI 机制全就绪才可)。
+     * EL2 置帧+poke,cpu3 专泵扫到即跑;拒绝只报不炸(单核退化仍活)。 */
+    if (psci_rtos_cpu_on(0x80000001UL, rtos_secondary_entry, 1) != 0)
+        rt_puts("smp: cpu1 cpu_on denied\n");
 
     rt_idle_loop();                   /* noreturn:idle 即引导语境 */
 }

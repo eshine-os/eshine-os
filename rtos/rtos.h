@@ -18,6 +18,7 @@ typedef unsigned char u8;
 
 #define RT_NPRIO     32u
 #define RT_POOL_MAX  8u
+#define RT_NCPU      2u               /* 站二十:vm0 双核(per-CPU 就绪队列) */
 #define RT_SLICE     4u               /* 同级轮转量子(tick 计) */
 #define RT_HZ        100u             /* vtimer tick 频率 */
 
@@ -51,6 +52,9 @@ struct rt_task {
     u64 q[64] __attribute__((aligned(16)));
     u64 fpcr;
     u64 fpsr;
+    u32 cpu;                     /* 站二十:就绪队列亲和(0/1)。结构尾
+                                   * 追加——前部偏移 asm/帧契约钉死,
+                                   * q@96/fpcr@608/fpsr@616 断言不动 */
 };
 typedef struct rt_task rt_task_t;
 
@@ -59,12 +63,28 @@ typedef struct rt_task rt_task_t;
 _Static_assert(__builtin_offsetof(rt_task_t, q) == 96, "RT_TASK_Q=96");
 _Static_assert(__builtin_offsetof(rt_task_t, fpcr) == 608, "RT_TASK_FPCR=608");
 
-extern rt_task_t *volatile rt_cur;
+extern rt_task_t *volatile rt_cur_arr[RT_NCPU];   /* 站二十:per-CPU 当前
+                                                   * 任务;宏保旧名,vec.S
+                                                   * 契约符号转数组 */
 extern volatile u64 rt_ticks;
+
+/* 站二十:本核号。TPIDR_EL1 引导/次核入口各写一次(0/1),此后只读
+ * ——per-CPU 数据索引的标准位置(免每次读 MPIDR)。 */
+static inline u32 rt_cpu_id(void)
+{
+    u64 v;
+
+    __asm__ volatile("mrs %0, tpidr_el1" : "=r"(v));
+    return (u32)v;
+}
+
+#define rt_cur (rt_cur_arr[rt_cpu_id()])   /* C 树零改动:读写点全保旧名 */
 
 /* rt_task.c */
 rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
                           void *arg, u32 prio);
+rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
+                             void *arg, u32 prio, u32 cpu); /* 站二十 */
 void rt_task_exit(void) __attribute__((noreturn));
 void rt_sleep_ticks(u64 n);
 void rt_block_rx(void);
@@ -74,6 +94,21 @@ void rt_task_wake_sleepers(void);       /* 扫池:到期的 SLEEP->READY */
 rt_task_t *rt_ps_first(unsigned int *idx);
 rt_task_t *rt_ps_next(unsigned int *idx);
 rt_task_t *rt_idle_task(void);
+rt_task_t *rt_idle1_task(void);      /* 站二十:次核 idle(池外伪任务) */
+void rtos_secondary_main(u32 cpu);   /* 站二十:次核世界(asm 入口落点) */
+void rtos_secondary_entry(void);      /* 站二十:asm 入口(vec.S .global) */
+extern char __cpu1_stack_top[];       /* 站二十:链接器次核引导栈页顶 */
+
+/* rt_smp 面(站二十;落在 rt_sched.c) */
+u64   rt_spin_lock(unsigned long *lk); /* DAIF 屏 + 跨核自旋(WFE),返回
+                                        * 屏蔽前 DAIF;同核递归=死锁 */
+void  rt_spin_unlock(unsigned long *lk, u64 d); /* SEV 广播 + DAIF 还原 */
+void  rt_ipi(u32 cpu);                 /* 跨核重调度:ICC_SGI1R_EL1 写
+                                         * (EL2 陷阱转发+poke,19D 机制) */
+void  rt_resched_ipi(void);            /* 收 IPI 的重调度判(SGI handler) */
+unsigned long rt_ipi_rx(u32 cpu);      /* 每核收到的 IPI 拍数(demo 判据) */
+extern volatile unsigned int rt_ipi_echo; /* 站二十:ipidemo 回合窗(核 1
+                                           * handler 见 1 回发核 0) */
 
 /* rt_sched.c */
 void rt_sched(void);             /* 让出点:C 选,asm 换 */
@@ -100,11 +135,20 @@ void rt_shell_task(void *arg);
 /* rt_fp.c */
 void rt_fp_task(void *arg);
 void rt_fp_dual_task(void *arg);    /* 站十八C:Σ(i×0.5) 半值闭式 */
+void rt_fp_smp_a_task(void *arg);   /* 站二十:fpsmp 核 0 面(整段精确) */
+void rt_fp_smp_b_task(void *arg);   /* 站二十:fpsmp 核 1 面(半值精确) */
 void rt_fp_dual_a_task(void *arg);  /* 站十八C:Σi 复用,fpdual 独立针 */
 void rt_sync_fault(void);           /* 站19C:EC 0x07 FPEN 陷阱,轮转持有权 */
-extern rt_task_t *rt_fp_owner;      /* 站19C:单一持有者(vec.S 簿记符号契约) */
-extern u32 rt_fp_stat;              /* 站19C:切换计数(簿记 asm 自增) */
-extern u32 rt_fp_saves;             /* 站19C:持有权轮转数(fpstat 分子) */
+extern rt_task_t *rt_fp_owner_arr[RT_NCPU]; /* 站20:per-CPU FP 持有者
+                                             * (每核各持各的 FP 硬件,
+                                             * vec.S 簿记符号转数组) */
+extern u32 rt_fp_stat_arr[RT_NCPU];  /* 站20:per-CPU 切换计数(asm RMW
+                                      * 双核互踩根除;显示走求和) */
+extern u32 rt_fp_saves;              /* 站19C:持有权轮转数(fpstat 分子;
+                                      * 唤醒源单点,暂全局) */
+#define rt_fp_owner (rt_fp_owner_arr[rt_cpu_id()])
+#define rt_fp_stat  (rt_fp_stat_arr[rt_cpu_id()])
+u32 rt_fp_stat_total(void);         /* 站20:两核求和(fpstat 显示面) */
 
 /* rt_main.c */
 rt_task_t *rt_irq_dispatch(void);  /* vec.S bl 目标:返回 0=续跑,否则=新任务 */
@@ -185,7 +229,10 @@ void rt_demo_sem(void);
 void rt_demo_mutex(void);
 void rt_demo_pi(void);           /* 站十八B:PI 饥饿反转 */
 void rt_demo_fpdual(void);       /* 站十八C:per-task FP 并发自证 */
-void rt_demo_event(void);        /* 站十九B:AND 双拍+OR 支线 */
+void rt_demo_event(void);
+void rt_demo_smp(void);              /* 站二十:双核计数交错 */
+void rt_demo_ipi(void);              /* 站二十:SGI 跨核唤醒全链 */
+void rt_demo_fpsmp(void);            /* 站二十:per-CPU FP 双精确 */        /* 站十九B:AND 双拍+OR 支线 */
 void rt_demo_queue(void);        /* 站十九B:16 条收发+满环阻塞 */
 
 #endif /* RTOS_H */

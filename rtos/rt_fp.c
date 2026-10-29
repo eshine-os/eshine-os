@@ -51,9 +51,17 @@ void rt_fp_task(void *arg)
  * 计数:rt_fp_stat=切换次数(簿记 asm ++,分母)、rt_fp_saves=
  * 持有权轮转数(分子,fpstat 判据 M<<N)。符号名与 vec.S 的
  * ldr =rt_fp_owner/=rt_fp_stat 契约。 */
-rt_task_t *rt_fp_owner;                 /* bss 零 = 无持有者 */
-u32 rt_fp_stat;                         /* 切换计数(簿记 asm) */
+rt_task_t *rt_fp_owner_arr[RT_NCPU];    /* 站二十:per-CPU 持有者(bss 零=
+                                         * 无持有者;每核各持各的 FP 硬件,
+                                         * vec.S 簿记宏按 TPIDR 索引) */
+u32 rt_fp_stat_arr[RT_NCPU];            /* 站二十:per-CPU 切换计数(簿记
+                                         * asm;RT_NCPU=1 时退化单槽) */
 u32 rt_fp_saves;                        /* 持有权轮转计数 */
+
+u32 rt_fp_stat_total(void)              /* 站二十:fpstat 显示面 = 两核求和 */
+{
+    return rt_fp_stat_arr[0] + rt_fp_stat_arr[1];
+}
 
 /* 偏移即 rtos.h 断言的帧契约(q@96/fpcr@608/fpsr@616);此处直书常量,
  * 断言变动即编译期炸,两处不会静默漂移。整仓 -mgeneral-regs-only:
@@ -193,6 +201,33 @@ static void fpdual_range_half(u64 lo, u64 hi, u64 *acc)
         : "r"(lo), "r"(hi)
         : "v0", "v1", "v2", "x9", "cc");
     *acc += tmp;
+}
+
+/* 站二十:fpsmp 双核 FP 自证——A(核 0)整段 Σ1..1e6,B(核 1)
+ * 半值段 Σ(i×0.5);分驻两核先后各起,per-CPU FP 帧(rt_fp_owner_arr)
+ * 各自轮转,双精确 = 每核持有权机制独立无损。 */
+void rt_fp_smp_a_task(void *arg)
+{
+    u64 got = 0;
+
+    (void)arg;
+    fpdual_range_sum(1ULL, 1000000ULL, &got);
+    if (got == 500000500000ULL)
+        rt_puts("fpsmp: cpu0 A OK: 500000500000\n");
+    else
+        rt_puts_u64("fpsmp: cpu0 A FAIL: ", got, "\n");
+}
+
+void rt_fp_smp_b_task(void *arg)
+{
+    u64 got = 0;
+
+    (void)arg;
+    fpdual_range_half(1ULL, 1000000ULL, &got);
+    if (got == 250000250000ULL)
+        rt_puts("fpsmp: cpu1 B OK: 250000250000\n");
+    else
+        rt_puts_u64("fpsmp: cpu1 B FAIL: ", got, "\n");
 }
 
 void rt_fp_dual_a_task(void *arg)

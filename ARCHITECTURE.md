@@ -303,19 +303,23 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
   站：参考RTOS 公开设计为基准的从零最小人格——32 级位图抢占+tick 100Hz+
   IRQ 驱动壳；SIMD per-VM 帧入泵；第十七站同步原语：每对象 FIFO 等待
   队列的计数信号量+owner/递归互斥，DAIF 短临界段；第十八站：互斥单级优先级
-  继承+per-task FP 帧——切换簿记宏内嵌 SIMD 存取）** / VM1=裸机对照组（guest2.bin）/
+  继承+per-task FP 帧——切换簿记宏内嵌 SIMD 存取；第十九站：事件组
+  AND/OR+消息队列+per-task FP lazy（FPEN 拨杆陷阱轮转持有权）；第二十
+  站：SMP 双核——per-CPU 就绪队列+自旋锁+SGI 跨核重调度，PSCI(hvc)
+  唤起次核、vm0.vcpu1 上 CPU3 专泵、per-CPU GICR 帧）** / VM1=裸机对照组（guest2.bin）/
   **VM2=Linux guest（第十四站：6.6 LTS，Image 外置构建、stage-2 非恒等
   映射、per-VM 诚实 DTB；第十五站起端点=busybox 用户空间）**
-- **两 pCPU 真并发（第十八站）**：CPU0=宿主 shell+泵{vm0,vm1}（1s tick
-  量子）；CPU1=PSCI CPU_ON 唤起的专泵跑 vm2（无量子跑到出），vm2
-  与 vm0/vm1 物理并行；WFE/SEV 邮箱跨泵握手、console 自旋锁行级
-  原子、VM 状态锁收敛 kill/在途退场竞态、VMPIDR 虚拟化使客恒见
-  cpu0（DTB 一致性）
+- **四 pCPU 真并发（第十八站两核→站二十 -smp 4）**：CPU0=宿主
+  shell+泵{vm0.vcpu0,vm1}（1s tick 量子）；CPU1/2=vm2 双 vCPU 泵；
+  CPU3=vm0.vcpu1 专泵（PSCI CPU_ON 唤起，无量子跑到出），vm0 双核
+  RTOS 与 vm1/vm2 物理并行；WFE/SEV 邮箱跨泵握手、console 自旋锁
+  行级原子、VM 状态锁收敛 kill/在途退场竞态、VMPIDR per-vcpu
+  （0x80000000|idx，guest MPIDR 视图=帧号，DTB/PSCI 三角一致）
 - 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（67 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（72 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -337,7 +341,13 @@ runnable→壳任务 READY→rtos> prompt）** + RTOS selftest（寄存器跨
   high 挂等 boost 9->6->9 全弧）+ fpdual（站十八C：双 FP 任务
   并发双精确闭式=per-task 帧）+ **eventdemo/queuedemo/fpstat（站十九
   B/C：事件组 AND 双拍齐醒+OR 单拍即醒；16 条消息环满发阻塞；
-  lazy FP M 个 fp-saves << N 次切换）**+ 真并行硬证（站十八D：vm1 spin
+  lazy FP M 个 fp-saves << N 次切换）**+ **SMP RTOS 五判据（站二十：
+  cpu1 online (rtos psci) 次核自报+GIC 帧 1 ISENABLER0 回读
+  0x08000001（MMIO 窗/nframes/使能门三层链全通）；smpdemo 双核计数
+  行交错；ipidemo SGI 往返 >=20+跨核唤醒 3（ICC_SGI1R 写→EL2 陷阱
+  →vgic 帧挂起→poke→泵注入→次核 IAR=0 全链）；fpsmp per-CPU FP
+  帧双精确；次核在线主核不回归（ps 表+fpstat 两核求和严格递增）**
+  + 真并行硬证（站十八D：vm1 spin
   独占 CPU0 的窗口内 vm2 内核行持续行进——单物理 CPU 下不可能）** + **vm1 裸机对照组
 （[vm1] 前缀，双 RUNNING）** + 双客交错 token 双回显 +
 **dwrite/dread（重锚 vm1：三描述符链→门铃→完成中断判据）** +
@@ -366,8 +376,8 @@ token 双回显 → cat /proc/cpuinfo CPU part 0xd07 用户态自证 →
 第二处理器行可见）→
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
-make run 与 make verify 同构（同一构建产物，-smp 3），shell help 内置
-67 步手动走查清单。
+make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
+72 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

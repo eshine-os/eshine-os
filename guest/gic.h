@@ -11,6 +11,7 @@ typedef unsigned long long u64;   /* 与 hvc.h 同型,C11 允许重复定义 */
 #define GUEST_INTID_VTIMER   27UL
 #define GUEST_INTID_UART     33UL   /* 宿主 vuart 虚注(QEMU virt PL011 线) */
 #define GUEST_INTID_VIRTIO   35UL   /* 宿主 virtio 完成虚注(第十站;34 为 vblk 遗号) */
+#define GUEST_INTID_IPI      0UL    /* 站二十:SGI 0 = RTOS 跨核重调度 */
 #define GUEST_INTID_SPURIOUS 1023UL
 
 static inline void gic_guest_enable(void)
@@ -58,6 +59,28 @@ static inline void gic_eoir(u64 intid)
 #define GICR_IGROUPR0   0x080u           /* 以下均为 SGI 帧内偏移 */
 #define GICR_ISENABLER0 0x100u
 
+/* 站二十:次核重分发帧初始化(帧 1 @ VGICR_BASE+0x20000)。
+ * GICR 是 per-CPU 面——主核 gic_dist_init 只开了帧 0;次核不开
+ * 自家帧的 SGI0/PPI27,宿主 vgic_sgi_take 的 isenabler 门即滤。
+ * rx=0 定谳是三层链:MMIO 窗口须 0x40000(vm.c devices[3] 随
+ * n_vcpu)→ 模型帧数须 2(vgic_reset 随 n_vcpu,帧卫兵 WI 症)
+ * → 本使能位。只动本帧三寄存器,distributor 侧主核已配,不重写。 */
+static inline void gic_secondary_frame_init(unsigned int cpu)
+{
+    unsigned long base = VGICR_BASE + 0x20000UL * cpu;
+
+    /* 直接 volatile str(与 vgicr_write 同形):文件序上 vgicr_write
+     * 在本函数之后,自包含免依赖。短临界段与主核 gic_dist_init 同律。 */
+    __asm__ volatile("msr daifset, #2");
+    __asm__ volatile("str %w0, [%1]" :: "r"(0u),
+                     "r"(base + GICR_RD_WAKER) : "memory");
+    __asm__ volatile("str %w0, [%1]" :: "r"(0xFFFFFFFFu),
+                     "r"(base + GICR_SGI + GICR_IGROUPR0) : "memory");
+    __asm__ volatile("str %w0, [%1]" :: "r"((1u << 27) | 1u),
+                     "r"(base + GICR_SGI + GICR_ISENABLER0) : "memory");
+    __asm__ volatile("msr daifclr, #2");   /* PPI27 vtimer + SGI0(IPI) */
+}
+
 static inline unsigned int vgicd_read(unsigned long off)
 {
     unsigned long addr = VGICD_BASE + off;
@@ -104,8 +127,15 @@ static void gic_dist_init(void)
         return;
     }
     if ((vgicr_read(GICR_RD_TYPER) & 0x10u) == 0u) {
-        puts_uart("gic FAIL: not last\n");   /* 单帧单核:Last 位 */
-        return;
+        /* 站二十:双帧视图(vm0 双核)——帧 0 非末帧(Last=0)不再是
+         * 故障;转证帧 1:窗口身份(PIDR2=0x30)+末帧 Last=1。窗口
+         * 缺位/帧数没跟上当场炸,不留给次核入场才现形。vm1 单核
+         * 对照帧 0 即末帧(Last=1),旧判据原样通过。 */
+        if (vgicr_read(0x20000u + 0xFFE8u) != 0x30u ||
+            (vgicr_read(0x20000u + GICR_RD_TYPER) & 0x10u) == 0u) {
+            puts_uart("gic FAIL: frame1\n");
+            return;
+        }
     }
     puts_uart("gicd v3 ok\n");
 
@@ -115,12 +145,15 @@ static void gic_dist_init(void)
     (void)vgicr_read(GICR_RD_WAKER);
 
     vgicr_write(GICR_SGI + GICR_IGROUPR0, 0xFFFFFFFFu);   /* 全组 1 */
-    vgicr_write(GICR_SGI + GICR_ISENABLER0, 1u << 27);    /* PPI 27 vtimer */
+    vgicr_write(GICR_SGI + GICR_ISENABLER0, (1u << 27) | 1u);
+    /* PPI 27 vtimer + 站二十 SGI 0(跨核重调度 IPI)。不使能则宿主
+     * vgic_sgi_take 的 isenabler 门滤掉,ipidemo rx=0 实测定谳。 */
     vgicd_write(GICD_IGROUPR1, 0xFFFFFFFFu);
     vgicd_write(GICD_ISENABLER1, (1u << 1) | (1u << 3)); /* SPI 33+35 */
 
     /* 回读验证:写经陷阱入模型,读再经陷阱出模型——使能真的落了地 */
-    if ((vgicr_read(GICR_SGI + GICR_ISENABLER0) & (1u << 27)) == 0u) {
+    if ((vgicr_read(GICR_SGI + GICR_ISENABLER0) &
+         ((1u << 27) | 1u)) != ((1u << 27) | 1u)) {
         puts_uart("gic FAIL: ppi27\n");
         return;
     }

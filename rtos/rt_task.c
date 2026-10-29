@@ -5,15 +5,15 @@
 /* 任务池(静态,无运行时分配器——YAGNI):8 槽 + 各 4KB 栈。
  * idle 是引导语境就地转正的伪任务,不占池。 */
 
-rt_task_t *volatile rt_cur;
+rt_task_t *volatile rt_cur_arr[RT_NCPU];   /* 站二十:per-CPU(rtos.h 宏保旧名) */
 volatile u64 rt_ticks;
 
 static rt_task_t pool[RT_POOL_MAX];
 static u8 task_stacks[RT_POOL_MAX][4096] __attribute__((aligned(16)));
 static rt_task_t idle_task;
 
-rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
-                          void *arg, u32 prio)
+rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
+                             void *arg, u32 prio, u32 cpu)
 {
     unsigned int i, slot;
     rt_task_t *t = NULL;
@@ -46,9 +46,18 @@ rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
     t->wq_next = NULL;            /* 站十七:同步队列链,复用槽必清 */
     t->wake_tick = 0;
     t->slice_left = RT_SLICE;
+    t->cpu = (cpu < RT_NCPU) ? cpu : rt_cpu_id();
+                                   /* 站二十:建核即亲和(不迁移,YAGNI);
+                                    * smpdemo/ipidemo/fpsmp 显式指定对核 */
     rt_frame_init(t, task_stacks[slot] + sizeof(task_stacks[slot]), entry, arg);
     rt_ready_push(t);
     return t;
+}
+
+rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
+                          void *arg, u32 prio)
+{
+    return rt_task_create_cpu(name, entry, arg, prio, rt_cpu_id());
 }
 
 void rt_task_exit(void)             /* noreturn:DEAD 后必切走 */
@@ -160,4 +169,14 @@ rt_task_t *rt_ps_next(unsigned int *idx)
 rt_task_t *rt_idle_task(void)
 {
     return &idle_task;
+}
+
+/* 站二十:次核 idle(池外伪任务,同引导语境就地转正)。栈 =
+ * 链接器 .cpu1stack(次核入口已在用,首个 rt_sched 切走即换任务帧,
+ * idle1 转正后仍驻该页)。 */
+static rt_task_t idle1_task;
+
+rt_task_t *rt_idle1_task(void)
+{
+    return &idle1_task;
 }

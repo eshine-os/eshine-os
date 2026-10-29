@@ -40,12 +40,17 @@ int rt_rx_pending(void)
 
 /* 行级打印临界区:多任务并发打印以行原子(心跳/自证/壳不打架),
  * 行间交错正是并发判据。窗口 = 一行几十次 MMIO 陷阱,100Hz demo
- * 尺度无延迟之虞。 */
+ * 尺度无延迟之虞。
+ * 站二十:DAIF 屏只防本核抢切,双核下心跳行会互串(站20 [53] 的
+ * 教训反用)——控制台自旋锁补跨核互斥;本核无争用时锁即屏等价。 */
+static unsigned long puts_lk;
+
 void rt_puts(const char *s)
 {
-    __asm__ volatile("msr daifset, #2");
+    u64 d = rt_spin_lock(&puts_lk);
+
     puts_uart(s);
-    __asm__ volatile("msr daifclr, #2");
+    rt_spin_unlock(&puts_lk, d);
 }
 
 void rt_puts_u64(const char *pfx, u64 v, const char *sfx)
@@ -58,7 +63,20 @@ void rt_puts_u64(const char *pfx, u64 v, const char *sfx)
         digits[--i] = (char)('0' + (v % 10));
         v /= 10;
     } while (v);
-    rt_puts(pfx);
-    rt_puts(&digits[i]);
-    rt_puts(sfx);
+    /* 站二十:整行组串后一次 rt_puts——旧版三段各自加锁,双核下
+     * 段间互串("cpu1: n=cpu0: n=…" smpdemo 实测定谳):rt_puts 只
+     * 保证单次调用的行原子,多段拼行必须先组好。 */
+    {
+        char line[96];
+        unsigned int n = 0, j;
+
+        for (j = 0; pfx[j] && n < sizeof(line) - 1; j++)
+            line[n++] = pfx[j];
+        for (j = i; digits[j] && n < sizeof(line) - 1; j++)
+            line[n++] = digits[j];
+        for (j = 0; sfx[j] && n < sizeof(line) - 1; j++)
+            line[n++] = sfx[j];
+        line[n] = '\0';
+        rt_puts(line);
+    }
 }

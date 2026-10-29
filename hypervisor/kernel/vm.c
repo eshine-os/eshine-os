@@ -166,7 +166,11 @@ int vm_create(u32 id)
     }
     vuart_init(&vm->vu);
     memset(&vm->virtio, 0, sizeof(vm->virtio));  /* regs 复位;磁盘数据不在生命周期内 */
-    vgic_reset(&vm->vgic, (id == 2) ? ESHINE_MAX_VCPUS : 1);                /* 第十二站:distributor 随 VM 生命周期 */
+    /* 站二十:重分发帧数随几何表(拆 19D 的 id==2 硬码)——vm0 双核后
+     * 次核同样要帧 1 面;nframes=1 时 vgic 的挂起循环(f<nframes)与
+     * sgi_take/重分发读写的帧卫兵把帧 1 全 WI/RAZ,次核的 SGI0 使能
+     * 写读回恒 0(ipidemo rx1=0 定谳:窗口已宽,帧数没跟上)。 */
+    vgic_reset(&vm->vgic, vm_geo[id].n_vcpu);
 
     /* vGIC 窗口(第十二站):镜像 QEMU virt 真布局,树里 intc 节点据此描述。
      * ESHINE_MAX_DEV=4 恰好满编:vuart/virtio/vgicd/vgicr。 */
@@ -177,9 +181,11 @@ int vm_create(u32 id)
     vm->devices[2].dev  = VM_DEV_VGICD;
     vm->devices[3].ipa  = 0x080A0000UL;
     vm->devices[3].pa   = 0;
-    vm->devices[3].size = (id == 2) ? 0x40000UL   /* 站19D:vm2 双帧
-                                       * (每帧 RD+SGI 各 64KB,帧号=off>>17) */
-                                    : 0x20000UL;  /* 单 vCPU 一帧 */
+    vm->devices[3].size = (vm_geo[id].n_vcpu > 1) ? 0x40000UL
+                                    : 0x20000UL;
+    /* 站19D:vm2 双帧;站二十泛化按几何表(每帧 RD+SGI 各 64KB,
+     * 帧号=off>>17)——vm0 双核后次核同样要寻址自家重分发帧开
+     * SGI/PPI 面(ipidemo rx=0 定谳:窗口单帧=次核使能写落空)。 */
     vm->devices[3].attr = S2_ATTR_EMULATED;
     vm->devices[3].dev  = VM_DEV_VGICR;
     vm->n_dev = 4;                     /* 四设备满编 */

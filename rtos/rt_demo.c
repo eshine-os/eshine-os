@@ -245,3 +245,78 @@ void rt_demo_queue(void)
         !rt_task_create("qcons", q_consumer, NULL, 9))
         rt_puts("queuedemo: pool full\n");
 }
+
+/* ---- 站二十:双核 demo 三件套(展示即判据) ----
+ * smpdemo:两计数任务分驻两核,各自计数打行——"cpu1:" 行的存在与
+ * 多次出现 = 次核调度循环在跑(每轮都经 本核 tick/IPI 醒来);
+ * ipidemo:cpu0 发一串 SGI + 一个亲核 1 的睡客——睡客每次醒来
+ * 都是 cpu0 的扫描把活推过核(跨核入列+SGI),全链证明;
+ * fpsmp:双 FP 任务分驻两核,双精确 = per-CPU FP 帧无损。 */
+
+static u64 smp_cnt[RT_NCPU];
+
+static void smp_counter(void *arg)
+{
+    u64 me = (u64)arg;
+    u64 t0 = rt_ticks;
+    u64 last = 0;
+
+    while (rt_ticks - t0 < 300) {              /* 3s 计数窗 */
+        smp_cnt[me]++;
+        if (rt_ticks - t0 >= last + 100) {      /* 每 ~1s 打一行 */
+            last = rt_ticks - t0;
+            rt_puts_u64(me ? "cpu1: n=" : "cpu0: n=", smp_cnt[me], "\n");
+        }
+    }
+    rt_puts_u64(me ? "cpu1: done=" : "cpu0: done=", smp_cnt[me], "\n");
+}
+
+void rt_demo_smp(void)
+{
+    smp_cnt[0] = smp_cnt[1] = 0;
+    if (!rt_task_create_cpu("smp0", smp_counter, (void *)0UL, 12, 0) ||
+        !rt_task_create_cpu("smp1", smp_counter, (void *)1UL, 12, 1))
+        rt_puts("smpdemo: pool full\n");
+}
+
+static void ipi_sleeper(void *arg)
+{
+    unsigned int i;
+
+    (void)arg;
+    for (i = 1; i <= 3; i++) {
+        rt_sleep_ticks(100);                   /* 每轮 1s:到期由核 0 的
+                                                * 扫描跨核推送+SGI 唤醒 */
+        rt_puts_u64("ipi: cpu1 awake ", i, "\n");
+    }
+    rt_puts("ipi: sleeper done\n");
+}
+
+void rt_demo_ipi(void)
+{
+    unsigned int i;
+    unsigned long rx0 = rt_ipi_rx(0);
+
+    if (!rt_task_create_cpu("ipi1", ipi_sleeper, NULL, 9, 1)) {
+        rt_puts("ipidemo: pool full\n");
+        return;
+    }
+    rt_ipi_echo = 1u;                   /* 回合窗开:核 1 handler 逐拍回发 */
+    for (i = 0; i < 20; i++) {
+        rt_ipi(1);                     /* SGI 0 → 核 1 重调度拍 */
+        rt_sleep_ticks(5);             /* 拍间留处理窗(回程在此入账) */
+    }
+    rt_sleep_ticks(20);                /* 尾拍回程窗(最后一发的回账) */
+    rt_ipi_echo = 0u;
+    rt_puts_u64("ipi: rx1=", rt_ipi_rx(1), "\n");
+    /* 往返判据:核 0 实收回发数(≥20 = 20 发全回程;跨核唤醒推送
+     * 在窗内也会各得一回,计入即真,判据线只设下限)。 */
+    rt_puts_u64("ipi: rx0=", rt_ipi_rx(0) - rx0, " roundtrips\n");
+}
+
+void rt_demo_fpsmp(void)
+{
+    if (!rt_task_create_cpu("fpa0", rt_fp_smp_a_task, NULL, 13, 0) ||
+        !rt_task_create_cpu("fpb1", rt_fp_smp_b_task, NULL, 13, 1))
+        rt_puts("fpsmp: pool full\n");
+}
