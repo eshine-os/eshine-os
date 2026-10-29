@@ -91,8 +91,8 @@ void vcpu_return_host(struct vcpu *v) __attribute__((noreturn));
 /* 站十八D per-CPU(0/1);站19D 扩至三核(0/1/2)。cur_vcpus[] 按
  * mpidr.aff0 索引;旧名 cur_vcpu 保留为宏,存量 C 引用零改动。
  * asm 桩直用数组符号(MPIDR 索引),见 vcpu_entry.S/irq_entry.S。 */
-extern struct vcpu *cur_vcpus[3];         /* 站19D:0/1/2 三物理核 */
-extern u64 excp_stacks[3][512];
+extern struct vcpu *cur_vcpus[4];         /* 站19D 三核+站20 四核 */
+extern u64 excp_stacks[4][512];
 
 static inline u32 cpu_id(void)
 {

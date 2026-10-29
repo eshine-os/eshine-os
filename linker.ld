@@ -40,8 +40,9 @@ SECTIONS
 
     .secstack (NOLOAD) : {
         . = ALIGN(16);
-        . += 0x2000;                /* 站十八D 4KB;站十九D 扩两页:
-                                     * CPU1 驻 top,CPU2 驻 top-0x1000 */
+        . += 0x3000;                /* 站十八D 4KB;站十九D 两页;站二十 三页:
+                                     * CPU1 驻 top,CPU2 驻 top-0x1000,
+                                     * CPU3(vm0.vcpu1 专泵)驻 top-0x2000 */
         secondary_stack_top = .;
     } :data
 

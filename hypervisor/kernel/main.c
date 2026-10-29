@@ -69,14 +69,15 @@ void main(void)
     __asm__ volatile("msr daifclr, #2");   /* 解 IRQ:中断面就绪后才可 */
     smp_boot_secondary(1, 1);           /* 站十八D:CPU1(站19D ctx=核号) */
     smp_boot_secondary(2, 2);           /* 站十九D:CPU2(vm2.vcpu1 专泵) */
+    smp_boot_secondary(3, 3);           /* 站二十:CPU3(vm0.vcpu1 专泵) */
     {
         /* 站十八D:有界等次核上线(握手先行)——判据 token 的逐字符
          * 回显不许被上线打印劈断(实测 d3 败因);~500ms 上限,
-         * PSCI 被拒(-smp 1)时从容放弃。站19D:等 1 与 2 各一份。 */
+         * PSCI 被拒(-smp 1)时从容放弃。站19D:等 1 与 2;站20:加等 3。 */
         u64 t0;
 
         __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t0));
-        while (!sched_cpu_up[1] || !sched_cpu_up[2]) {
+        while (!sched_cpu_up[1] || !sched_cpu_up[2] || !sched_cpu_up[3]) {
             u64 now;
 
             __asm__ volatile("mrs %0, cntvct_el0" : "=r"(now));

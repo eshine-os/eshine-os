@@ -49,9 +49,9 @@ _start:
  * EL2,与 CPU0 复位同级;x0=context_id)。栈/向量/泵逐步就位。 */
 .global secondary_entry
 secondary_entry:
-    /* 站十九D:x0 = PSCI CPU_ON 的 context_id = 本核号(1/2);先
-     * 珍藏(EL 检查要借 CurrentEL),栈按核分页:cpu n 驻
-     * secondary_stack_top-(n-1)*0x1000(.secstack 两页)。 */
+    /* 站十九D:x0 = PSCI CPU_ON 的 context_id = 本核号(1/2);站二十
+     * 扩 3;先珍藏(EL 检查要借 CurrentEL),栈按核分页:cpu n 驻
+     * secondary_stack_top-(n-1)*0x1000(.secstack 三页)。 */
     mov     x9, x0
     mrs     x0, CurrentEL
     and     x0, x0, #0xc
@@ -62,8 +62,12 @@ secondary_entry:
     ldr     x0, =secondary_stack_top
     cmp     x9, #2
     b.eq    2f
-    b       3f
+    cmp     x9, #3
+    b.eq    3f
+    b       4f
 2:  sub     x0, x0, #0x1000             /* CPU2:第二页 */
-3:  mov     sp, x0
+    b       4f
+3:  sub     x0, x0, #0x2000             /* 站二十 CPU3:第三页(vm0.vcpu1 专泵) */
+4:  mov     sp, x0
     mov     x0, x9                      /* 本核号 = secondary_main(cpu) */
     b       secondary_main

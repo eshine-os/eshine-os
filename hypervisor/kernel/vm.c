@@ -30,29 +30,32 @@ struct vm_geometry {
     u64 ram_pa;
     u64 ram_size;
     u64 entry;                     /* IPA 入口:裸机=RAM 基,Linux=+0x80000(text_offset) */
+    u32 n_vcpu;                    /* 站二十:槽位 vCPU 数入几何表(拆 19D
+                                   * 的 id==2 硬编码)——vm0 双核/裸机
+                                   * 对照组单核/Linux 双核 */
     const unsigned char *dtb;      /* per-slot 树(第十四站:裸机/Linux 两树) */
     const unsigned char *dtb_end;
 };
 
 static const struct vm_geometry vm_geo[ESHINE_MAX_VMS] = {
-    [0] = { 0x50000000UL, 0x1000000UL, 0x40000000UL,
+    [0] = { 0x50000000UL, 0x1000000UL, 0x40000000UL, 2,
             eshine_dtb, eshine_dtb_end },
-    [1] = { 0x51000000UL, 0x1000000UL, 0x40000000UL,
+    [1] = { 0x51000000UL, 0x1000000UL, 0x40000000UL, 1,
             eshine_dtb, eshine_dtb_end },
-    [2] = { 0x58000000UL, 0x8000000UL, 0x40080000UL,   /* Linux:128MB,Image@+0x80000 */
+    [2] = { 0x58000000UL, 0x8000000UL, 0x40080000UL, 2,   /* Linux:128MB,Image@+0x80000 */
             eshine_linux_dtb, eshine_linux_dtb_end },
 };
 
 /* 站十九D:VM×vCPU→pCPU 静态绑定(不做迁移/均衡,YAGNI 红线):
- * vm0/vm1 单 vCPU 归 CPU0(与宿主 shell 同核);vm2 双 vCPU——
- * vcpu0 专泵 CPU1,vcpu1(guest 的 PSCI CPU_ON 后才有帧)专泵 CPU2。 */
+ * vm2 双 vCPU——vcpu0 专泵 CPU1,vcpu1(guest 的 PSCI CPU_ON 后才有
+ * 帧)专泵 CPU2。站二十:vm0 升双核——vcpu0 留 CPU0(与宿主 shell/
+ * vm1 轮转,前台面),vcpu1(RTOS 次核,PSCI CPU_ON 后才有帧)专泵
+ * CPU3(真物理并行,-smp 4)。 */
 u32 vm_cpu_map[ESHINE_MAX_VMS][ESHINE_MAX_VCPUS] = {
-    /* 站19D 原设计:vcpu0@CPU1 专泵 + vcpu1@CPU2 专泵(各自跑到出)。
-     * 实验变体 vcpu0@cpu0 轮转世界(vm_cpu_map[2]={0,2})实测同冻——
-     * tick 生命周期竞态与泵语境无关([53]/[41] 族在 SMP 客上的放大面,
-     * 冻点恒落 SMP 交接窗 ~0.2s 内核时),故按 spec 拓扑收口;竞态
-     * 全闭为站二十开站首项(证据档案:收尸窗剖析+26 兜底自愈上限)。 */
-    {0, 0}, {0, 0}, {1, 2},
+    /* 站19D 原设计 vcpu0@CPU1/vcpu1@CPU2 与实验变体的教训见 git 史;
+     * tick 生命周期竞态与泵语境无关([53]/[41] 族放大面,冻点恒落
+     * SMP 交接窗 ~0.2s 内核时),站二十 [41] 五案闭环后四核扩面。 */
+    {0, 3}, {0, 0}, {1, 2},
 };
 
 static bool vm_on_cpu(u32 id, u32 cpu)
@@ -181,10 +184,13 @@ int vm_create(u32 id)
     vm->devices[3].dev  = VM_DEV_VGICR;
     vm->n_dev = 4;                     /* 四设备满编 */
     {
-        /* 站19D:vCPU 阵列初始化——vcpu0 恒为引导帧;vm2 的 vcpu1
+        /* 站19D:vCPU 阵列初始化——vcpu0 恒为引导帧;次核(vi>0)
          * 无帧停泊(wait_state=1 泵滤掉),待 guest 的 PSCI CPU_ON
-         * 经 EL2 转发置帧(帧即真相,同 vcpu0 哲学)。 */
-        u32 nvc = (id == 2) ? ESHINE_MAX_VCPUS : 1;
+         * 经 EL2 转发置帧(帧即真相,同 vcpu0 哲学)。站二十:槽位
+         * vCPU 数改走几何表(vm0 双核/vm1 单核对照/vm2 双核),拆
+         * 19D 的 id==2 硬编码——漏初始化的次核帧全零会被专泵当
+         * 就绪帧入场(pc=0 取指崩,vm0.vcpu1 实测定谳)。 */
+        u32 nvc = vm_geo[id].n_vcpu;
         u32 vi;
 
         for (vi = 0; vi < nvc; vi++) {
@@ -227,6 +233,7 @@ int vm_create(u32 id)
         sched_poke_cpu1();          /* 站十八D:CPU1 泵即扫新客 */
         sched_poke_cpu2();          /* 站19D:CPU2 泵同醒(扫到的是无帧
                                      * 停泊的 vcpu1,睡回;CPU_ON 再醒) */
+        sched_poke_cpu3();          /* 站二十:CPU3 同醒(vm0.vcpu1 专泵) */
     }
     vm_transition(vm, VM_CREATED);
     vm_id_label(id);
@@ -271,6 +278,7 @@ int vm_start(u32 id)
     if (id == 2) {
         sched_poke_cpu1();          /* 站十八D:CPU1 泵即扫 */
         sched_poke_cpu2();          /* 站19D:CPU2 同醒(vcpu1 仍停泊则睡回) */
+        sched_poke_cpu3();          /* 站二十:CPU3 同醒(vm0.vcpu1 专泵) */
     }
     vm_id_label(id);
     if (resumed)
@@ -361,6 +369,14 @@ struct vcpu *vm_vcpu_idx(u32 id, u32 vidx)   /* 站19D:(id,vidx) -> vcpu */
 struct vcpu *vm_vcpu(u32 id)
 {
     return &vm_table[id].vcpus[0];
+}
+
+/* 站二十:槽位真实 vCPU 数(几何表)。泵/扫描的 vi 循环必须以此封界
+ * ——vm_cpu_map 的单核行(如 vm1={0,0})第二格是填格,无帧实体,
+ * 误当真帧入场=pc=0 取指崩(vm1 实测定谳)。 */
+u32 vm_vcpu_count(u32 id)
+{
+    return vm_geo[id].n_vcpu;
 }
 
 /* vcpu -> 所属 VM(mmio_dispatch 用;2 槽全表扫,表外=内部不变量破坏) */
@@ -461,7 +477,7 @@ u32 sched_vtimer_sweep(void)
 
         if (vm_table[id].state != VM_RUNNING)
             continue;
-        for (vi = 0; vi < ESHINE_MAX_VCPUS; vi++) {
+        for (vi = 0; vi < vm_vcpu_count(id); vi++) {
             struct vcpu *v = &vm_table[id].vcpus[vi];
 
             if (vm_cpu_map[id][vi] != cpu_id())
@@ -512,7 +528,11 @@ static bool pump_run_vcpu(u32 id, u32 vi)
          * 等 ack + 副核 tickless 空闲睡 = 整靴冻死,实测);TIMER
          * 停泊者早醒无害,进场照装 ctx 定时器,拍不丢。 */
         if (vgic_sgi_pending(&vm->vgic, vi) ||
-            (v->wait_reason != VCPU_WAIT_TIMER &&
+            /* 站二十:vSPI33/35 归 vcpu0 面(19D 注入已 vi==0 定向,
+             * DTB 中断路由的诚实镜像)——复查唤醒必须同面,否则共享
+             * vuart 上的 RX 字节会误醒同 VM 的无帧次核([19] 入环即
+             * pc=0 取指崩,vm0.vcpu1 实测定谳)。SGI 仍按帧。 */
+            (vi == 0 && v->wait_reason != VCPU_WAIT_TIMER &&
              ((vuart_rx_irq_ready(&vm->vu) &&
                vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) ||
               (virtio_irq_ready(vm) &&
@@ -680,9 +700,19 @@ bool sched_pump(void)
             vm_of_vcpu(sched_console_owner) != vm)
             continue;                     /* 前台模式:console 按 VM 独占
                                           * (站19D:vm2 双 vCPU 同 VM 皆前台) */
-        if (pump_run_vcpu(id, 0)) {
-            rr_next = (id + 1) % ESHINE_MAX_VMS;
-            progressed = true;
+        /* 站二十:拆 19D 硬编码 vi=0——按映射核逐帧泵(vm0.vcpu0 与
+         * vm1.vcpu0 同在 CPU0;vm0.vcpu1 归 CPU3 专泵不进本循环)。 */
+        {
+            u32 vi;
+
+            for (vi = 0; vi < vm_vcpu_count(id); vi++) {
+                if (vm_cpu_map[id][vi] != cpu_id())
+                    continue;
+                if (pump_run_vcpu(id, vi)) {
+                    rr_next = (id + 1) % ESHINE_MAX_VMS;
+                    progressed = true;
+                }
+            }
         }
     }
     return progressed;
@@ -701,7 +731,7 @@ void pump_cpu(u32 cpu)
         for (id = 0; id < ESHINE_MAX_VMS; id++) {
             if (vm_table[id].state != VM_RUNNING)
                 continue;
-            for (vi = 0; vi < ESHINE_MAX_VCPUS; vi++) {
+            for (vi = 0; vi < vm_vcpu_count(id); vi++) {
                 if (vm_cpu_map[id][vi] != cpu)
                     continue;
                 if (pump_run_vcpu(id, vi))
@@ -756,6 +786,7 @@ int vm_kill(u32 id)
     if (id == 2) {
         sched_poke_cpu1();          /* 站十八D:即扫即停 */
         sched_poke_cpu2();          /* 站19D:CPU2 同扫(其 vcpu1 一并收尸) */
+        sched_poke_cpu3();          /* 站二十:CPU3 同醒(vm0.vcpu1 专泵) */
     }
     vm_id_label(id);
     console_puts("killed (host authority)\n");

@@ -4,7 +4,7 @@
 #include "drivers/include/gicv3.h"
 #include "kernel/include/vcpu.h"
 
-struct vcpu *cur_vcpus[3];            /* 站十八D per-CPU;站19D 三核;宏 cur_vcpu 保持旧名 */
+struct vcpu *cur_vcpus[4];            /* 站十八D per-CPU;站19D 三核+站20 四核;宏 cur_vcpu 保持旧名 */
 
 /* 站19D:TLB 风暴修正——本核上次进场的 VTTBR 表值(0=强制首发 flush)。
  * 旧序每 exit/entry 无条件 tlbi vmalls12e1is:真机上尚属浪费,在
@@ -16,13 +16,13 @@ struct vcpu *cur_vcpus[3];            /* 站十八D per-CPU;站19D 三核;宏 cu
  * (轮转/出生/槽复用)才熄旧表。生命周期口(vm_start/vm_finish)经
  * vcpu_flush_all_tables 清零强制下一发,防同值重建页表的槽位复用
  * 把旧缓存泄给新客。 */
-static u64 last_vttbr[3];
+static u64 last_vttbr[4];             /* 站20:四核 */
 
 /* EL2-from-EL1 异常落点专用栈(硬件强制 SPSel=1 -> SP_EL2)。
  * 站十八D:per-CPU,每核一页(512*8);asm 桩按 mpidr.aff0 索引,
  * 归位到本核栈顶 —— handler 链不退栈,eret/retire 都不还 SP_EL2,
  * 不归位则每次陷阱净泄一截,累计碾穿栈底。 */
-u64 excp_stacks[3][512] __attribute__((aligned(16)));
+u64 excp_stacks[4][512] __attribute__((aligned(16)));   /* 站20 扩四核 */
 
 /* HCR_EL2(guest): RW(64-bit EL1) | VM(stage-2) | IMO(ICV 重定向+IRQ 路由)
  * | AMO(物理 SError 路由 EL2——第十四站:Linux 的 S1 走表访问在 QEMU 侧

@@ -251,16 +251,25 @@ void el1_sync(struct vcpu *v)
 
         if (fn == 0x84000000UL) {
             v->gprs[0] = 0x00010001UL;     /* PSCI_VERSION:1.1 */
-        } else if (fn == 0xc4000003UL) {  /* CPU_ON:置 vm2.vcpu1 帧 + poke */
-            struct vcpu *tv = vm_vcpu_idx(2, 1);
+        } else if (fn == 0xc4000003UL) {  /* CPU_ON:站二十泛化——任意客的
+                                           * 次核上线(拆站 19D 的 vm2 硬绑):
+                                           * 目标帧号 = x1 低字节(客视角
+                                           * MPIDR=VMPIDR 0x80000000|idx,
+                                           * aff0 即帧号),poke 按映射核 */
+            struct eshine_vm *tvm = vm_of_vcpu(v);
+            u32 vi = (u32)(v->gprs[1] & 0xffUL);
+            struct vcpu *tv = (vi < ESHINE_MAX_VCPUS) ?
+                              &tvm->vcpus[vi] : NULL;
 
-            if (vm_of_vcpu(tv)->state != VM_RUNNING || tv->wait_state != 1UL ||
-                (v->gprs[1] & 0xffUL) != 1UL) {
+            if (vi == 0UL || tv == NULL ||      /* 核 0 恒在线,不许再 on */
+                tvm->state != VM_RUNNING || tv->wait_state != 1UL) {
                 v->gprs[0] = 0xfffffff6UL;    /* DENIED */
             } else {
                 memset(tv->gprs, 0, sizeof(tv->gprs));
                 tv->pc = v->gprs[2];           /* entry_point */
-                tv->sp = 0UL;                  /* secondary_boot 自配 */
+                tv->sp = 0UL;                  /* 入口自配(Linux 读 park
+                                              * 服务页;RTOS 次核入口从
+                                              * 链接符号取栈,同不依赖) */
                 tv->pstate = 0x3C5UL;          /* EL1h + DAIF 全掩 */
                 tv->gprs[0] = v->gprs[3];      /* context_id 捎带 */
                 tv->exit_reason = VCPU_EXIT;
@@ -268,9 +277,9 @@ void el1_sync(struct vcpu *v)
                 tv->vtimer_cval = 0UL;
                 tv->sp_el0 = 0UL;
                 tv->wait_reason = 0UL;
-                tv->wait_state = 0UL;          /* 出泊:CPU2 专泵即扫即跑 */
+                tv->wait_state = 0UL;          /* 出泊:映射核专泵即扫即跑 */
                 v->gprs[0] = 0UL;              /* PSCI_SUCCESS */
-                sched_poke_cpu2();
+                sched_poke_cpu(vm_cpu_map[tvm->vmid][vi]);
             }
         } else if (fn == 0x84000010UL) {  /* PSCI_FEATURES:全不掲,按位
                                            * 探测降级(cpuidle 各态即哑) */
@@ -311,10 +320,11 @@ void el1_sync(struct vcpu *v)
                         tv->wait_state = 0UL;   /* SGI 即中断:直通唤醒 */
                         tv->wait_reason = 0UL;
                     }
-                    /* SEV 本就广播:双 poke 皆发,泵自判归属
-                     * (免 vm_table 越权引用,vm_of_vcpu 无 id 面) */
-                    sched_poke_cpu1();
-                    sched_poke_cpu2();
+                    /* 站二十:poke 按命中帧的映射核(泛化站19D 的
+                     * 双发——vm0.vcpu1 在 CPU3、vm2 帧在 CPU1/2,按
+                     * vm_cpu_map 精确 poke;SEV 广播本性不变,函数名
+                     * 是意图标注) */
+                    sched_poke_cpu(vm_cpu_map[vm->vmid][f]);
                 }
             }
             v->pc += 4UL;                    /* MSR 型写:代 retire 续跑 */

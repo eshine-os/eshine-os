@@ -15,7 +15,8 @@
  *         virtio_mmio@a000000(SPI 3 = INTID 35,第十站通道,单槽) /
  *         pl011@9000000(SPI 1 = INTID 33,第八站通道) /
  *         chosen / apb-pclk(pl011 驱动同形)
- *   删除: psci(未实现) / fw-cfg / platform-bus / 其余 31 virtio 槽 /
+ *   保留+站二十补: psci(cpu_on;method=hvc,RTOS 次核上线面) /
+ *   cpu@1(双核诚实树) —— 删除面: fw-cfg / platform-bus / 其余 31 virtio 槽 /
  *         pl061 / pcie / pl031 / pmu / its(LPI 未仿真) / flash / rng-seed
  *   第十二站更新: intc 请回树(GICD/GICR 仿真落地);its 子节点与
  *         maintenance interrupts 仍不登记(同诚实原则)
@@ -56,6 +57,18 @@
 			compatible = "arm,cortex-a57";
 			device_type = "cpu";
 		};
+
+		cpu@1 {
+			reg = <0x01>;
+			compatible = "arm,cortex-a57";
+			device_type = "cpu";
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "hvc";
+		cpu_on = <0xc4000003>;
 	};
 
 	timer {

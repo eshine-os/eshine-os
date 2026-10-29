@@ -23,7 +23,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo host exit\n");
     console_puts("make verify walkthrough (67 步;与 make run 同一构建,可手动过;\n");
-    console_puts("三核拓扑:vm0/vm1 在 CPU0,vm2 双 vCPU 分驻 CPU1/CPU2 专泵):\n");
+    console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1 online         -> psci cpu_on 次核起立   [3]\n");
     console_puts("  tick x2             -> ticks 递增             [5]\n");

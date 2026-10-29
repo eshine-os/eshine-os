@@ -205,7 +205,7 @@ def main():
             "qemu-system-aarch64",
             "-M", "virt,virtualization=on,gic-version=3",
             "-cpu", "cortex-a57", "-m", "512",
-            "-smp", "3",                 # 站十九D:三物理核(vm2 双 vCPU 分驻 CPU1/CPU2 专泵)
+            "-smp", "4",                 # 站十九D 三核+站二十 CPU3(vm0.vcpu1 专泵)
             "-display", "none", "-monitor", "none",
             "-kernel", ELF,
             "-device", "loader,file=%s,addr=0x50000000,force-raw=on" % RTOS_BIN,
@@ -430,6 +430,10 @@ def main():
 
             # [27] mutexdemo 上半场:ps mid-hold——阻塞是 ps 表里的活状态
             p = len(buf)
+            p_md = p                    # 站20:全程锚——waiter 首片可能
+                                        # 跑在 ps 命令处理之前,needle 检查
+                                        # 若只看 ps 后窗口会假阴性(-smp 4
+                                        # 时序实测);醒序判据仍用 ps 后窗口
             s.sendall(b"mutexdemo\n")
             buf = read_until(s, buf, b"mutex: contender locked", time.time() + 10,
                              start=p)
@@ -448,8 +452,8 @@ def main():
             if buf.index(b"mutex: waiter locked (after block)", i) <= i:
                 raise AssertionError("waiter locked before contender unlock: %r"
                                      % buf[p:][-300:])
-            if b"mutex: give denied (not owner)" not in buf[p:] or \
-               b"mutex: recursive take 2 ok" not in buf[p:]:
+            if b"mutex: give denied (not owner)" not in buf[p_md:] or \
+               b"mutex: recursive take 2 ok" not in buf[p_md:]:
                 raise AssertionError("mutex denial/recursion needles missing: %r"
                                      % buf[p:][-300:])
             print("  [29/67] mutex: block-wake order + recursion + non-owner denial")

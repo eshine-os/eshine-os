@@ -8,10 +8,10 @@
 volatile unsigned long sched_need_resched;   /* asm 桩出口检查(置帧转写) */
 unsigned long sched_preempts;                 /* 抢占计数(vmstat 判据) */
 struct vcpu *sched_console_owner;              /* UART RX 所有权(NULL=host) */
-volatile unsigned long sched_vtimer_recall[3]; /* 站十八A/D:在途回业主标志[cpu];站19D 三核 */
-unsigned long sched_vtimer_last[3];            /* 站十九D:(vm<<4|vi) 打包,三核 */
+volatile unsigned long sched_vtimer_recall[4]; /* 站十八A/D:在途回业主标志[cpu];站19D 三核+站20 四核 */
+unsigned long sched_vtimer_last[4];            /* 站十九D:(vm<<4|vi) 打包;站20 四核 */
 
-volatile unsigned long sched_cpu_up[3]; /* 站19D:三核上线握手(main 有界等;[0] 恒 1) */
+volatile unsigned long sched_cpu_up[4]; /* 站19D 三核+站20 四核上线握手(main 有界等;[0] 恒 1) */
 
 void sched_poke_cpu1(void)
 {
@@ -22,4 +22,21 @@ void sched_poke_cpu1(void)
 void sched_poke_cpu2(void)
 {
     __asm__ volatile("sev");
+}
+
+void sched_poke_cpu3(void)
+{
+    __asm__ volatile("sev");       /* 站20:CPU3 专泵(vm0.vcpu1)同体同律 */
+}
+
+/* 站20:按 (vm,vi) 的映射核 poke。SEV 是广播(各 WFE 泵自判归属),
+ * 函数名只是意图标注;0 号核宿主泵永在轮询无 WFE,免 poke。 */
+void sched_poke_cpu(u32 cpu)
+{
+    if (cpu == 1UL)
+        sched_poke_cpu1();
+    else if (cpu == 2UL)
+        sched_poke_cpu2();
+    else if (cpu == 3UL)
+        sched_poke_cpu3();
 }
