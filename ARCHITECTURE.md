@@ -306,7 +306,10 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
   继承+per-task FP 帧——切换簿记宏内嵌 SIMD 存取；第十九站：事件组
   AND/OR+消息队列+per-task FP lazy（FPEN 拨杆陷阱轮转持有权）；第二十
   站：SMP 双核——per-CPU 就绪队列+自旋锁+SGI 跨核重调度，PSCI(hvc)
-  唤起次核、vm0.vcpu1 上 CPU3 专泵、per-CPU GICR 帧）** / VM1=裸机对照组（guest2.bin）/
+  唤起次核、vm0.vcpu1 上 CPU3 专泵、per-CPU GICR 帧；第二十一站：
+  同步超时族（参考RTOS 0=no-wait/FOREVER 语义，take 环单窗化，超时
+  摘除+owner PI 重算）+ panic 观测面（未知 EC 打印 ESR/ELR 后终态，
+  扫描面无寄存器行）+ 栈防护（垫+哨兵+水位，ps 水位列））** / VM1=裸机对照组（guest2.bin）/
   **VM2=Linux guest（第十四站：6.6 LTS，Image 外置构建、stage-2 非恒等
   映射、per-VM 诚实 DTB；第十五站起端点=busybox 用户空间）**
 - **四 pCPU 真并发（第十八站两核→站二十 -smp 4）**：CPU0=宿主
@@ -319,7 +322,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（72 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（75 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -347,6 +350,13 @@ runnable→壳任务 READY→rtos> prompt）** + RTOS selftest（寄存器跨
   行交错；ipidemo SGI 往返 >=20+跨核唤醒 3（ICC_SGI1R 写→EL2 陷阱
   →vgic 帧挂起→poke→泵注入→次核 IAR=0 全链）；fpsmp per-CPU FP
   帧双精确；次核在线主核不回归（ps 表+fpstat 两核求和严格递增）**
+  + **站二十一三判据**：[40] tmodemo 超时面全弧（no-wait ×2/满发超时/
+  空收超时/在时醒/no-wait 排空 + PI 14→9→14 全弧序断——超时摘除后
+  owner 重算，"零改动"断言翻案）；[41] stkdemo 栈防护（水位收缩
+  deepdiver<<shell + magic ok + ps 水位列）；[74] overflow→rt_panic
+  指名 overflower（tick 扫描面无寄存器行，vm0 exit 后 vmcreate/
+  vmrun/vmconsole 复活链，vm2-Linux 仍在场）——未知 EC 静默 wfi
+  停车退役，panic 裸打不取锁
   + 真并行硬证（站十八D：vm1 spin
   独占 CPU0 的窗口内 vm2 内核行持续行进——单物理 CPU 下不可能）** + **vm1 裸机对照组
 （[vm1] 前缀，双 RUNNING）** + 双客交错 token 双回显 +
@@ -377,7 +387,7 @@ token 双回显 → cat /proc/cpuinfo CPU part 0xd07 用户态自证 →
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-72 步手动走查清单。
+75 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

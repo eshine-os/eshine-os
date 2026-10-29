@@ -148,8 +148,9 @@ void rt_sync_fault(void)
             rt_fp_owner = cur;
         }
     } else {
-        for (;;)
-            __asm__ volatile("wfi");
+        /* 站21B:未知 EC 不再静默 wfi 停车(排障全靠猜)——ESR/ELR/
+         * FAR 此刻架构有效,印完即终态停泊(他核照跑,宿主可处决)。 */
+        rt_panic_fault("unhandled sync exception");
     }
 }
 

@@ -320,3 +320,196 @@ void rt_demo_fpsmp(void)
         !rt_task_create_cpu("fpb1", rt_fp_smp_b_task, NULL, 13, 1))
         rt_puts("fpsmp: pool full\n");
 }
+
+/* ---- 站21A:tmodemo——超时面全确定性编排(判据即演示) ----
+ * 三任务:a(8 驱动)/b(9 取者)/c(14 低优先锁主);静态 sem/mutex/cap-4
+ * 队列。时间线(spec A3):a 先跑,no-wait 判负→满环挂发(30)→b 空
+ * sem 挂(30)→c 持锁自报 prio(10 倍率)。t=30 双超时(a 先醒,池槽
+ * 序);a 睡 20 后 give;b 再挂 sem(200)于 t=50 在时醒;b 转 mutex(40)
+ * ——c 被提至 9(自报行);t=90 b 超时,扫描摘除+重算 c 回 14(自报
+ * 行);b 排空队列(no-wait 收 ×4)再空挂(20)超时;收尾三 done。
+ * 返码判据行=字面串(rt_puts_u64 是 u64,-2 打成巨数,评审核)。 */
+static rt_sem_t tmo_sem;
+static rt_mutex_t tmo_mtx;
+static rt_queue_t tmo_q;
+
+static void tmo_report(const char *tag, long r)
+{
+    rt_puts("tmo: ");
+    rt_puts(tag);
+    if (r == RT_TIMEOUT)
+        rt_puts(" ret=-2\n");
+    else if (r == 0)
+        rt_puts(" ret=0\n");
+    else
+        rt_puts(" ret=?\n");
+}
+
+static void tmo_a(void *arg)                  /* 驱动:prio 8 */
+{
+    long r;
+
+    (void)arg;
+    r = rt_sem_take_to(&tmo_sem, 0);          /* no-wait:空 sem 判负 */
+    tmo_report("sem nowait", r);
+    rt_queue_send(&tmo_q, 0x11);              /* 填满 cap-4(无人收) */
+    rt_queue_send(&tmo_q, 0x22);
+    rt_queue_send(&tmo_q, 0x33);
+    rt_queue_send(&tmo_q, 0x44);
+    r = rt_queue_send_to(&tmo_q, 42, 30);     /* 满环挂发,30 超时 */
+    tmo_report("q send", r);                  /* t=30 醒(先于 b,槽序) */
+    rt_sleep_ticks(20);
+    rt_sem_give(&tmo_sem);                    /* t=50:b 在时醒 */
+    rt_sleep_ticks(200);
+    rt_puts("tmo: a done\n");
+}
+
+static void tmo_b(void *arg)                  /* 取者:prio 9 */
+{
+    long r;
+    u64 m;
+    unsigned int got = 0, i;
+
+    (void)arg;
+    r = rt_sem_take_to(&tmo_sem, 30);         /* 空挂,t=30 超时 */
+    tmo_report("sem timeout", r);
+    r = rt_sem_take_to(&tmo_sem, 200);        /* 再挂,t=50 在时醒 */
+    tmo_report("sem got", r);
+    r = rt_mutex_take_to(&tmo_mtx, 40);       /* c 持锁:boost c,t=90 超时 */
+    tmo_report("mutex timeout", r);
+    for (i = 0; i < 4; i++)                   /* no-wait 排空(4 条都在) */
+        if (rt_queue_recv_to(&tmo_q, &m, 0) == 0)
+            got++;
+    rt_puts(got == 4 ? "tmo: q drain 4 ret=0\n" : "tmo: q drain != 4\n");
+    r = rt_queue_recv_to(&tmo_q, &m, 20);     /* 空挂,t=110 超时 */
+    tmo_report("q recv timeout", r);
+    rt_puts("tmo: b done\n");
+}
+
+static void tmo_c(void *arg)                  /* 低优先锁主:prio 14 */
+{
+    unsigned int i;
+
+    (void)arg;
+    rt_mutex_take(&tmo_mtx);                  /* a/b 挂稳后到手 */
+    for (i = 0; i < 10; i++) {
+        rt_sleep_ticks(10);
+        rt_puts_u64("tmo: c prio ", rt_cur->prio, "\n");  /* 14→9(被 boost)
+                                             * →14(b 超时扫描重算)全弧 */
+    }
+    rt_mutex_give(&tmo_mtx);
+    rt_puts("tmo: c done\n");
+}
+
+void rt_demo_tmo(void)
+{
+    rt_sem_init(&tmo_sem, 0);
+    rt_mutex_init(&tmo_mtx);
+    rt_queue_init(&tmo_q, 4);
+    if (!rt_task_create("tmo_c", tmo_c, NULL, 14) ||
+        !rt_task_create("tmo_b", tmo_b, NULL, 9) ||
+        !rt_task_create("tmo_a", tmo_a, NULL, 8))
+        rt_puts("tmodemo: pool full\n");
+}
+
+/* ---- 站21C:stkdemo/overflow——受控深潜与受控越哨 ----
+ * 深度判据=实测 SP(asm 直读;__builtin_frame_address 在 -O2 无帧
+ * 指针下不可用——首版递归零下潜,实测定谳);volatile 局部活过
+ * 递归点反 TCO(评审核:TCO 递归不增长栈,判据失效)。deepdiver 止
+ * 于哨兵上方 256B(不越界,水位收缩即判据,dived 后留活供 ps/
+ * stackcheck 读水位行);overflower 止于垫内深限——越哨后受控
+ * overshoot 即解栈回浅再 wfi 自停(评审核:深 sp 处不留栈,异常
+ * 帧/panic 链永远不在垫区)。 */
+static char *cur_sp(void)
+{
+    char *p;
+
+    __asm__ volatile("mov %0, sp" : "=r"(p));
+    return p;
+}
+
+/* 递归帧全宽写:每级 volatile u64 pat[8] 逐词写+活过递归点——
+ * 足迹连续铺满下探路径(首版 fp 对+单字节 pad 的稀疏足迹让哨兵
+ * 落缝,实测定谳:潜穿哨兵而 magic 完好);反 TCO 同源。 */
+static void deep_recurse(char *stop, u64 *acc)
+{
+    volatile u64 pat[8];
+    unsigned int i;
+
+    for (i = 0; i < 8; i++)
+        pat[i] = 0xD00D0000 + i;
+    if (cur_sp() > stop)
+        deep_recurse(stop, acc);
+    for (i = 0; i < 8; i++)
+        *acc += pat[i];
+}
+
+static void deepdiver_task(void *arg)
+{
+    char *limit = rt_cur_stack_limit();
+    u64 acc = 0;
+    u64 d;
+
+    (void)arg;
+    /* 站21 实现评审:递归驱动段封 DAIF 窗——末两级帧距哨兵不足
+     * 272B(tick ISR 全帧)+扫描 C 链,tick 打断于该深度会把自家
+     * 异常帧砸在哨兵上,同一拍扫描即假 panic([41] 概率性闪断源,
+     * 实测帧 96B/级)。µs 级短临界段,站十七同律。 */
+    d = rt_daif_save();
+    if (limit)
+        deep_recurse(limit + 256, &acc);  /* 止于可用底上方 256B(哨兵
+                                           * 安全区,水位收缩即判据;
+                                           * 首版 limit-256 是穿透误植) */
+    rt_daif_load(d);
+    rt_puts("stkdemo: dived\n");
+    for (;;)                             /* 留活:水位行要被 ps/
+                                           * stackcheck 读到(判据面) */
+        rt_sleep_ticks(60000);
+}
+
+static void over_recurse(char *stop, u64 *acc)
+{
+    volatile u64 pat[8];
+    unsigned int i;
+
+    for (i = 0; i < 8; i++)
+        pat[i] = 0xF00D0000 + i;
+    if (cur_sp() > stop)
+        over_recurse(stop, acc);
+    for (i = 0; i < 8; i++)
+        *acc += pat[i];                       /* 解栈回浅:sp 回升 */
+}
+
+static void overflower_task(void *arg)
+{
+    char *floor = rt_cur_stack_floor();
+    u64 acc = 0;
+    u64 d;
+
+    (void)arg;
+    if (!floor) {
+        rt_puts("overflow: no pool stack\n");
+        return;
+    }
+    /* 站21 实现评审:同 deepdiver 封窗——递归途中 tick 的异常帧会
+     * 落在垫区之下越行;封窗后 tick 只能在解栈回浅后命中(那是设计
+     * 的捕获相位,panic 帧落正常深度)。 */
+    d = rt_daif_save();
+    over_recurse(floor, &acc);                /* 越哨兵,overshoot 入垫 */
+    rt_daif_load(d);
+    for (;;)
+        __asm__ volatile("wfi");             /* 浅层自停:tick 命中即
+                                              * rt_panic 指名([74] 判据) */
+}
+
+void rt_demo_stk(void)
+{
+    if (!rt_task_create("deepdiver", deepdiver_task, NULL, 11))
+        rt_puts("stkdemo: pool full\n");
+}
+
+void rt_demo_overflow(void)
+{
+    if (!rt_task_create("overflower", overflower_task, NULL, 11))
+        rt_puts("overflow: pool full\n");
+}

@@ -59,10 +59,42 @@ static void rt_ps(void)
             rt_puts_u64("", t->prio, "");
             rt_puts("  ");
             rt_puts(rt_state_name(t->state));
+            rt_puts(" stk ");
+            if (idx < RT_POOL_MAX)              /* 站21C:水位列(池行);
+                                                  * idle 虚拟行池外无对象 */
+                rt_puts_u64("", rt_cur_stack_margin(idx), "");
+            else
+                rt_puts("-");
             rt_puts("\n");
         }
         t = rt_ps_next(&idx);
     }
+}
+
+/* 站21C:栈体检——逐活任务水位行 + 全哨兵判定(判据 needle:
+ * "stk: magic ok" 只在真验过后印)。 */
+static void rt_stackcheck(void)
+{
+    unsigned int idx = 0;
+    int bad = 0;
+    rt_task_t *t = rt_ps_first(&idx);
+
+    while (t) {
+        if (t->entry && t->state != RT_DEAD && idx < RT_POOL_MAX) {
+            rt_puts("stk: ");
+            rt_puts(t->name);
+            rt_puts_u64(" margin ", rt_cur_stack_margin(idx), "\n");
+            if (rt_stack_slot_ok(idx) == 0) {
+                rt_puts("stk: magic BAD in ");
+                rt_puts(t->name);
+                rt_puts("\n");
+                bad = 1;
+            }
+        }
+        t = rt_ps_next(&idx);
+    }
+    if (!bad)
+        rt_puts("stk: magic ok\n");
 }
 
 /* spawn 任务体:名字由任务自己打(池槽 name 已存,arg 再传一份串) */
@@ -107,6 +139,14 @@ static void shell_line(char *line)
         rt_demo_ipi();               /* 站二十:SGI 跨核唤醒全链 */
     } else if (streq(line, "fpsmp")) {
         rt_demo_fpsmp();             /* 站二十:per-CPU FP 双精确 */
+    } else if (streq(line, "tmodemo")) {
+        rt_demo_tmo();               /* 站21A:超时面全弧 */
+    } else if (streq(line, "stkdemo")) {
+        rt_demo_stk();               /* 站21C:受控深潜(水位判据) */
+    } else if (streq(line, "stackcheck")) {
+        rt_stackcheck();             /* 站21C:水位+哨兵体检 */
+    } else if (streq(line, "overflow")) {
+        rt_demo_overflow();          /* 站21C:越哨→panic(壳即死,[74]) */
     } else if (streq(line, "fpstat")) {
         rt_puts_u64("lazy: ", rt_fp_stat_total(), " switches, ");  /* 站20:
                                         * M<<N;两核求和(per-CPU asm 计数) */
@@ -149,8 +189,8 @@ static void shell_line(char *line)
     } else if (line[0]) {
         rt_puts("rtos: try echo <t> | selftest | ps | spawn <n> | sleep [1-9]"
                 " | fp | fpdual | fpstat | yield | semdemo | mutexdemo | pidemo"
-                " | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | host"
-                " | exit\n");
+                " | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo"
+                " | stkdemo | stackcheck | overflow | host | exit\n");
     }
 }
 

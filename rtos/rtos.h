@@ -55,6 +55,15 @@ struct rt_task {
     u32 cpu;                     /* 站二十:就绪队列亲和(0/1)。结构尾
                                    * 追加——前部偏移 asm/帧契约钉死,
                                    * q@96/fpcr@608/fpsr@616 断言不动 */
+    /* 站二十一:超时挂等登记(结构尾追加,同上契约;扫描门
+     * pend_deadline!=0——wait_mask/事件注册表型 BLOCK 一律免疫) */
+    u64 pend_deadline;           /* 绝对截止一次算死;0=未武装 */
+    struct rt_task **pend_qh;    /* 超时自摘回指针(对象等待队) */
+    struct rt_task **pend_qt;
+    struct rt_task *pend_owner;  /* 互斥挂等时=锁主(PI 重算用);
+                                  * sem/queue=NULL(typedef 于 struct 后,
+                                  * 同 next/wq_next 用 struct 形) */
+    u32 timed_out;               /* 扫描置位,take 环消费 */
 };
 typedef struct rt_task rt_task_t;
 
@@ -125,6 +134,9 @@ int  rt_need_switch(void);
  * 一份串不成一环——本环是唯一真环,ISR 与壳都走这里) */
 void rt_puts(const char *s);     /* 行级临界区(DAIF 屏蔽)打印 */
 void rt_puts_u64(const char *pfx, u64 v, const char *sfx);
+void rt_puts_hex(const char *pfx, u64 v, const char *sfx); /* 站21B:十六进制
+                                   * 裸打(不取 puts_lk)——panic/诊断面,
+                                   * 持锁语境取锁=同核自死锁 */
 void rt_uart_drain_isr(void);    /* IRQ 上下文:排空 DR 入 RTOS 环 */
 int  rt_getc_nb(void);           /* 空环返回 -1,不阻塞 */
 int  rt_rx_pending(void);        /* 环非空即 1:挂起前终判([41] 修复判据) */
@@ -183,14 +195,42 @@ typedef struct rt_mutex {
 } rt_mutex_t;
 
 void rt_sem_init(rt_sem_t *s, long init);
-long rt_sem_take(rt_sem_t *s);    /* 资源不足则挂等(无超时,0=取到) */
+long rt_sem_take(rt_sem_t *s);    /* 资源不足则挂等(RT_WAIT_FOREVER 薄壳) */
 long rt_sem_give(rt_sem_t *s);    /* count++ + 唤醒队头 */
 void rt_mutex_init(rt_mutex_t *m);
 long rt_mutex_take(rt_mutex_t *m);/* 空则占;owner 重入 nest++;否则挂等 */
 long rt_mutex_give(rt_mutex_t *m);/* 非拥有者 -1;nest 归零让渡+唤醒 */
 
-/* 站19B 起导出(原 static):rt_ipc.c 队列同机器 */
-void rt_pend(rt_task_t **head, rt_task_t **tail);
+/* 站二十一:超时族(参考RTOS 公开语义:0=no-wait 单次复核即判负;
+ * RT_WAIT_FOREVER=永不超时;其他=绝对截止,take 环被醒后复核,
+ * 条件仍不满足按剩余恒以首绝对 deadline 重挂——锚点=调用点) */
+#define RT_WAIT_FOREVER (~0UL)
+#define RT_TIMEOUT      (-2L)
+long rt_sem_take_to(rt_sem_t *s, u64 ticks);        /* 0=取到 RT_TIMEOUT=超时 */
+long rt_mutex_take_to(rt_mutex_t *m, u64 ticks);
+void rt_timeout_unpend(rt_task_t *t);               /* 扫描侧:摘链+owner
+                                                    * PI 重算(等待集变化
+                                                    * 不变量,与 give 同律) */
+void rt_pend_disarm(rt_task_t *t);                  /* 成功出口缴械挂等
+                                                    * 登记(评审核:stale
+                                                    * 武装穿透免疫承诺) */
+
+/* 站21B:panic 观测面。扫描面无寄存器行(ESR/ELR 此刻是残值,印了
+ * 冒充现场);陷阱面 ESR/ELR/FAR 架构有效才印。皆 noreturn。 */
+void rt_panic(const char *why, unsigned int slot) __attribute__((noreturn));
+void rt_panic_fault(const char *why) __attribute__((noreturn));
+
+/* 站21C:栈限位导出(pool/task_stacks 私有 static,demo 经此取址)。
+ * NULL=非池任务(idle/引导语境),demo 自守。 */
+void *rt_cur_stack_limit(void);    /* 可用区底(哨兵上方) */
+void *rt_cur_stack_floor(void);    /* 垫内深限(越哨兵受控止点) */
+u32   rt_cur_stack_margin(unsigned int slot);  /* stackcheck/ps 用;0=槽空 */
+int   rt_stack_slot_ok(unsigned int slot);    /* 1=哨兵完好 0=已坏
+                                               * -1=槽未创建 */
+
+/* 站19B 起导出(原 static):rt_ipc.c 队列同机器;站21A 起挂等并入
+ * take 族单窗形态,rt_pend 退役,wq_push 随 _to 族一并导出 */
+void rt_wq_push(rt_task_t **head, rt_task_t **tail, rt_task_t *t);
 void rt_handoff(rt_task_t **head, rt_task_t **tail);
 
 /* rt_ipc.c(第十九站B):事件组+消息队列。事件组=每事件条件注册表
@@ -223,6 +263,10 @@ void rt_event_set(rt_event_t *e, u32 bits);    /* |= 且扫表醒满足者 */
 void rt_queue_init(rt_queue_t *q, u32 cap);    /* cap<=RT_QCAP,0 拒 */
 int rt_queue_send(rt_queue_t *q, u64 msg);     /* 满则挂发队,醒后复核 */
 int rt_queue_recv(rt_queue_t *q, u64 *msg);    /* 空则挂取队,醒后复核 */
+int rt_queue_send_to(rt_queue_t *q, u64 msg, u64 ticks);   /* 站21A(超时族,
+                                   * 定义在 rtos.h 同步节:rt_queue_t 此处
+                                   * 才完成定义) */
+int rt_queue_recv_to(rt_queue_t *q, u64 *msg, u64 ticks);
 
 /* rt_demo.c(第十七站):演示即判据 */
 void rt_demo_sem(void);
@@ -232,7 +276,11 @@ void rt_demo_fpdual(void);       /* 站十八C:per-task FP 并发自证 */
 void rt_demo_event(void);
 void rt_demo_smp(void);              /* 站二十:双核计数交错 */
 void rt_demo_ipi(void);              /* 站二十:SGI 跨核唤醒全链 */
-void rt_demo_fpsmp(void);            /* 站二十:per-CPU FP 双精确 */        /* 站十九B:AND 双拍+OR 支线 */
+void rt_demo_fpsmp(void);            /* 站二十:per-CPU FP 双精确 */
 void rt_demo_queue(void);        /* 站十九B:16 条收发+满环阻塞 */
+void rt_demo_tmo(void);              /* 站21A:超时面全弧(no-wait/超时/
+                                     * 在时醒/PI boost-回收) */
+void rt_demo_stk(void);              /* 站21C:受控深潜(水位判据) */
+void rt_demo_overflow(void);         /* 站21C:受控越哨→panic([74]) */
 
 #endif /* RTOS_H */

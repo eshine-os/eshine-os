@@ -80,3 +80,28 @@ void rt_puts_u64(const char *pfx, u64 v, const char *sfx)
         rt_puts(line);
     }
 }
+
+/* 站21B:十六进制诊断行——裸打(puts_uart 直连,不取 puts_lk):
+ * panic/未知异常语境可能正打断一个持锁打印,take 锁=同核自死锁
+ * (自旋锁契约"同核递归=死锁");判据窗无并发打印者,零锁代价换
+ * panic 可达。行组串同 rt_puts_u64。 */
+void rt_puts_hex(const char *pfx, u64 v, const char *sfx)
+{
+    char line[64];
+    unsigned int n = 0, j;
+    static const char hex[] = "0123456789abcdef";
+    int k;
+
+    for (j = 0; pfx[j] && n < sizeof(line) - 1; j++)
+        line[n++] = pfx[j];
+    for (k = 60; k > 0; k -= 4)
+        if ((v >> k) & 0xFu)
+            break;                      /* 去前导零(判据 needle 取
+                                          * "esr=0x" 前缀即稳) */
+    for (; k >= 0 && n < sizeof(line) - 1; k -= 4)
+        line[n++] = hex[(v >> k) & 0xFu];
+    for (j = 0; sfx[j] && n < sizeof(line) - 1; j++)
+        line[n++] = sfx[j];
+    line[n] = '\0';
+    puts_uart(line);
+}

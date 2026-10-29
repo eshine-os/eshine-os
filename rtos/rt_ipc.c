@@ -114,8 +114,13 @@ void rt_queue_init(rt_queue_t *q, u32 cap)
     q->tx_h = q->tx_t = NULL;
 }
 
-int rt_queue_send(rt_queue_t *q, u64 msg)
+/* 站21A:队列超时族(单窗形态同 sem/mutex,评审核 gap 修正)。
+ * 满发挂 tx 队/空收取 rx 队;wake 语义不变:send 成功摇 rx,recv
+ * 成功摇 tx。no-wait(0)单次复核即判负。 */
+int rt_queue_send_to(rt_queue_t *q, u64 msg, u64 ticks)
 {
+    u64 deadline = (ticks == RT_WAIT_FOREVER) ? 0 : rt_ticks + ticks;
+
     for (;;) {
         int got = 0;
         u64 d = rt_daif_save();
@@ -124,18 +129,36 @@ int rt_queue_send(rt_queue_t *q, u64 msg)
             q->buf[(q->head + q->count) % q->cap] = msg;
             q->count++;
             got = 1;
+        } else if (ticks != 0) {
+            rt_cur->state = RT_BLOCK;
+            rt_cur->timed_out = 0;
+            rt_cur->pend_deadline = deadline;
+            rt_cur->pend_qh = &q->tx_h;
+            rt_cur->pend_qt = &q->tx_t;
+            rt_cur->pend_owner = NULL;
+            rt_wq_push(&q->tx_h, &q->tx_t, rt_cur);
+            rdy_remove(rt_cur);
         }
         rt_daif_load(d);
         if (got) {
             rt_handoff(&q->rx_h, &q->rx_t);   /* 有货:摇空取队头 */
+            rt_pend_disarm(rt_cur);           /* 站21 评审:成功出口缴械 */
             return 0;
         }
-        rt_pend(&q->tx_h, &q->tx_t);          /* 满环:挂发队,醒后复核 */
+        if (ticks == 0)
+            return RT_TIMEOUT;
+        rt_sched();
+        if (rt_cur->timed_out) {
+            rt_pend_disarm(rt_cur);
+            return RT_TIMEOUT;
+        }
     }
 }
 
-int rt_queue_recv(rt_queue_t *q, u64 *msg)
+int rt_queue_recv_to(rt_queue_t *q, u64 *msg, u64 ticks)
 {
+    u64 deadline = (ticks == RT_WAIT_FOREVER) ? 0 : rt_ticks + ticks;
+
     for (;;) {
         int got = 0;
         u64 d = rt_daif_save();
@@ -146,12 +169,38 @@ int rt_queue_recv(rt_queue_t *q, u64 *msg)
             q->head = (q->head + 1) % q->cap;
             q->count--;
             got = 1;
+        } else if (ticks != 0) {
+            rt_cur->state = RT_BLOCK;
+            rt_cur->timed_out = 0;
+            rt_cur->pend_deadline = deadline;
+            rt_cur->pend_qh = &q->rx_h;
+            rt_cur->pend_qt = &q->rx_t;
+            rt_cur->pend_owner = NULL;
+            rt_wq_push(&q->rx_h, &q->rx_t, rt_cur);
+            rdy_remove(rt_cur);
         }
         rt_daif_load(d);
         if (got) {
             rt_handoff(&q->tx_h, &q->tx_t);   /* 有空位:摇满发队头 */
+            rt_pend_disarm(rt_cur);           /* 站21 评审:成功出口缴械 */
             return 0;
         }
-        rt_pend(&q->rx_h, &q->rx_t);          /* 空环:挂取队,醒后复核 */
+        if (ticks == 0)
+            return RT_TIMEOUT;
+        rt_sched();
+        if (rt_cur->timed_out) {
+            rt_pend_disarm(rt_cur);
+            return RT_TIMEOUT;
+        }
     }
+}
+
+int rt_queue_send(rt_queue_t *q, u64 msg)
+{
+    return rt_queue_send_to(q, msg, RT_WAIT_FOREVER);
+}
+
+int rt_queue_recv(rt_queue_t *q, u64 *msg)
+{
+    return rt_queue_recv_to(q, msg, RT_WAIT_FOREVER);
 }

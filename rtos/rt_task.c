@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "rtos.h"
+#include "miniuart.h"          /* 站21B:rt_panic 裸打面 */
 
 /* 任务池(静态,无运行时分配器——YAGNI):8 槽 + 各 4KB 栈。
  * idle 是引导语境就地转正的伪任务,不占池。 */
@@ -9,7 +10,15 @@ rt_task_t *volatile rt_cur_arr[RT_NCPU];   /* 站二十:per-CPU(rtos.h 宏保旧
 volatile u64 rt_ticks;
 
 static rt_task_t pool[RT_POOL_MAX];
-static u8 task_stacks[RT_POOL_MAX][4096] __attribute__((aligned(16)));
+/* 站21C:栈行=4096B 可用区 + 哨兵 + 牺牲垫(行距 4368=16×273,
+ * 行内 16 对齐保持)。升址:[0..263]=垫(overflower 越哨兵的受控
+ * overshoot 预算,~200B+余量;深 sp 处不留栈——异常帧永远不在垫区)
+ * [264..271]=magic u64 [272..4367]=可用栈 4096B(顶=行尾,语义不变)。 */
+static u8 task_stacks[RT_POOL_MAX][4368] __attribute__((aligned(16)));
+#define STK_MAGIC_OFF 264u
+#define STK_USABLE    272u
+#define RT_STACK_MAGIC 0x544B434753544B52ULL   /* "TKGSTKR" 常量,免与
+                                                * 0xA5 水位模式/代码字节撞车 */
 static rt_task_t idle_task;
 
 rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
@@ -37,6 +46,24 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
     for (i = 0; i < sizeof(t->name) - 1 && name[i]; i++)
         t->name[i] = name[i];
     t->name[i] = '\0';
+    /* 站21C:哨兵+水位先行,entry 发布殿后(同函数序贯=同核扫描
+     * (ISR I=1)见 entry 即见完好 magic——半开槽不可见);水位
+     * 填充先于 frame_init(frame_init 会写顶部帧,恰是首个非 0xA5) */
+    *(u64 *)&task_stacks[slot][STK_MAGIC_OFF] = RT_STACK_MAGIC;
+    {
+        u64 *w = (u64 *)&task_stacks[slot][STK_USABLE];
+        u64 *end = (u64 *)&task_stacks[slot][sizeof(task_stacks[slot])];
+
+        while (w < end)
+            *w++ = 0xA5A5A5A5A5A5A5A5ULL;
+    }
+    /* 站21A:复用槽必清清单(评审核 blocker:残留 stale deadline
+     * =复用槽首个挂等假超时;wait_mask/wq_next/wake_tick 旧三件沿用) */
+    t->pend_deadline = 0;
+    t->pend_qh = NULL;
+    t->pend_qt = NULL;
+    t->pend_owner = NULL;
+    t->timed_out = 0;
     t->entry = entry;
     t->arg = arg;
     t->prio = prio < RT_NPRIO ? prio : RT_NPRIO - 1;
@@ -135,7 +162,130 @@ void rt_task_wake_sleepers(void)
         if (t->entry && t->state == RT_SLEEP &&
             ((long long)rt_ticks - (long long)t->wake_tick) >= 0)
             rt_ready_push(t);
+        /* 站21A:超时挂等到账。哨兵门 pend_deadline!=0——wait_mask
+         * 型(壳 RX)与事件注册表型(不挂 wq)的 BLOCK 一律免疫
+         * (评审核:假醒热自旋/rdy 双份入队);有符号惯用法同上
+         * (u64 直减下溢=永不超时)。摘链+owner PI 重算同在
+         * rt_timeout_unpend(ISR 语境自带互斥,demo 全核 0 亲和)。 */
+        if (t->entry && t->state == RT_BLOCK && t->pend_deadline &&
+            (long long)rt_ticks - (long long)t->pend_deadline >= 0) {
+            rt_timeout_unpend(t);
+            t->pend_deadline = 0;
+            t->timed_out = 1;
+            rt_ready_push(t);
+        }
+        /* 站21C:栈哨兵——只查已创建槽(评审核 blocker:未创建槽
+         * magic 是 bss 垃圾,首 tick 必假 panic)。坏即 panic 指名
+         * (扫描面:无寄存器行,ESR 此刻是残值)。 */
+        if (t->entry &&
+            *(volatile u64 *)&task_stacks[i][STK_MAGIC_OFF] != RT_STACK_MAGIC)
+            rt_panic("stack overflow", i);
     }
+}
+
+/* ---- 站21B:panic 观测面 ----
+ * 入口先封全掩(陷阱路径 sync fault 不自带掩,打印中可再入 tick
+ * 二次 panic);单次打印保证(panic_done):扫描路径每 tick 重入,
+ * 无旗即无限复读 banner。裸 puts_uart——持锁任务被打断的 tick 语境
+ * 取 puts_lk=同核自死锁(自旋锁契约)。两副面孔:扫描面不印寄存器
+ * (ESR/ELR 此刻是残值,印了冒充现场);陷阱面 ESR/ELR/FAR 架构
+ * 有效才印。皆 noreturn:当前核就地 wfi 终态(他核照跑,宿主可
+ * vmkill 收场——[74] 判据即此路)。 */
+static int panic_done;
+
+static void panic_park(void) __attribute__((noreturn));
+static void panic_park(void)
+{
+    for (;;)
+        __asm__ volatile("wfi");
+}
+
+void rt_panic(const char *why, unsigned int slot)
+{
+    if (!panic_done) {
+        panic_done = 1;
+        __asm__ volatile("msr daifset, #0xf");
+        puts_uart("rtos panic: ");
+        puts_uart(why);
+        puts_uart("\ntask: ");
+        if (slot < RT_POOL_MAX && pool[slot].entry)
+            puts_uart(pool[slot].name);
+        else
+            puts_uart("?");
+        puts_uart(" (cur ");
+        puts_uart(rt_cur->name);
+        rt_puts_hex(", cpu 0x", rt_cpu_id(), ")\ncontext: tick scan\n");
+    }
+    panic_park();
+}
+
+void rt_panic_fault(const char *why)
+{
+    u64 esr, elr, far;
+
+    if (!panic_done) {
+        panic_done = 1;
+        __asm__ volatile("msr daifset, #0xf");
+        __asm__ volatile("mrs %0, esr_el1" : "=r"(esr));
+        __asm__ volatile("mrs %0, elr_el1" : "=r"(elr));
+        __asm__ volatile("mrs %0, far_el1" : "=r"(far));
+        puts_uart("rtos panic: ");
+        puts_uart(why);
+        puts_uart("\ntask: ");
+        puts_uart(rt_cur->name);
+        rt_puts_hex(" (cpu 0x", rt_cpu_id(), ")\n");
+        rt_puts_hex("esr=0x", esr, " ");
+        rt_puts_hex("elr=0x", elr, " ");
+        rt_puts_hex("far=0x", far, "\n");
+    }
+    panic_park();
+}
+
+/* ---- 站21C:栈限位/水位导出(pool/task_stacks 私有,demo 经此) ---- */
+static unsigned int pool_slot_of(const rt_task_t *t)
+{
+    if (t < pool || t >= pool + RT_POOL_MAX)
+        return RT_POOL_MAX;                    /* idle/引导语境 */
+    return (unsigned int)(t - pool);
+}
+
+void *rt_cur_stack_limit(void)                 /* 可用区底(哨兵上方) */
+{
+    unsigned int slot = pool_slot_of(rt_cur);
+
+    return slot < RT_POOL_MAX ? &task_stacks[slot][STK_USABLE] : NULL;
+}
+
+void *rt_cur_stack_floor(void)                 /* 垫内深限(越哨兵止点) */
+{
+    unsigned int slot = pool_slot_of(rt_cur);
+
+    /* 站21 评审:深限 64 覆盖不了一整级递归帧(实测 96B/级),
+     * 终帧可越行底写邻槽栈顶。抬到 160=96B 帧+64B 余量,overshoot
+     * 止于 [160,264) 垫内。 */
+    return slot < RT_POOL_MAX ? &task_stacks[slot][160] : NULL;
+}
+
+u32 rt_cur_stack_margin(unsigned int slot)      /* 0=槽空;单位字节 */
+{
+    u64 *w, *end;
+
+    if (slot >= RT_POOL_MAX || !pool[slot].entry)
+        return 0;
+    w = (u64 *)&task_stacks[slot][STK_USABLE];
+    end = (u64 *)&task_stacks[slot][sizeof(task_stacks[slot])];
+    while (w < end && *w == 0xA5A5A5A5A5A5A5A5ULL)
+        w++;
+    return (u32)((unsigned char *)w - &task_stacks[slot][STK_USABLE]);
+}
+
+int rt_stack_slot_ok(unsigned int slot)         /* stackcheck 用:
+                                                 * 1=哨兵完好 0=已坏
+                                                 * -1=槽未创建 */
+{
+    if (slot >= RT_POOL_MAX || !pool[slot].entry)
+        return -1;
+    return *(volatile u64 *)&task_stacks[slot][STK_MAGIC_OFF] == RT_STACK_MAGIC;
 }
 
 const char *rt_state_name(u32 s)
