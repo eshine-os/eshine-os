@@ -55,9 +55,17 @@ void console_init(void)
 
 void console_putc(char c)
 {
+    /* 站22A([54] 三案定谳):原语级持锁。曾以为是"vuart fg 透传"
+     * 一个裸写者,实测(probe-tear)宿主 shell 回显/vmrx dump 同类
+     * ——跨核锁内 emit 拦不住锁外逐字写,两流互嵌撕行
+     * ("spinni[vm2]…n g0.000000"字节级互撕实测定谳)。按 owner
+     * 递归:puts/emit/vuart_tx_emit 复入只增嵌套,行级调用者零影响;
+     * 单字符自身原子,行级原子仍由各调用方的锁窗负责。 */
+    console_lock();
     if (c == '\n')
         pl011_putc('\r');              /* 终端换行惯例 */
     pl011_putc(c);
+    console_unlock();
 }
 
 void console_puts(const char *s)

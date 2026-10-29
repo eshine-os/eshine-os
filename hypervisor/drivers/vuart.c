@@ -187,9 +187,21 @@ void vuart_mmio_write(struct vuart *vu, u32 vmid, u64 off, u64 val, bool fg)
     if ((vu->cr & CR_TXE) == 0u)
         return;
     if (fg) {
-        /* 前台裸透传;切前台前若残留后台半行,按其 tag 先冲 */
-        vuart_tx_emit(vu, vmid);
-        console_putc(c);
+        /* 站22A([54] 三案定谳):fg 由逐字符裸透传改行缓冲——裸透传
+         * 的字符间缝隙留给跨核 bg 行整行嵌入(tick 抢切落点窗),
+         * needle 撕裂是概率性的;入缓冲后 '\n' 经 vuart_tx_emit 锁内
+         * 整行原子,判据 needle 确定性。交互 UX(键回显即时)由
+         * 泊位冲刷保:客 WFI 停泊即冲半行(exceptions.c TWI 分支),
+         * 人类敲键 100ms 尺度无感。残留后台半行先冲(tag 归它),
+         * fg 行 tx_tagged=false 与 bg(true)对称。 */
+        console_lock();
+        if (vu->tx_len)
+            vuart_tx_emit(vu, vmid);   /* 复入只增嵌套 */
+        vu->tx_tagged = false;
+        vu->tx[vu->tx_len++] = c;
+        console_unlock();
+        if (c == '\n' || vu->tx_len == VUART_TX_SIZE)
+            vuart_tx_emit(vu, vmid);
         return;
     }
     console_lock();                   /* 站20:bg 追加与冲刷/vuart_tx_emit

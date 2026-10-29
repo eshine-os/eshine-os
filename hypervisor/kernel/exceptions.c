@@ -2,10 +2,13 @@
 /* Copyright (c) 2026 Julian Chu */
 #include "drivers/include/gicv3.h"
 #include "drivers/include/timer.h"
+#include "drivers/include/vuart.h"       /* 站22A:泊位冲刷(TWI 停泊即冲 fg/bg 半行) */
 #include "kernel/include/console.h"
 #include "kernel/include/mmio.h"
 #include "kernel/include/sched.h"
 #include "kernel/include/types.h"
+#include "kernel/include/util.h"        /* memset:PSCI CPU_ON 帧清零(站20 起在用,
+                                        * 隐式声明警告站22A 补声明) */
 #include "kernel/include/vcpu.h"
 #include "kernel/include/vm.h"           /* vm_of_vcpu(探针) */
 
@@ -335,6 +338,34 @@ void el1_sync(struct vcpu *v)
         mmio_dispatch(v, esr);             /* 命中 EMULATED 设备则仿真续跑,
                                            * 无窗/无现场回落 guest_fault */
     } else if (ec == 0x01 && (imm & 1) == 0) {  /* HCR.TWI:guest WFI -> 等待态 */
+        /* 站22A([54] 定谳):fg 行缓冲的泊位冲刷——客停泊且 RX 环
+         * 空才冲半行,键回显的即时性由此保(µs 级,人类敲键 100ms
+         * 尺度无感)。爆发感知:环内还有字节=客即刻会醒续收(逐字节
+         * 中断消费,每注一发弹一个),此刻冲=把回显拆成碎片逐泊吐出
+         * (probe-tear 第二轮实测定谳)——跳过,行完整后才见天日;
+         * 泵再注环空后的最后一泊冲全行。bg 半行同律(原死亡/切换
+         * 冲刷语义不变,此为常态路径)。空 tx 时 emit 首行早退。
+         *
+         * 站22A 第二雷(门禁 A 轮自抓):per-VM tx 缓冲被该 VM 全部
+         * vCPU 共享——本帧泊位冲刷会把**同 VM 他帧在途行**拦腰切
+         * 断("[vm0] rtos> c[vm0] pu1: online"实测定谳:vcpu0 的提示
+         * 符半行 + vcpu1(cpu3 泵)正追加的 online 行,冲刷落在
+         * 'c' 与 'pu1' 之间)。全 VM 静默判:任一同侪 vCPU 未泊位
+         * =可能有行在途,跳过;同侪都泊位才冲(单帧 VM 无同侪,
+         * 恒冲——vm1/vm2-fg 交互面零变化)。 */
+        struct eshine_vm *pvm = vm_of_vcpu(v);
+        u32 vn = vm_vcpu_count(pvm->vmid);
+        u32 vi;
+        int peers_parked = 1;
+
+        for (vi = 0; vi < vn; vi++) {
+            if (&pvm->vcpus[vi] != v && pvm->vcpus[vi].wait_state != 1UL) {
+                peers_parked = 0;   /* 同侪在跑:行或在途,让它的 '\n' 收口 */
+                break;
+            }
+        }
+        if (peers_parked && !vuart_rx_has_data(&pvm->vu))
+            vuart_tx_flush(&pvm->vu, (u32)pvm->vmid);
         v->exit_reason = VCPU_WAIT;
         vcpu_exit();
     } else {                                /* guest fault:诊断 -> VM 隔离死 */

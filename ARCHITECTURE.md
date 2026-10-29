@@ -309,7 +309,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
   唤起次核、vm0.vcpu1 上 CPU3 专泵、per-CPU GICR 帧；第二十一站：
   同步超时族（参考RTOS 0=no-wait/FOREVER 语义，take 环单窗化，超时
   摘除+owner PI 重算）+ panic 观测面（未知 EC 打印 ESR/ELR 后终态，
-  扫描面无寄存器行）+ 栈防护（垫+哨兵+水位，ps 水位列））** / VM1=裸机对照组（guest2.bin）/
+  扫描面无寄存器行）+ 栈防护（垫+哨兵+水位，ps 水位列）；第二十二站：[54] 定谳闭案（console 原子化+fg 行缓冲+泊位冲刷）+软定时器（tick-ISR 回调，静态池））** / VM1=裸机对照组（guest2.bin）/
   **VM2=Linux guest（第十四站：6.6 LTS，Image 外置构建、stage-2 非恒等
   映射、per-VM 诚实 DTB；第十五站起端点=busybox 用户空间）**
 - **四 pCPU 真并发（第十八站两核→站二十 -smp 4）**：CPU0=宿主
@@ -322,7 +322,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（75 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（76 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -357,6 +357,12 @@ runnable→壳任务 READY→rtos> prompt）** + RTOS selftest（寄存器跨
   指名 overflower（tick 扫描面无寄存器行，vm0 exit 后 vmcreate/
   vmrun/vmconsole 复活链，vm2-Linux 仍在场）——未知 EC 静默 wfi
   停车退役，panic 裸打不取锁
+  + **站二十二两判据**：[42] swtdemo 软定时器三面（单发到点/周期
+  ×3 自停/取消后缺席——核 0 tick-ISR 回调语境，rt_timer_t 静态池，
+  站二十一超时账本的自然延伸）；A 块 [54] 四站悬案定谳闭案
+  （console_putc 原语持锁 + fg 行缓冲化 + 泊位冲刷（爆发感知+全
+  VM 静默判）——needle 字节级撕裂 ("spinni[vm2]…") 机制面根除，
+  R1b dump 取证 + probe-tear 失败测试先行 + 双雷反转验证
   + 真并行硬证（站十八D：vm1 spin
   独占 CPU0 的窗口内 vm2 内核行持续行进——单物理 CPU 下不可能）** + **vm1 裸机对照组
 （[vm1] 前缀，双 RUNNING）** + 双客交错 token 双回显 +
@@ -387,7 +393,7 @@ token 双回显 → cat /proc/cpuinfo CPU part 0xd07 用户态自证 →
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-75 步手动走查清单。
+76 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

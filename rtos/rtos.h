@@ -283,4 +283,32 @@ void rt_demo_tmo(void);              /* 站21A:超时面全弧(no-wait/超时/
 void rt_demo_stk(void);              /* 站21C:受控深潜(水位判据) */
 void rt_demo_overflow(void);         /* 站21C:受控越哨→panic([74]) */
 
+/* rt_timer.c(站二十二B):软定时器。==== 回调语境契约(评审核折入,
+ * 参考RTOS 反转警示:ktimer 回调跑在 timer 任务语境可阻塞,本设计是
+ * ISR 语境,直译即灾难)====:回调=核 0 tick-ISR(I=1),rt_cur 是
+ * 被打断任务不属于回调。允许:rt_puts/rt_puts_u64(持锁即屏本核)/
+ * rt_ready_push(限 SLEEP 态唤醒)/rt_timer_stop(含自停)。禁止:
+ * 一切挂起 rt_cur 的调用(sleep/take 族——ISR 帧内 rt_sched 换帧
+ * =EOI 永不执行=核 0 中断面死);rt_sem_give/rt_event_set(尾段
+ * rt_sched 同病);rt_timer_start(同环重入)。
+ * ==== 登记契约:==== start/stop 仅核 0 语境(同核序贯免锁;跨核
+ * 需池自旋锁,记残余);结构体须常驻存储且活过回调本体(单发回调
+ * 执行时 deadline 已清 0);重复 start=改期不双登;stop 幂等。
+ * start 返 0 成功/-1 池满或 ticks==0(可观测拒绝)。 */
+#define RT_TMAX 8u
+
+typedef struct rt_timer {
+    u64 deadline;                     /* 绝对截止;0=停(0=哨兵同 wake_tick) */
+    u64 period;                       /* 0=单发;>0=周期,零漂移重臂 */
+    void (*fn)(void *);
+    void *arg;
+} rt_timer_t;
+
+void rt_timer_init(rt_timer_t *t, void (*fn)(void *), void *arg);
+int  rt_timer_start(rt_timer_t *t, u64 ticks, int periodic);
+void rt_timer_stop(rt_timer_t *t);
+void rt_timer_tick(void);            /* 核 0 单写者扫描:到期即回调 */
+
+void rt_demo_swt(void);              /* 站22B:swtdemo 判据 */
+
 #endif /* RTOS_H */

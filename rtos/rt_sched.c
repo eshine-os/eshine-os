@@ -252,8 +252,10 @@ void rt_tick_bookkeep(void)
      * 跨核自动携 SGI),核 1 的 tick 只管本队轮转/抢占判。双扫会
      * 对同一睡客双推(rt_ready_push 状态门挡住第二次,但队链会
      * 双挂——单扫根除)。 */
-    if (c == 0)
+    if (c == 0) {
         rt_task_wake_sleepers();    /* 到期睡客 -> READY(入各自队) */
+        rt_timer_tick();            /* 站22B:软定时器到点回调(同单写者环) */
+    }
     t = rt_cur;
     if (t->state == RT_RUN && t->slice_left > 0) {
         t->slice_left--;

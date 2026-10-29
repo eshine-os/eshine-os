@@ -141,6 +141,8 @@ static void shell_line(char *line)
         rt_demo_fpsmp();             /* 站二十:per-CPU FP 双精确 */
     } else if (streq(line, "tmodemo")) {
         rt_demo_tmo();               /* 站21A:超时面全弧 */
+    } else if (streq(line, "swtdemo")) {
+        rt_demo_swt();               /* 站22B:软定时器三面 */
     } else if (streq(line, "stkdemo")) {
         rt_demo_stk();               /* 站21C:受控深潜(水位判据) */
     } else if (streq(line, "stackcheck")) {
@@ -189,7 +191,7 @@ static void shell_line(char *line)
     } else if (line[0]) {
         rt_puts("rtos: try echo <t> | selftest | ps | spawn <n> | sleep [1-9]"
                 " | fp | fpdual | fpstat | yield | semdemo | mutexdemo | pidemo"
-                " | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo"
+                " | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo"
                 " | stkdemo | stackcheck | overflow | host | exit\n");
     }
 }

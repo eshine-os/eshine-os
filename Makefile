@@ -47,7 +47,7 @@ tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb: tools/dtb/eshine-vm.dts tool
 hypervisor/kernel/dtb.o: tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb
 
 # make run 与 make verify 同构:同一构建产物(含 guest 双镜像),
-# run 走 run_qemu.sh 交互,verify 走 75 步门禁——两者验的是同一个 elf
+# run 走 run_qemu.sh 交互,verify 走 76 步门禁——两者验的是同一个 elf
 run: $(TARGET) rtos.bin guest2.bin
 	./scripts/run_qemu.sh
 
@@ -68,7 +68,7 @@ guest2.bin: guest2.elf
 RT_CFLAGS := $(CFLAGS) -Iguest
 RTOBJS := rtos/start.o rtos/vec.o rtos/rt_sched.o rtos/rt_task.o \
           rtos/rt_uart.o rtos/rt_shell.o rtos/rt_main.o rtos/rt_fp.o \
-          rtos/rt_sync.o rtos/rt_ipc.o rtos/rt_demo.o
+          rtos/rt_sync.o rtos/rt_ipc.o rtos/rt_demo.o rtos/rt_timer.o
 
 rtos/start.o: rtos/start.S
 	$(CC) $(ASFLAGS) -c -o $@ $<

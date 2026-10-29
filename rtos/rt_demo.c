@@ -513,3 +513,64 @@ void rt_demo_overflow(void)
     if (!rt_task_create("overflower", overflower_task, NULL, 11))
         rt_puts("overflow: pool full\n");
 }
+
+/* ---- 站22B:swtdemo——软定时器三面判据(单发/周期自停/取消) ----
+ * 回调在核 0 tick-ISR 语境打印(rt_puts 持 puts_lk:持锁即屏本核,
+ * ISR 不可能在持锁任务上再入——自旋锁契约);时间线:
+ *   t=0: 起 单发(30) / 周期(15,×3 自停) / 单发(50,20 时取消)
+ *   t=15/30/45: "swt: periodic N";第 3 拍回调内自停(stopped)
+ *   t=30: "swt: oneshot fired"(单发到点)
+ *   t=20: "swt: cancelled"(stop 生效)
+ *   t=60: demo 任务收尾 "swt: done"——此后永无 "swt: late"
+ *   (50 已取消,缺席即判据) */
+static rt_timer_t swt_os, swt_pd, swt_late;
+static unsigned int swt_pd_count;
+
+static void swt_oneshot_cb(void *arg)
+{
+    (void)arg;
+    rt_puts("swt: oneshot fired\n");
+}
+
+static void swt_periodic_cb(void *arg)
+{
+    (void)arg;
+    swt_pd_count++;
+    rt_puts_u64("swt: periodic ", swt_pd_count, "\n");
+    if (swt_pd_count >= 3) {
+        rt_puts("swt: periodic stopped\n");
+        rt_timer_stop(&swt_pd);      /* 回调内自停:懒置 0+注销,合法 */
+    }
+}
+
+static void swt_late_cb(void *arg)
+{
+    (void)arg;
+    rt_puts("swt: late fired\n");    /* 不该到:缺席即判据 */
+}
+
+static void swt_driver_task(void *arg)
+{
+    (void)arg;
+    rt_sleep_ticks(20);
+    rt_timer_stop(&swt_late);        /* t=20 取消 t=50 的单发 */
+    rt_puts("swt: cancelled\n");
+    rt_sleep_ticks(60);              /* 收尾窗:50 已过且无 late */
+    rt_puts("swt: done\n");
+}
+
+void rt_demo_swt(void)
+{
+    rt_timer_init(&swt_os, swt_oneshot_cb, NULL);
+    rt_timer_init(&swt_pd, swt_periodic_cb, NULL);
+    rt_timer_init(&swt_late, swt_late_cb, NULL);
+    swt_pd_count = 0;
+    /* 评审核:start 返码化(池满/0 拒须可观测);demo 三发全验 */
+    if (rt_timer_start(&swt_os, 30, 0) || rt_timer_start(&swt_pd, 15, 1) ||
+        rt_timer_start(&swt_late, 50, 0)) {
+        rt_puts("swtdemo: timer pool full\n");
+        return;
+    }
+    if (!rt_task_create("swtdrv", swt_driver_task, NULL, 9))
+        rt_puts("swtdemo: pool full\n");
+}
