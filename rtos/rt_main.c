@@ -205,15 +205,22 @@ rt_task_t *rt_irq_dispatch(void)
     return NULL;
 }
 
+static rt_task_t *shell_task;        /* 站24A:心跳判别器——壳自主睡
+                                      * (RT_SLEEP)才说话;at-prompt=
+                                      * RT_BLOCK(rt_block_rx)/命令处理
+                                      * (RUN/READY)皆静默 */
+
 static void heartbeat_task(void *arg)
 {
     (void)arg;
     for (;;) {
         rt_sleep_ticks(50);          /* 0.5s 一拍:任务级交错的可见判据 */
-        if (hvc_fg())                /* 站20:前台门控(HVC#5 只读问询)
-                                      * ——vmrun 后台期静默,宿主/他客
-                                      * 串口免骚扰(用户令);vmconsole 0
-                                      * 前台化即恢复可见 */
+        /* 站24A(用户令"进入 rtos shell 不要一直打印,可以输入
+         * 命令再打印"):心跳只在壳自主睡时说话——替睡死的壳报
+         * 平安,不打扰正用的人;sleep 窗([24] 任务级并发活证)
+         * 语义保全。前台门(HVC#5)保留:后台恒静默(站20 用户令)。
+         * 按需面交 hb 命令。 */
+        if (shell_task && shell_task->state == RT_SLEEP && hvc_fg())
             rt_puts_u64("rtos: alive tick=", rt_ticks, "\n");
     }
 }
@@ -249,7 +256,7 @@ void guest_main(void)
 
     /* 任务世界:壳与心跳上池 */
     rt_ticks = 0;
-    rt_task_create("shell", rt_shell_task, NULL, 5);
+    shell_task = rt_task_create("shell", rt_shell_task, NULL, 5);
     rt_task_create("heartbeat", heartbeat_task, NULL, 10);
 
     /* 站23A:四路登记(解 IRQ 前无中断,序贯免锁)——27 tick 单

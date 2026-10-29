@@ -593,6 +593,10 @@ def main():
                   "(%d cpu1 lines)" % c1)
 
             # ---- 站二十:ipidemo——SGI 往返 >= 20 + 跨核唤醒 3 全链 ----
+            #      站24A 评审补:demo 回合循环已移入独立任务 ipimain(原
+            #      在壳语境睡,心跳按需化后 [37] 窗必夹 alive 行=用户令①
+            #      点名要除的刷屏)——本窗断言零自发心跳,demo 期安静
+            #      与提示符安静([47])同律成判据。 ----
             p = len(buf)
             s.sendall(b"ipidemo\n")
             buf = read_until(s, buf, b"ipi: rx0=", time.time() + 30, start=p)
@@ -602,7 +606,11 @@ def main():
                 raise AssertionError("ipi roundtrips < 20: %r" % buf[p:][:300])
             if buf[p:].count(b"ipi: cpu1 awake") != 3:
                 raise AssertionError("sleeper wakes != 3: %r" % buf[p:][:400])
-            print("  [37/79] ipidemo: %d SGI roundtrips + 3 cross-core wakes"
+            if re.search(rb"rtos: alive", buf[p:]):
+                raise AssertionError("spontaneous heartbeat inside ipidemo window "
+                                     "(station-24A quiet-demo promise broken): %r"
+                                     % buf[p:][:200:])
+            print("  [37/79] ipidemo: %d SGI roundtrips + 3 cross-core wakes, window quiet"
                   % int(m.group(1)))
 
             # ---- 站二十:fpsmp——per-CPU FP 帧两核双精确 ----
@@ -789,6 +797,12 @@ def main():
             s.sendall(b"\n")   # 空行:触发壳任务重打 prompt
             buf = read_until(s, buf, b"rtos> ", time.time() + 10, start=p2)
             buf = token_echo(s, buf, "GOKA%d" % os.getpid())
+            # 站24A:提示符安静承诺成判据——壳全程 BLOCK/RUN,无
+            # RT_SLEEP 态,窗口内零自发心跳(用户令:进去不刷屏)。
+            if re.search(rb"rtos: alive", buf[p2:]):
+                raise AssertionError("spontaneous heartbeat at interactive prompt "
+                                     "(station-24 quiet-shell promise broken): %r"
+                                     % buf[p2:][-200:])
             pos2 = len(buf)
             s.sendall(b"host\n")           # 前台交还 RX
             buf = read_until(s, buf, b"console -> host", time.time() + 10, start=pos2)
@@ -1100,13 +1114,20 @@ def main():
             print("  [68/79] Linux gic-v3 on emulated GICD/GICR (spec word decode)")
 
             # ---- 站十六:双客并发时序证明。窗口取"解掩蔽引导段":Linux
-            # 早期 PSTATE.I=1,量子无从耗尽,泵单客模式直跑(活客短暂
-            # 饿死系 guest 掩蔽所致,非宿主失职);local_irq_enable 后
-            # 泵恢复轮转,活 RTOS 的心跳行与 boot 流交错即证两客真并发。
-            # GICv3 针之后被动收 5s(泵 ~1s 一片,心跳两行/片,窗口余量足)。
+            #      早期 PSTATE.I=1,量子无从耗尽,泵单客模式直跑(活客短暂
+            #      饿死系 guest 掩蔽所致,非宿主失职);local_irq_enable 后
+            #      泵恢复轮转。站24A 起周期心跳只在壳自主睡时说话(提示
+            #      符=RT_BLOCK 静默),本窗改 hb 注入:vm0 前台壳收到命令
+            #      即回 alive 行,tick 严格递增=vm0 在 vm2 靴流窗内真实
+            #      行进(双客并发),且 hb 输入路径本身即 [41] 输入不变量
+            #      的见证面(泊位→推环→醒→回,一窗全验)。 ----
             p_v3 = buf.rindex(b"GICv3: CPU0: found redistributor 0")
             end = time.time() + 5
+            next_hb = time.time() + 0.5
             while time.time() < end:
+                if time.time() >= next_hb:
+                    s.sendall(b"hb\n")          # 注入三发(0.5/2.5/4.5s)
+                    next_hb += 2.0
                 s.settimeout(0.5)
                 try:
                     chunk = s.recv(4096)
@@ -1115,12 +1136,19 @@ def main():
                     buf += chunk
                 except socket.timeout:
                     pass
-            if b"rtos: alive" not in buf[p_v3:]:
-                raise AssertionError("no RTOS heartbeat inside Linux unmasked boot "
-                                     "stream (dual-guest concurrency unproven): %r"
-                                     % buf[p_v3:][-300:])
-            n_hb = buf[p_v3:].count(b"rtos: alive")
-            print("  [69/79] dual-guest concurrency: %d rtos heartbeats inside Linux boot" % n_hb)
+            w_hb = buf[p_v3:]
+            hb_ticks = [int(x) for x in re.findall(rb"rtos: alive tick=(\d+)", w_hb)]
+            if len(hb_ticks) < 2:
+                raise AssertionError("hb replies < 2 inside Linux unmasked boot stream "
+                                     "(input invariant broken — replies are the station-24B face): %r"
+                                     % w_hb[-300:])
+            if hb_ticks != sorted(hb_ticks) or len(set(hb_ticks)) != len(hb_ticks):
+                raise AssertionError("hb tick values not strictly increasing (replies "
+                                     "arrived = input invariant intact; frozen ticks = "
+                                     "the residual vtimer-stall face, route to the "
+                                     "wake-architecture station): %r" % hb_ticks)
+            print("  [69/79] dual-guest concurrency: %d hb replies, ticks %s..%s "
+                  "advance inside Linux boot" % (len(hb_ticks), hb_ticks[0], hb_ticks[-1]))
 
             pos = len(buf)
             buf = read_until(s, buf, b"printk: console [ttyAMA0] enabled", time.time() + 60)
@@ -1172,11 +1200,16 @@ def main():
             print("  [75/79] userland self-proof: cat /proc/cpuinfo -> CPU part 0xd07")
 
             # ---- 站十九D:双核用户态自证——guest 内第二处理器可见 ----
+            #      站24B:超时 30s→10s 收紧——本门形状=大 dump 完成后
+            #      泊位+立即输入,正是 [41]/[76] 输入蒸发脸的复现器;
+            #      健康轮 ~1s(探针实测),旧脸 30s+,10s 上界=输入
+            #      不变量的诚实见证(判据只增不减的真强化)。 ----
             pos = len(buf)
             send_guest(s, b"cat /proc/cpuinfo\n")
-            buf = read_until(s, buf, b"processor\t: 1", time.time() + 30, start=pos)
+            buf = read_until(s, buf, b"processor\t: 1", time.time() + 10, start=pos)
             buf = read_until(s, buf, b"~ # ", time.time() + 15, start=pos)
-            print("  [76/79] userland SMP self-proof: cpuinfo -> processor 1 (2nd vCPU)")
+            print("  [76/79] userland SMP self-proof: cpuinfo -> processor 1 (2nd vCPU)"
+                  " [input-after-park <=10s: station-24B invariant]")
 
             # ---- 站十六:RTOS 迟退(留活跨过双客并发判据后收场) ----
             pos = len(buf)

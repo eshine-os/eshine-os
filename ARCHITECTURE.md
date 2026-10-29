@@ -309,7 +309,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
   唤起次核、vm0.vcpu1 上 CPU3 专泵、per-CPU GICR 帧；第二十一站：
   同步超时族（参考RTOS 0=no-wait/FOREVER 语义，take 环单窗化，超时
   摘除+owner PI 重算）+ panic 观测面（未知 EC 打印 ESR/ELR 后终态，
-  扫描面无寄存器行）+ 栈防护（垫+哨兵+水位，ps 水位列）；第二十二站：[54] 定谳闭案（console 原子化+fg 行缓冲+泊位冲刷）+软定时器（tick-ISR 回调，静态池）；第二十三站：irq 注册表+live-sp 水位守卫+泊位延迟冲刷）** / VM1=裸机对照组（guest2.bin）/
+  扫描面无寄存器行）+ 栈防护（垫+哨兵+水位，ps 水位列）；第二十二站：[54] 定谳闭案（console 原子化+fg 行缓冲+泊位冲刷）+软定时器（tick-ISR 回调，静态池）；第二十三站：irq 注册表+live-sp 水位守卫+泊位延迟冲刷；**第二十四站：心跳按需化（只在壳自主睡时说话+hb 命令，提示符交互零刷屏）+ 输入⇒runnable 唤醒不变量（推环唤醒去 reason 门+泊位落定复查，[41] 家族输入蒸发面的交互侧收口）+ vcpu 进场 flush 幸存者退役（站十九不变量补完）**）** / VM1=裸机对照组（guest2.bin）/
   **VM2=Linux guest（第十四站：6.6 LTS，Image 外置构建、stage-2 非恒等
   映射、per-VM 诚实 DTB；第十五站起端点=busybox 用户空间）**
 - **四 pCPU 真并发（第十八站两核→站二十 -smp 4）**：CPU0=宿主
@@ -391,14 +391,20 @@ arch_timer virt 62.50MHz + arch_sys_counter clocksource → GICv3
 redistributor 探测（word1=0x104 规范译码）→ **guest SMP 上线（站
 十九D：smp: Brought up 1 node, 2 CPUs 真行判据，第二 vCPU 经
 PSCI(hvc) 真起）→ **双客并发时序证明
-（第十六站立判、站二十修订：活 RTOS 的 rtos: alive 心跳行必须夹在
-Linux boot 行流之间——串行 log 顺序即证；心跳印字站二十起前台
-门控（HVC #5 只读问询，vmrun 后台静默免扰宿主/他客串口），判据
-窗前 vmconsole 0 前台化才可见）** → ttyAMA0 enabled → vda 128 blocks →
+（第十六站立判、站二十修订、**站二十四A 改 hb 注入**：活 RTOS
+的 rtos: alive 行必须夹在 Linux boot 行流之间——串行 log 顺序
+即证；周期心跳站二十四起只在壳自主睡（RT_SLEEP）时说话，提示
+符交互零刷屏（用户令；[47] 零自发心跳断言），判据窗改门禁注
+`hb` 命令 ×3（0.5/2.5/4.5s，窗 5s）——tick 严格递增即 vm0 在 vm2 靴流内真实行进，且
+hb 的泊位→推环→醒→回路径身兼站二十四B 输入不变量见证；前台
+门控（HVC #5）保留，vmrun 后台静默免扰宿主/他客串口）** →
+ttyAMA0 enabled → vda 128 blocks →
 **initramfs 接管（第十五站）→ vmconsole 2 直落 ~ # 壳 → 壳内
 token 双回显 → cat /proc/cpuinfo CPU part 0xd07 用户态自证 →
 **cat /proc/cpuinfo processor 1（站十九D：双核用户态自证，guest 内
-第二处理器行可见）→
+第二处理器行可见；**站二十四B：超时 30s→10s 收紧——大 dump 后
+泊位+立即输入正是 [41] 家族输入蒸发脸的复现器，健康轮 ~1s,
+10s 上界=输入⇒runnable 不变量的诚实见证**）→
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置

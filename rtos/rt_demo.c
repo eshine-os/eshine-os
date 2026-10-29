@@ -292,15 +292,12 @@ static void ipi_sleeper(void *arg)
     rt_puts("ipi: sleeper done\n");
 }
 
-void rt_demo_ipi(void)
+static void ipi_main(void *arg)
 {
     unsigned int i;
     unsigned long rx0 = rt_ipi_rx(0);
 
-    if (!rt_task_create_cpu("ipi1", ipi_sleeper, NULL, 9, 1)) {
-        rt_puts("ipidemo: pool full\n");
-        return;
-    }
+    (void)arg;
     rt_ipi_echo = 1u;                   /* 回合窗开:核 1 handler 逐拍回发 */
     for (i = 0; i < 20; i++) {
         rt_ipi(1);                     /* SGI 0 → 核 1 重调度拍 */
@@ -312,6 +309,23 @@ void rt_demo_ipi(void)
     /* 往返判据:核 0 实收回发数(≥20 = 20 发全回程;跨核唤醒推送
      * 在窗内也会各得一回,计入即真,判据线只设下限)。 */
     rt_puts_u64("ipi: rx0=", rt_ipi_rx(0) - rx0, " roundtrips\n");
+}
+
+void rt_demo_ipi(void)
+{
+    /* 站24A 评审:回合循环原在壳语境执行(rt_sleep_ticks 使壳过
+     * RT_SLEEP 态)——心跳按需化后 demo 期壳每拍夹心跳行([37]
+     * 窗+手动走查刷屏,恰是用户令①点名要除的)。移入独立任务
+     * ipimain:壳即回提示符(RT_BLOCK=静默),判据 needle 全由
+     * 任务打印,语义零迁。 */
+    if (!rt_task_create_cpu("ipi1", ipi_sleeper, NULL, 9, 1)) {
+        rt_puts("ipidemo: pool full\n");
+        return;
+    }
+    if (!rt_task_create("ipimain", ipi_main, NULL, 8)) {
+        rt_puts("ipidemo: pool full\n");
+        return;
+    }
 }
 
 void rt_demo_fpsmp(void)

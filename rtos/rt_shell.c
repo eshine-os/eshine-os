@@ -157,6 +157,10 @@ static void shell_line(char *line)
         rt_puts_u64("lazy: ", rt_fp_stat_total(), " switches, ");  /* 站20:
                                         * M<<N;两核求和(per-CPU asm 计数) */
         rt_puts_u64("", rt_fp_saves, " fp-saves\n");
+    } else if (streq(line, "hb")) {
+        /* 站24A(用户令"输入命令再打印"):按需心跳——格式与周期版
+         * 全同,判据正则([24]/[69])兼容;周期版只留壳自主睡窗。 */
+        rt_puts_u64("rtos: alive tick=", rt_ticks, "\n");
     } else if (starts(line, "spawn ")) {
         static char spawn_name[12];     /* 单缓冲:并发 spawn 会互踩,
                                          * demo 尺度一次一个(记残余) */
@@ -194,7 +198,7 @@ static void shell_line(char *line)
         rt_puts("\n");
     } else if (line[0]) {
         rt_puts("rtos: try echo <t> | selftest | ps | spawn <n> | sleep [1-9]"
-                " | fp | fpdual | fpstat | yield | semdemo | mutexdemo | pidemo"
+                " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo | pidemo"
                 " | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                 " | stkdemo | stackcheck | overflow | host | exit\n");
     }

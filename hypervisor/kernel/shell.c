@@ -55,7 +55,7 @@ static void cmd_help(void)
     console_puts("  irqdemo            -> 注册表链式包装/计数/恢复  [43]\n");
     console_puts("  lowdemo            -> 贴线守卫恰一次 warn       [44]\n");
     console_puts("  vmcreate 1 / vmrun 1 / vmconsole 1          [45-46]\n");
-    console_puts("  vm0 echo / vm1 dwrite+dread / vm1 echo     [47-49]\n");
+    console_puts("  vm0 echo(提示符零刷屏)+vm1 dwrite+dread/vm1 echo [47-49]\n");
     console_puts("  vm1 spin -> spun(preempts 差>=2)            [50]\n");
     console_puts("  vm0 sleep 公平+vm1 后台醒                    [51-52]\n");
     console_puts("  双睡醒序(rtos 2s 先于 vm1 one-shot 4s)      [53]\n");
@@ -69,7 +69,7 @@ static void cmd_help(void)
     console_puts("  vm1 复活 spin 独占 CPU0,vm2 行进=真并行       [64]\n");
     console_puts("  echo storm 10/10  -> 延迟冲刷(vm2 靴流内)     [65]\n");
     console_puts("  Machine model / arch_timer / GICv3          [66-68]\n");
-    console_puts("  前台心跳夹 boot 流  -> 双客并发时序证明        [69]\n");
+    console_puts("  hb 注入(站24)  -> tick 递增夹 boot 流=双客并发 [69]\n");
     console_puts("  ttyAMA0 / vda 128 blocks / initramfs / busybox 壳 [70-73]\n");
     console_puts("    (0x1d Ctrl-] = 宿主夺回;owner 不再自动归还)\n");
     console_puts("  echo TOKEN / cat /proc/cpuinfo(cpuinfo 0xd07) [74-75]\n");
@@ -273,10 +273,23 @@ void shell_run(void)
 
                 /* 前台 guest 的输入入其 vuart 环(RIS 置位);RXIM 使能
                  * 时泵入口见 irq_ready 即注 LR1,无需显式标志。
-                 * RX 等待者即刻直通唤醒。 */
+                 * 站24B:输入⇒runnable 不变量——唤醒去 reason 门
+                 * (旧门只认 WAIT_RX;真 Linux 恒 vtimer armed,泊
+                 * 位分类恒 TIMER,输入只能等客自家 vtimer=深睡秒级
+                 * ~永不,[41]/[76] 输入蒸发家族+用户卡顿座报告定
+                 * 谳)。WFI "pending 即醒"语义补全:环有数据即有
+                 * 活,TIMER 泊亦醒,醒后泵入口注入 LR1 消费。 */
                 vuart_rx_push(&vm->vu, c);
-                if (v->wait_state == 1UL && v->wait_reason == VCPU_WAIT_RX)
-                    v->wait_state = 0UL;    /* 直通 runnable:注入即取 */
+                /* 评审 Dekker 补:环写(锁内,release 出锁)与
+                 * 停泊侧 wait_state 写皆普通存取——对侧载可先行满足
+                 * 读到旧值=双侧皆漏(推环读得"未泊"不醒+泊位侧读
+                 * 得"环空"不返 runnable,同拍即丢唤醒)。两侧各补
+                 * dmb ish:存后读前立障,至少一侧必见对侧写。
+                 * push 侧锁内 release 只序本侧先前访存,不序本侧
+                 * 后续的 wait_state 读——独立补障,勿倚锁。 */
+                __asm__ volatile("dmb ish");
+                if (v->wait_state == 1UL)
+                    v->wait_state = 0UL;
                 {
                     u64 rpr, ctl, pmr;
 

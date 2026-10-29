@@ -376,11 +376,20 @@ void el1_sync(struct vcpu *v)
 
             /* 评审修真:武装入 console_lock——与泵扫描的判-清
              * (vm.c)互斥;无锁清零可吞并发武装(读旧死线→他核
-             * 泊位武装→清零),该行的吸收窗失效即 [54] 复发面。 */
+             * 泊位武装→清零),该行的吸收窗失效即 [54] 复发面。
+             * 站24 修真:只首次武装(flush_at==0),已武装(含已
+             * 过期)不推迟——10ms 拍客(RTOS tick)与 20ms 窗恰
+             * 2:1 相位锁死:每泊重臂+20ms,fire 必撞下下拍唤醒
+             * 边界(未泊跳过),再泊又先重臂后扫描=永久推迟(尾
+             * 字符滞环,[19] 5/5 复现;站二十三一直绿全靠心跳打
+             * 印首字符顺手冲掉滞留字节=A 块静默心跳后活锁裸露)。
+             * 过期死线保留,下一泊定瞬间 fire 即收。 */
             console_lock();
-            __asm__ volatile("mrs %0, cntpct_el0" : "=r"(now));
-            __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
-            pvm->vu.flush_at = now + freq / 50UL;   /* 20ms */
+            if (pvm->vu.flush_at == 0) {
+                __asm__ volatile("mrs %0, cntpct_el0" : "=r"(now));
+                __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));
+                pvm->vu.flush_at = now + freq / 50UL;   /* 20ms */
+            }
             console_unlock();
         }
         v->exit_reason = VCPU_WAIT;

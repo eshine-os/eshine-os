@@ -66,7 +66,16 @@ u64 vcpu_run(struct vcpu *v, u64 vttbr)
      * guest、vtimer 归 guest,CPACR 也归 guest。已知限制:SIMD per-VM
      * ctx 不保存,多 FP guest 并跑会串台(当前唯一 FP 用户是 Linux 槽)。 */
     __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_GUEST));
-    __asm__ volatile("tlbi vmalls12e1is; dsb sy; isb");
+    /* 站24C:进场全量 tlbi 幸存者退役——站十九只门了 vttbr 侧那发,
+     * hcr 写后这发(hcr 不涉翻译缓存,isb 即可)以每进场一发活到
+     * 今天。判负实验诚实入档:曾假设它是 Linux shell 卡顿总根源,
+     * 实测否——"慢命令"数字(40s/90s)全是 read_until 超时假象
+     * (真因=停泊输入蒸发,站24B),且 echo 千字秒回(MMIO 陷阱
+     * 内联不过 vcpu_run)+健康轮 fp 0.04s 反证 QEMU 此 tlbi 实为
+     * 廉价。保留退役的理由=站十九不变量自洽(熄旧表归 last_vttbr
+     * 对比(上),槽位复用归 vcpu_flush_all_tables),收益记
+     * "无实测增量"。 */
+    __asm__ volatile("isb");
 
     vcpu_enter_guest(v);            /* sp_el1/elr/spsr 由帧加载,不再单设 */
     return v->exit_reason;          /* 正常返回 = guest 已 retire */
@@ -91,7 +100,10 @@ void vcpu_flush_all_tables(void)
 {
     unsigned int i;
 
-    for (i = 0; i < 3; i++)
+    /* 站24 评审抓出:清零循环是站十九三核遗物,CPU3(vm0.vcpu1 专
+     * 泵,站二十四核)的记账永不清——同值重建页表的槽位复用会把
+     * 旧缓存泄给新客(不变量破)。扩到四核。 */
+    for (i = 0; i < 4; i++)
         last_vttbr[i] = 0UL;
     __asm__ volatile("tlbi vmalls12e1is; dsb sy; isb");
 }

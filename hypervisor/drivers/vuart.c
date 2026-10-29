@@ -188,16 +188,19 @@ void vuart_mmio_write(struct vuart *vu, u32 vmid, u64 off, u64 val, bool fg)
     if ((vu->cr & CR_TXE) == 0u)
         return;
     if (fg) {
-        /* 站22A([54] 三案定谳):fg 由逐字符裸透传改行缓冲——裸透传
-         * 的字符间缝隙留给跨核 bg 行整行嵌入(tick 抢切落点窗),
-         * needle 撕裂是概率性的;入缓冲后 '\n' 经 vuart_tx_emit 锁内
-         * 整行原子,判据 needle 确定性。交互 UX(键回显即时)由
-         * 泊位冲刷保:客 WFI 停泊即冲半行(exceptions.c TWI 分支),
-         * 人类敲键 100ms 尺度无感。残留后台半行先冲(tag 归它),
-         * fg 行 tx_tagged=false 与 bg(true)对称。 */
+        /* 站22A([54] 三案定谳):fg 由逐字符裸透传改行缓冲;站24 修
+         * 真撤前置发射——旧版每字符先冲上一字符(逐字符透传残骸,
+         * 与"整行原子"的宣称自相矛盾):prompt 类半行=5 字符已流+
+         * 末字符滞环,20ms 冲刷窗正是互插者落缝之窗([53] 实测
+         * "rtos>[vm1] vm1> " 撕裂;站二十三此门全靠心跳打印首字符
+         * 顺手冲掉滞留字节的意外救场,站24 静默心跳+活锁修后双拐
+         * 同拆,确定性裸露)。今:fg 字符全量入环,'\n' 或泊位冲刷
+         * 整段锁内原子——半行不再有可撕缝;bg→fg 迁移的残留半行
+         * 由 owner 切换口的先行冲刷保(vmconsole/escape/死亡三口
+         * 已立),前置发射于彼场景本就冗余。键回显 UX 由 20ms 延迟
+         * 冲刷保(站23C 定标:人类敲键 100ms+ 尺度无感)。fg 行
+         * tx_tagged=false 与 bg(true)对称。 */
         console_lock();
-        if (vu->tx_len)
-            vuart_tx_emit(vu, vmid);   /* 复入只增嵌套 */
         vu->tx_tagged = false;
         vu->tx[vu->tx_len++] = c;
         console_unlock();

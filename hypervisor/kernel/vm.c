@@ -539,8 +539,13 @@ static bool pump_run_vcpu(u32 id, u32 vi)
             /* 站二十:vSPI33/35 归 vcpu0 面(19D 注入已 vi==0 定向,
              * DTB 中断路由的诚实镜像)——复查唤醒必须同面,否则共享
              * vuart 上的 RX 字节会误醒同 VM 的无帧次核([19] 入环即
-             * pc=0 取指崩,vm0.vcpu1 实测定谳)。SGI 仍按帧。 */
-            (vi == 0 && v->wait_reason != VCPU_WAIT_TIMER &&
+             * pc=0 取指崩,vm0.vcpu1 实测定谳)。SGI 仍按帧。
+             * 站24B 评审收口:owner 帧放开 TIMER 排除——输入⇒runnable
+             * 不变量在三处唤醒位(推环/泊位复查/泵入口网)全对齐,
+             * owner 的 TIMER 泊(真 Linux 恒 armed)亦可被环内待取
+             * 事件再唤醒;非 owner 帧维持 TIMER 排除不动。 */
+            (vi == 0 && (v->wait_reason != VCPU_WAIT_TIMER ||
+                         sched_console_owner == v) &&
              ((vuart_rx_irq_ready(&vm->vu) &&
                vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) ||
               (virtio_irq_ready(vm) &&
@@ -666,6 +671,27 @@ static bool pump_run_vcpu(u32 id, u32 vi)
         v->wait_reason = (v->vtimer_ctl & 1UL) ? VCPU_WAIT_TIMER
                                                : VCPU_WAIT_RX;
         trail_add(1, v->wait_reason, v->vtimer_cval);
+        /* 站24B:泊位落定复查(owner 面)——推环唤醒检查与停泊
+         * 出口窗的竞态关窗:推环读到 wait_state=0(退出在途)不醒
+         * →随后泊定→环内字节无主,唤醒源只剩客自家 vtimer([41]
+         * 家族脸#5 的洞②)。评审三修:(a) Dekker 补障——wait_state
+         * 写(上)与环读之间 dmb ish(推环侧对偶,见 shell.c),双
+         * 侧立障后至少一侧必见对侧写;(b) 门控同泵入口复查网
+         * (vuart_rx_irq_ready+vgic 使能)——不看使能面的裸
+         * has_data 复查会造泵热自旋(客无 RXIM 可取时泊-醒死
+         * 循环,µs 级烧核);过门即真有可取事件,自愈有界;
+         * (c) ev16 专用事件码(a=(id<<4|vi),b=reason)——复用
+         * ev1 会与站二十 [41] 探针契约(a=reason)冲突,新旧
+         * 取证不可比。翻回 runnable,泵下一圈即取(同核序贯,
+         * 无需 poke)。 */
+        if (sched_console_owner == v) {
+            __asm__ volatile("dmb ish");
+            if (vuart_rx_irq_ready(&vm->vu) &&
+                vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) {
+                v->wait_state = 0UL;
+                trail_add(16, ((u64)id << 4) | vi, v->wait_reason);
+            }
+        }
         /* 站十五撤自动归还:真 Linux 壳恒 250Hz armed,timer 睡
          * 即被收台,输入永远喂给宿主 shell(owner 形同虚设)。
          * owner 从此是显式接管,归还只走 vmconsole host / 逃生
