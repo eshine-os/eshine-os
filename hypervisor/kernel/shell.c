@@ -17,7 +17,7 @@ static char linebuf[SHELL_BUF_MAX];
 static void cmd_help(void)
 {
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
-    console_puts("          vmrun <id> vmconsole <id|host> vmstat vmrx vmtrail vmkill <id>\n");
+    console_puts("          vmrun <id> vmconsole <id|host> vmstat vmrx vmtrail [N] vmkill <id>\n");
     console_puts("    (前台会话期 Ctrl-](0x1d)=宿主夺回控制台)\n");
     console_puts("guest:    selftest sleep [N] spin dwrite dread fault echo <text> host exit\n");
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
@@ -157,8 +157,34 @@ static void dispatch(char *line)
         vm_list();
     } else if (strncmp(line, "vmrx", 64) == 0) {
         vm_rx_dump();
-    } else if (strncmp(line, "vmtrail", 64) == 0) {
-        vm_trail_dump();
+    } else if (strncmp(line, "vmtrail", 7) == 0 &&
+               (line[7] == '\0' || line[7] == ' ')) {
+        /* 站25C:可选 N(最后 N 条,默认 512;0=全量 16K)——
+         * 全量倾倒是串口级灾难,取证只需死线附近窗。评审修真×3:
+         * ①分发层原是 exact strncmp——"vmtrail 1000" 整串不等
+         * 落 unknown(站二十四"vmtrail 40"同型坑的二连),改前缀
+         * 匹配+词界守卫;②parse_id 只吃单字符,多位 N 静默
+         * 回退 512——补多位解析;③非数字参数原静默顶替默认值
+         * (dispatch 表中唯一不报 usage 者,站23 "静默语义错位"
+         * 同律)——补 usage 拒绝:空参=默认,数字=解析,其余拒绝。 */
+        u32 n = 512;
+
+        if (args[0] != '\0') {
+            if (args[0] >= '0' && args[0] <= '9') {
+                const char *p = args;
+
+                n = 0;
+                while (*p >= '0' && *p <= '9' && n < 100000) {
+                    n = n * 10 + (u32)(*p - '0');
+                    p++;
+                }
+                vm_trail_dump(n);
+            } else {
+                console_puts("usage: vmtrail [N] (default 512, 0=full)\n");
+            }
+        } else {
+            vm_trail_dump(n);
+        }
     } else if (strncmp(line, "vmcreate", 64) == 0) {
         bool ok;
         u32 id = parse_id(args, &ok);

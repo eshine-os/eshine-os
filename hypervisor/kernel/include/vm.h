@@ -68,7 +68,8 @@ int  vm_kill(u32 id);
 void vm_list(void);
 u32 vm_vcpu_count(u32 id);           /* 站二十:槽位真实 vCPU 数(泵/扫描 vi 封界) */
 void vm_rx_dump(void);
-void vm_trail_dump(void);          /* 站20:事件迹环([41] 探针) */
+void vm_trail_dump(u32 n);         /* 站20 立案/站25C 带参:事件迹环
+                                      * 最后 n 条(0=全量;[41] 探针) */
 void trail_add(u32 ev, u64 a, u64 b);              /* 站20:RX 链两域现场(取证) */
 
 #endif /* ESHINE_VM_H */

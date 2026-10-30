@@ -221,6 +221,46 @@ def token_echo(s, buf, tok, deadline=10):
     return buf
 
 
+_FOREN_S = None    # 站25:门红自动取证的套接字引用(main 建连后挂上)
+
+
+def _forensic_dump():
+    """站25:任何门红=自动取证——逃逸回宿主,vmstat/vmrx/vmtrail 512
+    落日志后原样抛出。这覆盖**全类失败脸**:[41] 家族无论以何脸
+    复发(泊定类/运行态 tick 停发类/输入类),门红即证据到手
+    (16K 环 ≈27s 窗)。失败现场不再随 buf 丢弃。"""
+    s = _FOREN_S
+    if s is None:
+        return
+    try:
+        s.settimeout(0.3)
+        s.sendall(b"\x1d")
+        w = b""
+        end = time.time() + 3
+        while time.time() < end:
+            try:
+                w += s.recv(4096)
+            except socket.timeout:
+                pass
+            if b"console -> host" in w:
+                break
+        for cmd in (b"vmstat\n", b"vmrx\n", b"vmtrail 512\n"):
+            s.sendall(cmd)
+            end = time.time() + 20
+            while time.time() < end:
+                try:
+                    w += s.recv(4096)
+                except socket.timeout:
+                    if cmd == b"vmstat\n" and b"preempts: " in w:
+                        break
+                if cmd == b"vmtrail 512\n" and w.count(b"\n") > 600:
+                    break
+        print("=== station-25 auto-forensics (gate failure) ===")
+        print(w.decode(errors="replace"))
+    except Exception:
+        pass
+
+
 def main():
     if not os.path.exists(ELF):
         print("FAIL: %s not built (run make first)" % ELF)
@@ -276,6 +316,8 @@ def main():
             time.sleep(0.1)
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.connect(SOCK)
+        global _FOREN_S
+        _FOREN_S = s                      # 站25:门红自动取证挂点
 
         buf = b""
         try:
@@ -1287,4 +1329,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException:
+        _forensic_dump()                  # 站25:门红先取证再抛
+        raise

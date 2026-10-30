@@ -424,41 +424,115 @@ u64 vm_ipa_to_pa(struct eshine_vm *vm, u64 ipa, u64 size)
  * (vgic_wake_waiter 只属真正响过的物理 27 路径);拍频 = 1 tick,
  * 与泵粒度同阶——WOKE 的生效本就要等下一次泵轮到它,与即时判定
  * 等效(单核调度的本质粒度)。 */
-/* 站20 [41] 取证探针:事件迹环(64 槽,溢出覆写;写入点跨三核,环头
- * 竞态可容忍——探针尺度的诚实记录)。诊断命令 vmtrail 打印。 */
-#define TRAIL_N 64
+/* 站20 [41] 取证探针:事件迹环(溢出覆写)。站20 时代"环头竞态
+ * 可容忍"是 64 槽探针尺度的豁免——16K 取证主证据链不继承:丢更新
+ * 会并槽吞事件、头先于字段会以旧槽冒充新条(幽灵取证,直接污染
+ * ev5 类存档证据)。站25 收编:预约与字段写入入环专用自旋锁(同
+ * console_lock 的 owner 递归式:同核 IRQ 语境复入只计数,跨核
+ * ldaxr/stxr+WFE 互斥),头自增后行于字段——dump 快照头以下的
+ * 槽保证完整,丢更新与幽灵双杀。锁成本:无争 ~20ns @~600 ev/s。 */
+/* 站25C 仪器化:事件迹环 64→16384——64 条在 ~600 事件/秒的三核
+ * 打拍负载下只余 0.1s 历史,"分钟级偶发死亡"的现场永远滚出环外
+ * (站二十造仪器以来所有 dump 都只是即时尾巴,真凶现场从未入环)。
+ * 16K 条 @~600 ev/s ≈ 27s 窗口;槽 24B ≈ 384KB 静态(QEMU 512MB,
+ * 宿主低址区预算无虞)。vmtrail 带可选 N(默认 512):16K 行全量
+ * 倾倒是串口级灾难。 */
+#define TRAIL_N 16384
+/* 站25 评审修真:C 臂重复唤醒上界——consume-fail 帧(guest 收到
+ * 注入却 IRQ_NONE 不重装,站十九定谳的死法)在 C 臂下会每泵圈
+ * 再醒=热活锁;计数同 cval 连醒 >2000 次即停醒+吐一行标记
+ * (真绊线:唯一可达的坏类=它),证物交 verify 失败路径自动取证。 */
+static u16 wake_retries[ESHINE_MAX_VMS * ESHINE_MAX_VCPUS];
+static u64 wake_retries_cval[ESHINE_MAX_VMS * ESHINE_MAX_VCPUS];
 struct trail_slot {
     u32 cpu;
     u32 ev;
     u64 a, b;
 };
 static struct trail_slot trail[TRAIL_N];
-static u32 trail_h;
+static volatile u32 trail_h;
+static volatile unsigned long trail_lk;
+static volatile long trail_owner = -1;
+static volatile unsigned long trail_nest;
+
+static void trail_lock(void)
+{
+    if (trail_owner == (long)cpu_id()) {
+        trail_nest++;
+        return;
+    }
+    for (;;) {
+        unsigned long v;
+
+        __asm__ volatile("ldaxr %0, [%1]" : "=r"(v) : "r"(&trail_lk));
+        if (!v) {
+            unsigned long ok;
+
+            __asm__ volatile("stxr %w0, %w2, [%1]"
+                             : "=&r"(ok)
+                             : "r"(&trail_lk), "r"(1UL));
+            if (!ok) {
+                trail_owner = (long)cpu_id();
+                trail_nest = 1;
+                return;
+            }
+        }
+        __asm__ volatile("wfe");
+    }
+}
+
+static void trail_unlock(void)
+{
+    if (--trail_nest == 0UL) {
+        trail_owner = -1;
+        __asm__ volatile("stlr %0, [%1]" :: "r"(0UL), "r"(&trail_lk));
+        __asm__ volatile("sev");
+    }
+}
 
 void trail_add(u32 ev, u64 a, u64 b)
 {
-    struct trail_slot *s = &trail[trail_h++ % TRAIL_N];
+    struct trail_slot *s;
 
+    trail_lock();
+    s = &trail[trail_h % TRAIL_N];
+    trail_h++;
     s->cpu = cpu_id();
     s->ev = ev;
     s->a = a;
     s->b = b;
+    trail_unlock();
 }
 
-void vm_trail_dump(void)
+void vm_trail_dump(u32 n)
 {
-    u32 i;
+    u32 i, start, h;
 
+    /* 站25 评审修真:头快照——活写者(~600 ev/s)使逐次重读
+     * trail_h 的循环界可"追环不止"(全量 dump 在持续负载下
+     * 永不收敛);快照一次,界死,慢串口下丢新不丢旧。 */
+    h = trail_h;
+    /* 站25 评审修真(b 腿):证据行整行持锁——旧版一行 ~11 个独立
+     * 锁片段,vm1/vm2 靴流冲刷行可合法插入片段间,512 行现场撕碎
+     * (站22A "判据行不许串字"同律的漏网裸奔者)。console 锁按
+     * owner 递归,内层 puts/putdec/puthex 复入零成本;锁粒度=行
+     * (非整场 dump——16K 行全量锁会把他客冲刷饿死成 [54] 类雷)。 */
+    console_lock();
     console_puts("vmtrail: h=");
-    util_putdec(trail_h);
+    util_putdec(h);
     console_puts("\n");
-    if (trail_h > TRAIL_N)
-        i = trail_h - TRAIL_N;           /* 环已覆写:只余最近 TRAIL_N 条 */
+    console_unlock();
+    if (h > TRAIL_N)
+        i = h - TRAIL_N;                 /* 环已覆写:只余最近 TRAIL_N 条 */
     else
         i = 0;
-    for (; i < trail_h; i++) {
+    start = i;
+    if (n && h - i > n)
+        start = h - n;                   /* 站25:只要最近 n 条 */
+    for (i = start; i < h; i++) {
         struct trail_slot *s = &trail[i % TRAIL_N];
 
+        console_lock();
         console_puts("  #");
         util_putdec(i);
         console_puts(" cpu");
@@ -470,6 +544,7 @@ void vm_trail_dump(void)
         console_puts(" b=");
         console_puthex(s->b);
         console_puts("\n");
+        console_unlock();
     }
 }
 
@@ -534,7 +609,11 @@ static bool pump_run_vcpu(u32 id, u32 vi)
          * 期、目标先停泊后进场的竞态里,IPI 搁浅在软件挂起位,
          * 取走只发生在进场路径,此复查不看即死锁(主核 csd 自旋
          * 等 ack + 副核 tickless 空闲睡 = 整靴冻死,实测);TIMER
-         * 停泊者早醒无害,进场照装 ctx 定时器,拍不丢。 */
+         * 停泊者早醒无害,进场照装 ctx 定时器,拍不丢。
+         * 站25 收尾修真:时钟读后置——mrs CNTVCT 是 TCG 时钟查询,
+         * 旧位每泵圈无条件付读,RX/never-armed 泊帧的自旋泵在四核
+         * 世界里把它烧成模拟器热耗面(普查取证窗实测);后置到
+         * armed TIMER 泊帧才读,语义不变(纯门控重排)。 */
         if (vgic_sgi_pending(&vm->vgic, vi) ||
             /* 站二十:vSPI33/35 归 vcpu0 面(19D 注入已 vi==0 定向,
              * DTB 中断路由的诚实镜像)——复查唤醒必须同面,否则共享
@@ -551,6 +630,49 @@ static bool pump_run_vcpu(u32 id, u32 vi)
               (virtio_irq_ready(vm) &&
                vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO)))))
             v->wait_state = 0UL;
+        else if (v->wait_reason == VCPU_WAIT_TIMER &&
+                 (v->vtimer_ctl & 1UL)) {
+            u64 now_pump;
+
+            __asm__ volatile("mrs %0, cntvct_el0" : "=r"(now_pump));
+            if (v->vtimer_cval > now_pump)
+                return false;              /* armed 未到点:续泊 */
+            /* 站25C:泵扫级 vtimer 兜底臂(pending⇒runnable 不变量
+             * 的 vtimer 面)。旧况:泊定 TIMER 帧的唤醒只押 26/27
+             * IRQ 驱动的 sweep——介入运行者(他 VM 的片)进场装回
+             * 自己的 ctx 即覆写本核物理线,泊者挂起的 27 蒸发,
+             * 唤醒迟至 1Hz 26 扫描 = tick 迟到 ≤1s(µs 应得)。
+             * 泵扫每圈直查 saved cval(µs 级,泊位帧才付此读),
+             * 唤醒迟到 ≤1 泵圈;置 ws=2 同 sweep——WOKE 专属
+             * vtimer 注入块(下)照走,guest 认账重装闭环。
+             * 与 sweep 双醒幂等(ws!=1 即跳);不看裸 cval 过期
+             * (ctl&1 同守,防 never-armed 客的陈 cval 热自旋
+             * ——站二十四教训)。
+             * 评审修真:热活锁上界——consume-fail 帧(guest 收注入
+             * 却 IRQ_NONE 不重装,cval 原地不动)本臂会每泵圈再
+             * 醒;同 cval 连醒 2000 次即判死循环,停醒+一行标记
+             * (唯一可达坏类的绊线),cval 变即清零(健康路径
+             * guest 每拍重装,cval 恒前进,计数恒清)。 */
+            u16 slot = (u16)(id * ESHINE_MAX_VCPUS + vi);
+
+            if (wake_retries_cval[slot] != v->vtimer_cval) {
+                wake_retries_cval[slot] = v->vtimer_cval;
+                wake_retries[slot] = 0;
+            }
+            if (++wake_retries[slot] > 2000) {
+                /* 站25 评审修真(b 腿同案):标记行整行持锁,内层
+                 * puts/putdec 复入零成本。 */
+                console_lock();
+                console_puts("CARM-STALL: vm=");
+                util_putdec(id);
+                console_puts(".");
+                util_putdec(vi);
+                console_puts(" cval frozen (consume-fail face)\n");
+                console_unlock();
+                return false;          /* 停醒:证物交 verify 自动取证 */
+            }
+            v->wait_state = 2UL;
+        }
         else {
             return false;
         }
