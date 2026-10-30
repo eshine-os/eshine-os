@@ -209,7 +209,11 @@ RX 所有权（`sched_console_owner` = vcpu 指针，NULL=宿主）：前台模�
 （`vmconsole <id>` 后不再按 WAIT 原因自动归还——真 Linux 壳恒
 250Hz armed，timer 睡即被收台则 owner 形同虚设，实测；归还三口 =
 `vmconsole host` / **逃生字符 0x1d（Ctrl-]）**/ VM 死亡；裸机客另有
-host HVC#4 自报）。**站二十：TX 前台判定按 VM 对齐**——vuart 陷阱
+host HVC#4 自报）；**站二十六：控制台快捷键**——`Ctrl-^(0x1e)`
+前缀 + `0|1|2` 直切 vm / `h` 回宿主，双击字面直递；选型避雷：0x1d
+逃生契约不动、0x1c 是 SIGQUIT 不可偷、0x1e 无 TTY 信号绑定且与
+0x1d 字节相邻；快捷键与 `vmconsole` 命令共用同一切换函数=零行为
+差异。**站二十：TX 前台判定按 VM 对齐**——vuart 陷阱
 的 fg 旗（mmio_dispatch）从"v==owner"改为"VM 相等"：双 vCPU 客
 的进程上下文会被内核调度漂到任一 vCPU（vm2 的 sh 实测漂到 vcpu1），
 旧比法把业主 VM 自家另一帧的输出判成后台，无换行的 busybox 提示符
@@ -322,7 +326,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（79 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（80 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -408,7 +412,7 @@ token 双回显 → cat /proc/cpuinfo CPU part 0xd07 用户态自证 →
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-79 步手动走查清单。
+80 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

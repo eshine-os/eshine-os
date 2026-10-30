@@ -19,11 +19,13 @@ static void cmd_help(void)
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
     console_puts("          vmrun <id> vmconsole <id|host> vmstat vmrx vmtrail [N] vmkill <id>\n");
     console_puts("    (前台会话期 Ctrl-](0x1d)=宿主夺回控制台)\n");
+    console_puts("    (会话期 Ctrl-^(0x1e) 前缀=控制台快捷键:0|1|2 切 VM,\n");
+    console_puts("     h 回宿主,Ctrl-^ 双击=字面直递;未绑定键=取消照常)\n");
     console_puts("guest:    selftest sleep [N] spin dwrite dread fault echo <text> host exit\n");
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (79 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (80 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -74,9 +76,10 @@ static void cmd_help(void)
     console_puts("    (0x1d Ctrl-] = 宿主夺回;owner 不再自动归还)\n");
     console_puts("  echo TOKEN / cat /proc/cpuinfo(cpuinfo 0xd07) [74-75]\n");
     console_puts("  cat /proc/cpuinfo -> processor 1(双核用户态)  [76]\n");
-    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [77]\n");
-    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [78]\n");
-    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [79]\n");
+    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [77]\n");
+    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [78]\n");
+    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [79]\n");
+    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [80]\n");
 }
 
 static void cmd_version(void)
@@ -127,6 +130,60 @@ static u32 parse_id(const char *s, bool *ok)
     *ok = false;
     return 0;
 }
+
+/* 站26:console 切换公共体——vmconsole 命令与 Ctrl-^ 快捷键共用
+ * 同一函数=零行为差异(状态门/owner 落位/唤醒/消息/冲刷次序全同;
+ * 被拒不夺台=当前 owner 原位)。 */
+static void console_to_host(void)
+{
+    if (sched_console_owner) {
+        struct eshine_vm *vm = vm_of_vcpu(sched_console_owner);
+
+        vm->vu.flush_at = 0;        /* 站23C:即冲口同步熄武装(评审 c) */
+        vuart_tx_flush(&vm->vu, (u32)vm->vmid);
+    }
+    sched_console_owner = NULL;
+    console_puts("console -> host\n");
+}
+
+static void console_to_vm(u32 id)
+{
+    struct eshine_vm *vm = vm_of_vcpu(vm_vcpu(id));
+
+    /* 状态门(第六站 bug 修复):只有 RUNNING 的 VM 消费输入,
+     * owner 指给非 RUNNING 的 VM = 所有输入入环无人读,且
+     * vmconsole host 自救同样被路由——终端永久锁死。默认拒绝,
+     * 宿主命令面永远可用(vmconsole host 无条件)。 */
+    if (vm->state != VM_RUNNING) {
+        console_puts("vm");
+        util_putdec(id);
+        console_puts(": denied: not running (vmrun first)\n");
+        return;
+    }
+    /* 新 owner 若在 WAIT 即唤醒(RX 等待者输入已可入环;
+     * TIMER 等待者醒后自查 wake_count,空转一轮无害)。 */
+    sched_console_owner = vm_vcpu(id);
+    if (sched_console_owner->wait_state == 1UL)
+        sched_console_owner->wait_state = 0UL;
+    console_puts("console -> vm\n");
+    /* 站20:半行冲刷移到 owner 落位与切换消息之后——旧序
+     * (先冲再切)下,三核并发里新 owner 的在途半行会被
+     * "console -> vm" 消息从中间劈开(busybox 提示符
+     * "~ # " 无换行,恰跨切换即碎,门禁 [62] 锚实测)。
+     * 新序:消息先行,半行整体随冲刷(或首笔 fg 直写)在后
+     * 面世,字节序恒完整。 */
+    vm->vu.flush_at = 0;            /* 站23C:即冲口同步熄武装(评审 c) */
+    vuart_tx_flush(&vm->vu, id);
+}
+
+/* 站26:控制台快捷键前缀态——Ctrl-^(0x1e)+ 0|1|2(切 vm)/h(回
+ * 宿主);双击=字面 0x1e 递当前 owner。选型见站 spec:0x1d 逃生
+ * 契约不动,0x1c 是 SIGQUIT 不可偷,0x1e 与 0x1d 字节相邻且无
+ * TTY 信号绑定(Linux tty/readline/vi 全不用,vm0 壳 0x20-0x7e
+ * 过滤器零成本),前缀键有 QEMU Ctrl-A/tmux/screen 先例。
+ * 语义(QEMU 同律):未绑定键=前缀取消、本键照常处理(误触零
+ * 损坏);0x1d 逃生优先级恒高(前缀态随夺回清零)。 */
+static char vmkey_pending;
 
 static void dispatch(char *line)
 {
@@ -203,49 +260,15 @@ static void dispatch(char *line)
             console_puts("usage: vmrun <id>\n");
     } else if (strncmp(line, "vmconsole", 64) == 0) {
         if (strncmp(args, "host", 64) == 0) {
-            if (sched_console_owner) {
-                /* 切换前冲原 owner 半行(按其积累时 tag),免前缀串味 */
-                struct eshine_vm *vm = vm_of_vcpu(sched_console_owner);
-
-                vm->vu.flush_at = 0;    /* 站23C:即冲口同步熄武装(评审 c) */
-                vuart_tx_flush(&vm->vu, (u32)vm->vmid);
-            }
-            sched_console_owner = NULL;
-            console_puts("console -> host\n");
+            console_to_host();
         } else {
             bool ok;
             u32 id = parse_id(args, &ok);
 
-            if (ok && id < ESHINE_MAX_VMS) {
-                struct eshine_vm *vm = vm_of_vcpu(vm_vcpu(id));
-
-                /* 状态门(第六站 bug 修复):只有 RUNNING 的 VM 消费输入,
-                 * owner 指给非 RUNNING 的 VM = 所有输入入环无人读,且
-                 * vmconsole host 自救同样被路由——终端永久锁死。默认拒绝,
-                 * 宿主命令面永远可用(vmconsole host 无条件)。 */
-                if (vm->state != VM_RUNNING) {
-                    console_puts("vm");
-                    util_putdec(id);
-                    console_puts(": denied: not running (vmrun first)\n");
-                } else {
-                    /* 新 owner 若在 WAIT 即唤醒(RX 等待者输入已可入环;
-                     * TIMER 等待者醒后自查 wake_count,空转一轮无害)。 */
-                    sched_console_owner = vm_vcpu(id);
-                    if (sched_console_owner->wait_state == 1UL)
-                        sched_console_owner->wait_state = 0UL;
-                    console_puts("console -> vm\n");
-                    /* 站20:半行冲刷移到 owner 落位与切换消息之后——旧序
-                     * (先冲再切)下,三核并发里新 owner 的在途半行会被
-                     * "console -> vm" 消息从中间劈开(busybox 提示符
-                     * "~ # " 无换行,恰跨切换即碎,门禁 [62] 锚实测)。
-                     * 新序:消息先行,半行整体随冲刷(或首笔 fg 直写)在后
-                     * 面世,字节序恒完整。 */
-                    vm->vu.flush_at = 0;    /* 站23C:即冲口同步熄武装(评审 c) */
-                    vuart_tx_flush(&vm->vu, id);
-                }
-            } else {
+            if (ok && id < ESHINE_MAX_VMS)
+                console_to_vm(id);      /* 站26:公共体(快捷键同源) */
+            else
                 console_puts("usage: vmconsole <id|host>\n");
-            }
         }
     } else if (strncmp(line, "vmstat", 64) == 0) {
         cmd_vmstat();
@@ -283,7 +306,8 @@ void shell_run(void)
              * 惯例)。owner 改显式接管后(泵撤 TIMER 自动归还),被
              * 占控台的唯一解:裸机客有 host(HVC#4)自报归还,真 Linux
              * 没有——没有它,壳用户永远进不去(owner 总被 tick 睡眠
-             * 收走);有了它,卡死的 owned 客也夺不宿主的面。 */
+             * 收走);有了它,卡死的 owned 客也夺不宿主的面。
+             * 站26:逃生优先级恒高于快捷键前缀态(前缀态随夺回清零)。 */
             if (sched_console_owner && c == 0x1d) {
                 struct eshine_vm *vm = vm_of_vcpu(sched_console_owner);
 
@@ -291,6 +315,27 @@ void shell_run(void)
                 vuart_tx_flush(&vm->vu, (u32)vm->vmid);
                 sched_console_owner = NULL;
                 console_puts("console -> host (escape)\n");
+                vmkey_pending = 0;
+                continue;
+            }
+            /* 站26:控制台快捷键前缀机(语义 QEMU Ctrl-A 同律)——
+             * pending:0|1|2 切 vm,h 回宿主;其余一律清 pending 后
+             * fall-through 本键照常处理(未绑定=取消;双击 0x1e=
+             * 字面,落回下方 owner 推环路径,复用站 24 推环唤醒
+             * 不变量全路径零复制;owner 缺席时字面无处递,按未绑定
+             * 同律进宿主行编辑——误触零损坏,不吞字节)。 */
+            if (vmkey_pending) {
+                vmkey_pending = 0;
+                if (c >= '0' && c < (char)('0' + ESHINE_MAX_VMS)) {
+                    console_to_vm((u32)(c - '0'));
+                    continue;
+                }
+                if (c == 'h') {
+                    console_to_host();
+                    continue;
+                }
+            } else if (c == 0x1e) {
+                vmkey_pending = 1;
                 continue;
             }
             if (sched_console_owner) {
