@@ -4,6 +4,7 @@
 #define RTOS_H
 
 typedef unsigned long long u64;
+typedef long long s64;
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
@@ -169,6 +170,21 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define ES_NR_exec_setup  521   /* 扩展:7-参帧改写式 exec(内核不读镜像) */
 #define RT_FORK_MAGIC     0x464B4348ULL  /* "FKCH":fork 子进程返回值自证 */
 
+/* 站三十:消息 IPC 号面(QNX 镜像三段语义走扩展段——非 Linux 号,
+ * 诚实独立;参考实现形状:三段消息/pulse/rcvid 复合/abort+UNBLOCK) */
+#define ES_NR_ch_create    530   /* 通道建立(flags) */
+#define ES_NR_ch_destroy   531
+#define ES_NR_name_attach  532   /* 命名登记(路径, chid) */
+#define ES_NR_name_detach  533
+#define ES_NR_name_open    534   /* 层级化查名->coid(连接实体+引用计数) */
+#define ES_NR_conn_detach  535   /* coid 引用减一(0 即自由) */
+#define ES_NR_msg_send     536   /* 三段之一:SEND(sbuf->内核槽)+等回执 */
+#define ES_NR_msg_recv     537   /* 三段之二:RECV(阻塞/超时;脉冲 rcvid=0) */
+#define ES_NR_msg_reply    538   /* 三段之三:REPLY(status 即发送者返回值) */
+#define ES_NR_msg_pulse    539   /* 异步脉冲 8B(code+value),不阻塞 */
+#define RT_CHF_UNBLOCK     1u    /* abort 面递送 UNBLOCK 脉冲(系统码负) */
+#define RT_PULSE_UNBLOCK   (-1)  /* 参考实现 PULSE_CODE_UNBLOCK 镜像 */
+
 /* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
  * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
 enum {
@@ -177,7 +193,7 @@ enum {
     RT_U_QUEUEDEMO, RT_U_SMPDEMO, RT_U_IPIDEMO, RT_U_FPSMP,
     RT_U_TMODEMO, RT_U_SWTDEMO, RT_U_IRQDEMO, RT_U_LOWDEMO,
     RT_U_STKDEMO, RT_U_STACKCHECK, RT_U_OVERFLOW, RT_U_FPSTAT,
-    RT_U_HB, RT_U_SLEEP,
+    RT_U_HB, RT_U_SLEEP, RT_U_IPCDEMO, RT_U_PULSEDEMO, RT_U_ABORTDEMO,
 };
 
 /* ES_NR_sysinfo 的共享结构(user<->kernel) */
@@ -220,6 +236,96 @@ struct rt_proc {
     struct rt_task *leader;
 };
 typedef struct rt_proc rt_proc_t;
+
+/* rt_sync.c(第十七站):同步原语——每对象 FIFO 等待队列(参考RTOS 公开
+ * 设计为基准的最小形态:唤醒队头,非广播)。take 重检环(醒后自己复核
+ * 条件),give 让渡+唤醒队头,被醒者更高优先则立即让位;
+ * "唤醒=允许重试,非授予"。 */
+typedef struct rt_sem {
+    long count;                   /* 可用资源数 */
+    rt_task_t *wq_head;           /* 等待队列(单向,尾链) */
+    rt_task_t *wq_tail;
+} rt_sem_t;
+
+/* ---- 站三十:三段消息 IPC(rt_msg.c;参考实现 同步队列件 的站内收编) ---- */
+#define RT_CH_MAX        4u
+#define RT_CONN_MAX      8u
+#define RT_MSGSLOT_MAX   8u
+#define RT_NAME_MAX      8u
+#define RT_MSG_BYTES     64u    /* 短消息面(参考实现 1024B 收编;长消息
+                                 * 映射=跨址空间窗,v0 内核槽中继,VM_SET
+                                 * 单拷窗=跨 VM 站后议) */
+#define RT_NAME_PATH     48u
+
+/* RECV 出参(用户/内核同构;syscall 侧整结构拷出) */
+struct rt_recvinfo {
+    u64 rcvid;                  /* 0=脉冲(QNX/参考实现镜像) */
+    u32 len;
+    u32 pad;
+    s64 code;                   /* 脉冲码(系统负/用户≥0) */
+    u64 value;
+};
+
+struct rt_msg {
+    u32 used;
+    u32 state;                  /* 0=QUEUED 1=RECEIVED(服务器持有) */
+    u32 is_pulse;               /* 单向 8B,无回执 */
+    u32 aborted;                /* 发送者超时先走:REPLY 静默收尾 */
+    int sender_pid;
+    rt_task_t *sender;          /* NULL=脉冲 */
+    u32 sprio;                  /* 到达优先级序+提权依据 */
+    s64 code;                   /* 脉冲码(系统负/用户>=0) */
+    u64 value;                  /* 脉冲值 */
+    u32 len;
+    char data[RT_MSG_BYTES];
+    rt_sem_t reply_sem;         /* 发送者等回执(1 槽) */
+    u32 rlen;
+    char rdata[RT_MSG_BYTES];
+    long status;                /* REPLY 携带,即发送者返回值 */
+};
+
+struct rt_chan {
+    u32 used;
+    u32 flags;
+    int owner_pid;
+    rt_sem_t msgs;              /* 到达面:RECV 阻塞/计数(站 17 机器) */
+    struct rt_msg *q[RT_MSGSLOT_MAX];  /* 到达队列(优先级序) */
+    u32 nq;
+};
+
+struct rt_conn {                /* 六差距①:coid 实体+引用计数 */
+    u32 used;
+    u32 refcnt;
+    int chid;
+    int owner_pid;
+};
+
+struct rt_name {                /* 命名登记(层级路径;平表+分段比较,
+                                 * 真层级树=站 31 命名空间) */
+    u32 used;
+    char path[RT_NAME_PATH];
+    int chid;
+};
+
+int  rt_msg_ch_create(u32 flags);
+int  rt_msg_ch_destroy(int chid);
+int  rt_msg_conn_attach(int chid);
+int  rt_msg_conn_detach(int coid);
+int  rt_msg_name_attach(const char *path, int chid);
+int  rt_msg_name_detach(const char *path);
+int  rt_msg_name_open(const char *path);
+long rt_msg_send(int coid, const void *sbuf, u32 slen,
+                 void *rbuf, u32 rlen, u64 ticks);
+long rt_msg_recv(int chid, void *buf, u32 buflen, u64 ticks,
+                struct rt_recvinfo *info);
+long rt_msg_reply(int chid, u64 rcvid, const void *rbuf, u32 rlen,
+                  long status);
+long rt_msg_pulse(int coid, s64 code, u64 value);
+/* demo 服务器/干扰任务(sys_demo 蹦床 spawn;体在 rt_msg.c) */
+void rt_msg_demo_server(void *arg);
+void rt_msg_demo_spinner(void *arg);
+void rt_msg_pulse_server(void *arg);
+void rt_msg_abort_server(void *arg);
 struct rt_proc *rt_proc_of(rt_task_t *t);  /* 任务->进程(NULL=内核) */
 int  rt_proc_create(rt_task_t *leader, struct rt_proc **out); /* CREATE 挂起态 */
 u64  rt_proc_ttbr(struct rt_proc *p);     /* 切换值 asid<<48|L0 */
@@ -313,15 +419,6 @@ void rt_frame_init(rt_task_t *t, void *stack_top, void (*entry)(void *), void *a
 u64 rt_daif_save(void);
 void rt_daif_load(u64 d);
 
-/* rt_sync.c(第十七站):同步原语——每对象 FIFO 等待队列(参考RTOS 公开
- * 设计为基准的最小形态:唤醒队头,非广播)。take 重检环(醒后自己复核
- * 条件),give 让渡+唤醒队头,被醒者更高优先则立即让位;
- * "唤醒=允许重试,非授予"。 */
-typedef struct rt_sem {
-    long count;                   /* 可用资源数 */
-    rt_task_t *wq_head;           /* 等待队列(单向,尾链) */
-    rt_task_t *wq_tail;
-} rt_sem_t;
 
 typedef struct rt_mutex {
     rt_task_t *owner;             /* 持锁者(递归判据) */

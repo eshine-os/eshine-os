@@ -91,6 +91,29 @@ static long sys3(long nr, long a, long b, long c)
     return x0;
 }
 
+/* 站30:六参裹(make send 的 coid/sbuf/slen/rbuf/rlen/timeout 恰满
+ * x0-x5——站 28 ABI 的六参上限,IPC 面即其首个满额用户) */
+static long sys6(long nr, long a, long b, long c, long d, long e, long f)
+{
+    register long x0 __asm__("x0") = a;
+    register long x1 __asm__("x1") = b;
+    register long x2 __asm__("x2") = c;
+    register long x3 __asm__("x3") = d;
+    register long x4 __asm__("x4") = e;
+    register long x5 __asm__("x5") = f;
+    register long x8 __asm__("x8") = nr;
+
+    /* x3-x5 已是入参,不得再列 clobber(与入参冲突,gcc 报错);
+     * 六参满额后剩余 caller-saved = x6-x18 照列 */
+    __asm__ volatile("svc #0" : "+r"(x0)
+                     : "r"(x1), "r"(x2), "r"(x3), "r"(x4),
+                       "r"(x5), "r"(x8)
+                     : "x6", "x7", "x9", "x10", "x11", "x12",
+                       "x13", "x14", "x15", "x16", "x17", "x18",
+                       "memory");
+    return x0;
+}
+
 /* x9-x11 caller-saved:ABI 约定跨调用不保(帧契约见 vec.S 注) */
 static void sys_puts(const char *s)
 {
@@ -218,6 +241,94 @@ static void cmd_exedemo(void)
     sys_puts("exec: NOT REACHED\n");     /* 帧已改写,此行不达 */
 }
 
+/* ---- 站30:IPC 客户端三命令(壳=用户态客户端,微内核形状本尊) ---- */
+
+static long ipc_open_wait(const char *path)
+{
+    long coid;
+    int i;
+
+    for (i = 0; i < 10; i++) {
+        coid = sys1(ES_NR_name_open, (long)path);
+        if (coid > 0)
+            return coid;
+        sys2(ES_NR_demo, RT_U_SLEEP, 1);
+    }
+    return coid;
+}
+
+static void cmd_ipcdemo(void)
+{
+    struct rt_sysinfo si;
+    long coid, v = 41, rv = 0, r;
+    u64 t0, t1;
+
+    sys2(ES_NR_demo, RT_U_IPCDEMO, 0);        /* spawn 服务器+干扰 */
+    coid = ipc_open_wait("/ipc/demo");
+    if (coid <= 0) {
+        sys_puts("ipcdemo: server not found\n");
+        return;
+    }
+    sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
+    t0 = si.tick;
+    /* 三段语义:返回值=REPLY status(0),回执数据落 rv——两者分家
+     * (曾共用一变量,内核回写 rv 后又被返回值覆写,reply 0 定谳) */
+    r = sys6(ES_NR_msg_send, coid, (long)&v, sizeof(v),
+             (long)&rv, sizeof(rv), 100);
+    sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
+    t1 = si.tick;
+    if (r == 0) {
+        sys_puts("ipcdemo: reply ");
+        sys_put_dec((u64)rv);
+        sys_puts(" dt=");
+        sys_put_dec(t1 - t0);
+        sys_puts(" ticks\n");
+    } else {
+        sys_puts("ipcdemo: send failed ");
+        sys_put_dec((u64)r);
+        sys_puts("\n");
+    }
+    sys1(ES_NR_conn_detach, coid);
+}
+
+static void cmd_pulsedemo(void)
+{
+    long coid;
+    int i;
+
+    sys2(ES_NR_demo, RT_U_PULSEDEMO, 0);     /* spawn 脉冲服务器 */
+    coid = ipc_open_wait("/ipc/pulse");
+    if (coid <= 0) {
+        sys_puts("pulsedemo: server not found\n");
+        return;
+    }
+    for (i = 0; i < 5; i++)
+        sys3(ES_NR_msg_pulse, coid, i, (long)i * 10);
+    sys_puts("pulsedemo: fired 5\n");
+    sys2(ES_NR_demo, RT_U_SLEEP, 1);        /* 让服务器排空+自报 */
+    sys1(ES_NR_conn_detach, coid);
+}
+
+static void cmd_abortdemo(void)
+{
+    long coid, r = 0, v = 1;
+
+    sys2(ES_NR_demo, RT_U_ABORTDEMO, 0);     /* spawn 占住服务器 */
+    coid = ipc_open_wait("/ipc/abort");
+    if (coid <= 0) {
+        sys_puts("abortdemo: server not found\n");
+        return;
+    }
+    r = sys6(ES_NR_msg_send, coid, (long)&v, sizeof(v),
+             (long)&r, sizeof(r), 30);        /* 30 拍无回执=超时面 */
+    if (r == -110)
+        sys_puts("abortdemo: send timed out (-110)\n");
+    else
+        sys_puts("abortdemo: unexpected reply\n");
+    sys2(ES_NR_demo, RT_U_SLEEP, 1);        /* 服务器收 UNBLOCK 自报 */
+    sys1(ES_NR_conn_detach, coid);
+}
+
 /* ---- 命令面(输出串与原壳逐字一致——门禁判据锚) ---- */
 
 static void shell_line(char *line)
@@ -278,6 +389,12 @@ static void shell_line(char *line)
         cmd_mmapdemo();
     } else if (streq(line, "exedemo")) {
         cmd_exedemo();
+    } else if (streq(line, "ipcdemo")) {
+        cmd_ipcdemo();
+    } else if (streq(line, "pulsedemo")) {
+        cmd_pulsedemo();
+    } else if (streq(line, "abortdemo")) {
+        cmd_abortdemo();
     } else if (starts(line, "spawn ")) {
         sys3(ES_NR_demo, RT_U_SPAWN, (long)(line + 6), 0);
     } else if (starts(line, "sleep")) {
@@ -303,7 +420,7 @@ static void shell_line(char *line)
         sys_puts("\n");
     } else if (line[0]) {
         sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
-                 " | forkdemo | mmapdemo | exedemo"
+                 " | forkdemo | mmapdemo | exedemo | ipcdemo | pulsedemo | abortdemo"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");

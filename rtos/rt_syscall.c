@@ -227,6 +227,114 @@ static long sys_exec_setup(u64 *frame)
     return sys_exec_setup_impl(frame, FR(0), FR(1), FR(2), 0, 0, 0);
 }
 
+/* 站三十:消息 IPC 面(内核任务直调 rt_msg 层,本面=EL0 客户端
+ * 通道;uaccess 纪律=access_ok+拷贝,同站 28) */
+#define ES_EEXIST 17
+#define ES_ESRCH   3
+
+static int copy_in_str(char *dst, u64 uptr, u32 max)
+{
+    u32 i = 0;
+
+    if (!access_ok((const void *)uptr, max))
+        return -1;
+    for (; i + 1 < max; i++) {
+        dst[i] = ((const char *)uptr)[i];
+        if (!dst[i])
+            return 0;
+    }
+    dst[max - 1] = '\0';
+    return 0;
+}
+
+static long sys_ch_create(u64 *frame)
+{
+    return rt_msg_ch_create((u32)FR(0));
+}
+
+static long sys_ch_destroy(u64 *frame)
+{
+    return rt_msg_ch_destroy((int)FR(0));
+}
+
+static long sys_name_attach(u64 *frame)
+{
+    char kpath[48];
+
+    if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
+        return -ES_EFAULT;
+    return rt_msg_name_attach(kpath, (int)FR(1));
+}
+
+static long sys_name_detach(u64 *frame)
+{
+    char kpath[48];
+
+    if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
+        return -ES_EFAULT;
+    return rt_msg_name_detach(kpath);
+}
+
+static long sys_name_open(u64 *frame)
+{
+    char kpath[48];
+
+    if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
+        return -ES_EFAULT;
+    return rt_msg_name_open(kpath);
+}
+
+static long sys_conn_detach(u64 *frame)
+{
+    return rt_msg_conn_detach((int)FR(0));
+}
+
+static long sys_msg_send(u64 *frame)
+{
+    u64 sbuf = FR(1), rbuf = FR(3);
+    u32 slen = (u32)FR(2), rlen = (u32)FR(4);
+
+    if (slen && !access_ok((const void *)sbuf, slen))
+        return -ES_EFAULT;
+    if (rlen && !access_ok((void *)rbuf, rlen))
+        return -ES_EFAULT;
+    return rt_msg_send((int)FR(0), (const void *)sbuf, slen,
+                       (void *)rbuf, rlen, FR(5));
+}
+
+static long sys_msg_recv(u64 *frame)
+{
+    u64 buf = FR(1);
+    u32 buflen = (u32)FR(2);
+    struct rt_recvinfo ki, *uinfo = (struct rt_recvinfo *)FR(4);
+    long r;
+
+    if (buflen && !access_ok((void *)buf, buflen))
+        return -ES_EFAULT;
+    if (!access_ok(uinfo, sizeof(ki)))
+        return -ES_EFAULT;
+    r = rt_msg_recv((int)FR(0), (void *)buf, buflen, FR(3), &ki);
+    if (r == 0)
+        *uinfo = ki;
+    return r;
+}
+
+static long sys_msg_reply(u64 *frame)
+{
+    u64 rbuf = FR(2);
+    u32 rlen = (u32)FR(3);
+
+    if (rlen && !access_ok((const void *)rbuf, rlen))
+        return -ES_EFAULT;
+    return rt_msg_reply((int)FR(0), FR(1), (const void *)rbuf, rlen,
+                        (long)FR(4));
+}
+
+static long sys_msg_pulse(u64 *frame)
+{
+    return rt_msg_pulse((int)FR(0), (s64)FR(1), FR(2));
+}
+
 static long sys_hvc(u64 *frame)
 {
     long fn = (long)FR(0);          /* 首参 x0(壳 sys1 映射) */
@@ -380,6 +488,24 @@ static long sys_demo(u64 *frame)
     case RT_U_SLEEP:
         rt_sleep_ticks((u64)FR(1) * RT_HZ);
         break;
+    case RT_U_IPCDEMO:
+        /* 站30:服务器(prio 20)+占先干扰(prio 6,窗 30 拍)。
+         * 干扰不给让路服务器就轮不到——提权让 recv 者越它而行,
+         * 客户端回复快返=传播活证(门禁 Δ 判据)。 */
+        if (!rt_task_create("ipcspin", rt_msg_demo_spinner,
+                            (void *)30UL, 6))
+            rt_puts("ipc: spinner full\n");
+        if (!rt_task_create("ipcsrv", rt_msg_demo_server, NULL, 20))
+            rt_puts("ipc: server full\n");
+        break;
+    case RT_U_PULSEDEMO:
+        if (!rt_task_create("pulsesrv", rt_msg_pulse_server, NULL, 8))
+            rt_puts("ipc: pulse server full\n");
+        break;
+    case RT_U_ABORTDEMO:
+        if (!rt_task_create("abortsrv", rt_msg_abort_server, NULL, 8))
+            rt_puts("ipc: abort server full\n");
+        break;
     default:
         return -ES_EINVAL;
     }
@@ -415,6 +541,17 @@ void rt_syscall_init(void)
     table[ES_NR_wait4]      = sys_wait4;
     table[ES_NR_fork]       = sys_fork;
     table[ES_NR_exec_setup] = sys_exec_setup;
+    /* 站30:消息 IPC 面 */
+    table[ES_NR_ch_create]   = sys_ch_create;
+    table[ES_NR_ch_destroy]  = sys_ch_destroy;
+    table[ES_NR_name_attach] = sys_name_attach;
+    table[ES_NR_name_detach] = sys_name_detach;
+    table[ES_NR_name_open]   = sys_name_open;
+    table[ES_NR_conn_detach] = sys_conn_detach;
+    table[ES_NR_msg_send]    = sys_msg_send;
+    table[ES_NR_msg_recv]    = sys_msg_recv;
+    table[ES_NR_msg_reply]   = sys_msg_reply;
+    table[ES_NR_msg_pulse]   = sys_msg_pulse;
 }
 
 void rt_syscall_dispatch(u64 *frame)
