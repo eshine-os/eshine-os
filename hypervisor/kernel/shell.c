@@ -315,6 +315,10 @@ void shell_run(void)
                 vuart_tx_flush(&vm->vu, (u32)vm->vmid);
                 sched_console_owner = NULL;
                 console_puts("console -> host (escape)\n");
+                /* 站26 补:夺回即印提示符——回宿主必有 eshine> 的统一
+                 * 心智模型(旧版逃生后无提示符,交互者无从判活;
+                 * verify 六处 eshine> 锚均不落逃生窗后,加印零判据风险) */
+                console_puts("eshine> ");
                 vmkey_pending = 0;
                 continue;
             }
@@ -332,6 +336,11 @@ void shell_run(void)
                 }
                 if (c == 'h') {
                     console_to_host();
+                    /* 站26 补:与逃生路同律,回宿主即印提示符
+                     *(用户巡壳实测报告"最后界面卡住"——逃生/h 两路
+                     * 无提示符的静止屏是卡死观感的主因之一;命令路径
+                     * 的提示符由 dispatch 流程补,勿入公共函数免双印) */
+                    console_puts("eshine> ");
                     continue;
                 }
             } else if (c == 0x1e) {
