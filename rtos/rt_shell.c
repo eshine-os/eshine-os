@@ -91,6 +91,24 @@ static long sys3(long nr, long a, long b, long c)
     return x0;
 }
 
+/* 站32:四参裹(futex 的 uaddr/op/val/timeout;x3 入参同 sys6
+ * 纪律:入参不得再列 clobber,剩余 caller-saved x4-x18 照列) */
+static long sys4(long nr, long a, long b, long c, long d)
+{
+    register long x0 __asm__("x0") = a;
+    register long x1 __asm__("x1") = b;
+    register long x2 __asm__("x2") = c;
+    register long x3 __asm__("x3") = d;
+    register long x8 __asm__("x8") = nr;
+
+    __asm__ volatile("svc #0" : "+r"(x0)
+                     : "r"(x1), "r"(x2), "r"(x3), "r"(x8)
+                     : "x4", "x5", "x6", "x7", "x9", "x10", "x11",
+                       "x12", "x13", "x14", "x15", "x16", "x17",
+                       "x18", "memory");
+    return x0;
+}
+
 /* 站30:六参裹(make send 的 coid/sbuf/slen/rbuf/rlen/timeout 恰满
  * x0-x5——站 28 ABI 的六参上限,IPC 面即其首个满额用户) */
 static long sys6(long nr, long a, long b, long c, long d, long e, long f)
@@ -331,6 +349,98 @@ static void cmd_abortdemo(void)
 
 /* ---- 命令面(输出串与原壳逐字一致——门禁判据锚) ---- */
 
+/* ---- 站32:signal+futex 客户端 ---- */
+
+static u32 fx_word = 1;     /* futex 键字(.user 数据,fork 时随页拷) */
+
+static void cmd_futexdemo(void)
+{
+    struct rt_sysinfo si;
+    long r;
+    u64 t0, t1;
+
+    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAIT, 2, 10);
+    sys_puts(r == -11 ? "futexdemo: mismatch -> -EAGAIN ok\n"
+                      : "futexdemo: mismatch FAIL\n");
+    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAKE, 1, 0);
+    sys_puts(r == 0 ? "futexdemo: wake no-waiters -> 0 ok\n"
+                    : "futexdemo: wake FAIL\n");
+    /* 真实等待->唤醒对:扑克代演同址空间第二执行流(真 threads=
+     * 站 33+);扑克只做队列唤醒,不碰用户字 */
+    sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
+    t0 = si.tick;
+    sys3(ES_NR_demo, RT_U_FUPOKE, (long)&fx_word, 30);
+    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAIT, 1, 200);
+    sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
+    t1 = si.tick;
+    if (r == 0) {
+        sys_puts("futexdemo: poke pair r=0 dt=");
+        sys_put_dec(t1 - t0);
+        sys_puts("\n");
+    } else {
+        sys_puts("futexdemo: poke pair FAIL\n");
+    }
+    /* 超时真阻塞:无人唤醒,60 拍到点 */
+    sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
+    t0 = si.tick;
+    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAIT, 1, 60);
+    sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
+    t1 = si.tick;
+    if (r == -110) {
+        sys_puts("futexdemo: timeout r=-110 dt=");
+        sys_put_dec(t1 - t0);
+        sys_puts("\n");
+    } else {
+        sys_puts("futexdemo: timeout FAIL\n");
+    }
+}
+
+/* handler:在子进程自身用户上下文执行(投递帧手术),末尾显式
+ * rt_sigreturn——svc 不归:内核整帧回拷,eret 直落回打断点。 */
+static void sig_handler(long sig)
+{
+    sys_puts("sig: handler ran sig=");
+    sys_put_dec((u64)sig);
+    sys_puts("\n");
+    sys0(ES_NR_rt_sigreturn);
+}
+
+static void cmd_sigdemo(void)
+{
+    long pid, r, st = 0;
+    static u32 sig_word;
+
+    sys2(ES_NR_rt_sigaction, 10, (long)sig_handler);
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {   /* COPY_UCONTEXT 子支(站 29
+                                         * 契约:子返魔数非 0——首版
+                                         * 写 pid==0 子落穿父路径,
+                                         * 魔数当 pid 永挂,冒烟定谳) */
+        /* 子:handler 已继承(eager 拷贝同 VA,地址语义红利);
+         * 挂 futex 静候父信号——跨进程打断=EINTR 判据面 */
+        r = sys4(ES_NR_futex, (long)&sig_word, RT_FUTEX_WAIT, 0, 400);
+        /* 取证:数值面先于三元(r 似被搅,字面非本函数任一支) */
+        if (r < 0) {
+            sys_puts("sig: futex r=-");
+            sys_put_dec((u64)(-r));
+            sys_puts("\n");
+        } else {
+            sys_puts("sig: futex r=");
+            sys_put_dec((u64)r);
+            sys_puts("\n");
+        }
+        sys_puts(r == -4 ? "sig: futex -> -EINTR ok\n"
+                         : "sig: futex FAIL\n");
+        sys1(ES_NR_exit, 7);
+    }
+    sys_puts("sigdemo: child waiting\n");
+    sys3(ES_NR_demo, RT_U_SLEEP, 1, 0);      /* 1s:子先挂上 */
+    sys2(ES_NR_kill, pid, 10);
+    pid = sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts(st == 7 ? "sigdemo: reaped code=7 ok\n"
+                     : "sigdemo: reap FAIL\n");
+}
+
 /* 站31:fd=通道三元组走查——open/read/close 全走 resmgr 服务器
  * (fd 层->三段消息->ramfs);EOF(status=0)收口,字节数自证。 */
 static void fd_dump(const char *path, const char *tag)
@@ -438,6 +548,10 @@ static void shell_line(char *line)
         cmd_abortdemo();
     } else if (streq(line, "fddemo")) {
         cmd_fddemo();
+    } else if (streq(line, "futexdemo")) {
+        cmd_futexdemo();
+    } else if (streq(line, "sigdemo")) {
+        cmd_sigdemo();
     } else if (starts(line, "spawn ")) {
         sys3(ES_NR_demo, RT_U_SPAWN, (long)(line + 6), 0);
     } else if (starts(line, "sleep")) {
@@ -464,6 +578,7 @@ static void shell_line(char *line)
     } else if (line[0]) {
         sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
                  " | forkdemo | mmapdemo | exedemo | ipcdemo | pulsedemo | abortdemo | fddemo"
+                 " | futexdemo | sigdemo"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");

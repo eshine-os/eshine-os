@@ -423,6 +423,18 @@ void rt_proc_reap(struct rt_proc *p)
     p->used = 0;
 }
 
+/* 站三十二:活进程查(kill 面;ZOMBIE=ESRCH——死者不收信号) */
+struct rt_proc *rt_proc_lookup(int pid)
+{
+    u32 i;
+
+    for (i = 0; i < RT_PROC_MAX; i++)
+        if (procs[i].used && procs[i].state != RT_PROC_ZOMBIE &&
+            procs[i].pid == pid)
+            return &procs[i];
+    return NULL;
+}
+
 /* 退场:自有页池页回收+L2 清归池;TLB 全冲(销毁面 v0 从简) */
 void rt_proc_exit(struct rt_proc *p, int code)
 {

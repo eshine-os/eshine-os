@@ -202,6 +202,7 @@ static long sys_fork(u64 *frame)
     cp->state = RT_PROC_RUN;
     cp->parent = pp->pid;
     rt_fd_fork(pp, cp);                /* 站31:fdtable 组拷+双侧引用 */
+    rt_sig_fork(pp, cp);               /* 站32:handler/blocked 继承 */
     ct = rt_task_create_el0("child", NULL, NULL, rt_cur->prio + 1,
                             (void *)rt_cur->usp);
     if (!ct) {
@@ -398,6 +399,37 @@ static long sys_fdwrite(u64 *frame)
     return rt_fd_write(rt_cur->proc, (int)FR(0), kbuf, len);
 }
 
+/* 站三十二:signal+futex 面(真 Linux 号 98/129/134/139,站 33
+ * musl 直连;v0 偏差=futex 四参/sigaction 两参,spec §2 记档)。 */
+static long sys_futex(u64 *frame)
+{
+    u64 uaddr = FR(0);
+    u32 op = (u32)FR(1);
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (op == RT_FUTEX_WAIT && !access_ok((const void *)uaddr, 4))
+        return -ES_EFAULT;             /* WAKE 不读用户字,免校 */
+    return rt_futex(rt_cur->proc, uaddr, op, (u32)FR(2), FR(3));
+}
+
+static long sys_kill(u64 *frame)
+{
+    return rt_sig_kill((int)FR(0), (u32)FR(1));
+}
+
+static long sys_sigaction(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_sig_action(rt_cur->proc, (u32)FR(0), FR(1));
+}
+
+static long sys_rt_sigreturn(u64 *frame)
+{
+    return rt_sig_return(frame);
+}
+
 static long sys_hvc(u64 *frame)
 {
     long fn = (long)FR(0);          /* 首参 x0(壳 sys1 映射) */
@@ -569,6 +601,11 @@ static long sys_demo(u64 *frame)
         if (!rt_task_create("abortsrv", rt_msg_abort_server, NULL, 8))
             rt_puts("ipc: abort server full\n");
         break;
+    case RT_U_FUPOKE:
+        /* 站32:扑克=同址空间第二执行流替身(只做队列唤醒;
+         * FR(1)=用户字 VA=key,FR(2)=延迟拍;真 threads=站 33+) */
+        rt_futex_poke(rt_cur->proc, FR(1), FR(2) ? FR(2) : 30);
+        break;
     default:
         return -ES_EINVAL;
     }
@@ -620,6 +657,11 @@ void rt_syscall_init(void)
     table[ES_NR_fdclose]     = sys_fdclose;
     table[ES_NR_fdread]      = sys_fdread;
     table[ES_NR_fdwrite]     = sys_fdwrite;
+    /* 站32:signal+futex 面(真 Linux 号,musl 直连) */
+    table[ES_NR_futex]        = sys_futex;
+    table[ES_NR_kill]         = sys_kill;
+    table[ES_NR_rt_sigaction] = sys_sigaction;
+    table[ES_NR_rt_sigreturn] = sys_rt_sigreturn;
 }
 
 void rt_syscall_dispatch(u64 *frame)
@@ -627,6 +669,9 @@ void rt_syscall_dispatch(u64 *frame)
     u64 nr = FR(8);
 
     FR(0) = (nr < ES_NR_MAX) ? (u64)table[nr](frame) : (u64)-ES_ENOSYS;
+    rt_sig_deliver(frame);   /* 站32:syscall 出口=投递点(参考实现
+                              * SWITCH_OUT 的站内形态;返回值已在
+                              * x0 槽,帧手术先整帧存后改写) */
 }
 
 /* EL0 非 SVC 异常的 v0 诚实终态面(29+ per-process 缺页接管后退役):

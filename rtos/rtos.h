@@ -85,6 +85,14 @@ struct rt_task {
      * proc=所属进程(EL0 任务非空;内核任务 NULL)。 */
     u64 ttbr;                    /* @696 */
     struct rt_proc *proc;        /* @704 */
+    /* 站三十二:futex 键随等待者+分诊位(尾加纪律,asm 断言不涉)。
+     * fut_proc/fut_va=等待者登记自己的 key(桶内多 key 共存,
+     * WAKE 摘链按 key 过滤);fut_woken/sig_intr=唤醒方置位,
+     * 等待环消费后自清。 */
+    struct rt_proc *fut_proc;    /* @712 */
+    u64 fut_va;                  /* @720 */
+    u32 fut_woken;
+    u32 sig_intr;
 };
 typedef struct rt_task rt_task_t;
 _Static_assert(__builtin_offsetof(rt_task_t, usp) == 672, "RT_TASK_USP=672");
@@ -193,6 +201,18 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define ES_NR_fdread      552   /* fd 读(READ 走三段消息;0=EOF) */
 #define ES_NR_fdwrite     553   /* fd 写(WRITE 数据内联≤44B/次) */
 
+/* 站三十二:signal+futex 号面——真 Linux arm64(asm-generic)原号,
+ * 站 33 musl 直连。v0 偏差(spec §2 记档,站 33 对齐):futex 四参
+ * (uaddr,op,val,ticks——Linux 第四参 timespec 指针)/sigaction
+ * 两参(sig,handler——Linux 三结构指针)。 */
+#define ES_NR_futex         98   /* __NR_futex:WAIT/WAKE 两脸 */
+#define ES_NR_kill         129   /* __NR_kill:跨进程投递 */
+#define ES_NR_rt_sigaction 134   /* __NR_rt_sigaction:装 handler */
+#define ES_NR_rt_sigreturn 139   /* __NR_rt_sigreturn:恢复帧 */
+#define RT_SIG_MAX          32u  /* 信号号域:1..31(pending 位图宽) */
+#define RT_FUTEX_WAIT       0
+#define RT_FUTEX_WAKE       1
+
 /* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
  * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
 enum {
@@ -202,6 +222,7 @@ enum {
     RT_U_TMODEMO, RT_U_SWTDEMO, RT_U_IRQDEMO, RT_U_LOWDEMO,
     RT_U_STKDEMO, RT_U_STACKCHECK, RT_U_OVERFLOW, RT_U_FPSTAT,
     RT_U_HB, RT_U_SLEEP, RT_U_IPCDEMO, RT_U_PULSEDEMO, RT_U_ABORTDEMO,
+    RT_U_FUPOKE,
 };
 
 /* ES_NR_sysinfo 的共享结构(user<->kernel) */
@@ -252,6 +273,18 @@ struct rt_proc {
     u32 nvma;
     u64 mmap_next;                /* ANON VA 游标(mmap 窗) */
     struct rt_fd fds[RT_FD_MAX];  /* 站31:fdtable(=通道三元组) */
+    /* 站三十二:signal 面(v0 位图态,每进程单任务;参考实现每任务
+     * pending 的站内尺度)。sig_hand[0] 不用(号 0 非法)。 */
+    u64 sig_hand[RT_SIG_MAX];   /* handler 用户地址(0=默认=忽略) */
+    u32 sig_pending;
+    u32 sig_blocked;
+    u32 sig_active;             /* handler 在役:嵌套投递拒,留下轮 */
+    u32 _pad1;
+    u64 sig_saved[34];          /* 投递时被中断的 272B 用户上下文 */
+    u64 sig_saved_usp;          /* 同上,SP_EL0(驻 t->usp,不在帧内
+                                  * ——handler 序言压帧+sigreturn 跳
+                                  * 过其 epilogue,SP 不还原=错窗读
+                                  * 局部,冒烟+反汇编双定谳) */
     struct rt_task *leader;
 };
 typedef struct rt_proc rt_proc_t;
@@ -362,6 +395,22 @@ long rt_fd_write(struct rt_proc *p, int fd, const char *kbuf, u32 len);
 void rt_fd_fork(struct rt_proc *pp, struct rt_proc *cp);
 void rt_fd_close_all(struct rt_proc *p);
 void rt_srv_boot(rt_task_t *shell);   /* 固定序列 spawn(boot 链面) */
+
+/* ---- 站三十二:signal+futex(rt_sig.c;参考实现 §10 站内收编) ----
+ * futex=musl 锁原语底座:WAIT=值校验+站 21 单窗阻塞+四路分诊
+ * (超时/被唤醒/被信号打断/值动);WAKE=桶内 key 匹配摘链(不读
+ * 用户字,纯队列操作)。signal=位图 pending+syscall 出口投递
+ * (帧手术:sig_saved 整帧存+elr=handler/x0=sig)+rt_sigreturn
+ * 恢复。跨进程信号打断 futex 等待=两原语互为判据(spec §0)。 */
+long rt_futex(struct rt_proc *p, u64 uaddr, u32 op, u32 val, u64 ticks);
+long rt_futex_wake_key(struct rt_proc *p, u64 va, u32 n);
+int  rt_sig_action(struct rt_proc *p, u32 sig, u64 handler);
+int  rt_sig_kill(int pid, u32 sig);
+void rt_sig_deliver(u64 *frame);       /* syscall 出口(disp 尾) */
+long rt_sig_return(u64 *frame);        /* sig_saved 回拷+x0 同值回写 */
+void rt_sig_fork(struct rt_proc *pp, struct rt_proc *cp);
+struct rt_proc *rt_proc_lookup(int pid);  /* 活进程查(死=ESRCH 面) */
+void rt_futex_poke(struct rt_proc *p, u64 va, u64 delay);  /* 扑克(sys_demo 面) */
 struct rt_proc *rt_proc_of(rt_task_t *t);  /* 任务->进程(NULL=内核) */
 int  rt_proc_create(rt_task_t *leader, struct rt_proc **out); /* CREATE 挂起态 */
 u64  rt_proc_ttbr(struct rt_proc *p);     /* 切换值 asid<<48|L0 */

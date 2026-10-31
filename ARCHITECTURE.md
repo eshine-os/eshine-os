@@ -326,7 +326,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（88 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（90 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -425,10 +425,19 @@ eager 全拷+exit42+父 wait4 收尸；[79] mmapdemo 缺页零填——VMA 命�
 挂名)读出全文+字节数自证;fork=fdtable 组拷+DUP 双侧引用,exit=逐
 fd CLOSE——POCB 引用计数镜像;服务器 v0=内核任务,用户态 server
 二进制=站 33 musl 弧）** →
+**站32 signal+futex 两门（[85] futexdemo——musl 锁原语底座:入口
+值校验 -EAGAIN/无等者 wake=0/扑克代演同址空间第二执行流的真实
+等待→唤醒对(真 threads=站 33+)/超时真阻塞 r=-110;16 桶 key={proc,
+va},站 21 单窗阻塞机器第三笔复用。[86] sigdemo——跨进程 kill 打断
+子 futex=-EINTR,handler 在子自身用户上下文执行(syscall 出口投递=
+帧手术:272B 整存+elr=handler/x0=sig),sigreturn 恢复;**SP_EL0 驻
+t->usp 不在 272B 帧内——投递对必存还 usp,否则 handler 序言压帧+
+sigreturn 跳过 epilogue=用户栈错窗读局部(冒烟打出序言预存槽的别家
+字面,反汇编定谳)**;号面=真 Linux 98/129/134/139,errno EINTR=4）** →
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-88 步手动走查清单。
+90 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；
