@@ -216,8 +216,15 @@ void rt_sched(void)
         if (!next) {
             /* 空转语境:无一就绪——WFI 让位(泵判 WAIT)。不 WFI 的话
              * 壳 BLOCK 后会热自旋;醒来重扫,IRQ 出口可能已直接切走
-             * 我们(冻结在本帧,无需回头)。 */
-            __asm__ volatile("wfi");
+             * 我们(冻结在本帧,无需回头)。
+             * 站28 落点加固:宿主泵存在"停泊双重推进"陈疾(resume
+             * 落 wfi+8 而非 +4;站24 [41] 家族,已路由专站),曾致
+             * +8 直落重排队路径消费陈旧 caller-saved 寄存器(far=0x9
+             * panic,冒烟 -d int 定谳)。双 nop 垫使 +4/+8 两落点皆
+             * 为受控指令、滑回循环顶——陈疾未修前客人不为其陪葬。 */
+            __asm__ volatile("wfi\n\t"
+                             "nop\n\t"
+                             "nop" ::: "memory");
             continue;
         }
         if (next == rt_cur) {       /* 摘了自己又选回自己:回流令牌兑付。

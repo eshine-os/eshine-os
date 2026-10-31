@@ -28,9 +28,10 @@ guest_vectors:
     VENTRY guest_irq
     VENTRY guest_park
     VENTRY guest_park
-    /* Lower EL:EL1 终态,永不到达(同 guest/vec.S) */
-    VENTRY guest_park
-    VENTRY guest_park
+    /* Lower EL AArch64:站二十八 EL0 用户任务(sync=SVC+EL0 缺页,
+     * irq=tick/RX 抢占);fiq/serror 与 AArch32 维持终态 park */
+    VENTRY guest_el0_sync
+    VENTRY guest_el0_irq
     VENTRY guest_park
     VENTRY guest_park
     VENTRY guest_park
@@ -39,7 +40,11 @@ guest_vectors:
     VENTRY guest_park
 
 guest_park:
+    /* 站28 落点加固:宿主泵停泊双重推进陈疾可能以 +8 复活,
+     * +4/+8 皆须落受控指令(wfi+8 曾直落 guest_irq 体=无异常
+     * 而行压栈序列,nop 垫使 +8 滑回本环) */
     wfi
+    nop
     b       guest_park
 
 /* 压 31 寄存器(不含 elr/psr——由各入口自定)。推序与 guest/vec.S
@@ -137,9 +142,52 @@ guest_irq:
     add     sp, sp, #16             /* 丢本帧 elr/psr(硬件里的还是原值) */
     b       .Lregs
 .Lpop:
-    ldp     x0, x1, [sp], #16       /* 目标帧 elr/psr */
-    msr     elr_el1, x0
-    msr     spsr_el1, x1
+    /* 站二十八:x5/x6 承 elr/psr(吞了 x0=新任务指针就取不到 usp);
+     * psr[3:2] 分流目标特权级,双库不变量在此归位:
+     *   EL0 目标:usp→sp_el0,弹栈改经 SP_EL0 库(task->sp 同址,
+     *     两语境通用),SP_EL1:=本核蹦床顶——eret→EL0 的硬约定
+     *     (下次 EL0 异常入口硬件 sp=SP_EL1,stp 必落 32B 蹦床域)
+     *   EL1h 目标:eret 后 SPSel=1、sp=SP_EL1 必须是任务自己栈。
+     *     SPSel=1 语境(站16-27 原路径)簿记 mov sp 已写对,零改动;
+     *     SPSel=0 语境(自 EL0 异常处理切来)须换库补写。
+     * 事实基准:本 RTOS 全帧契约 EL1h(psr=5/0x3C5 三处铁证,
+     * 站16 帧自铸即此),EL1h 任务的活栈驻 SP_EL1——蹦床与它
+     * 同库不同值,故凡离开 EL0 必重臂、凡回 EL1h 必归还。 */
+    ldp     x5, x6, [sp], #16       /* 目标帧 elr/psr */
+    msr     elr_el1, x5
+    msr     spsr_el1, x6
+    tst     x6, #0xc
+    bne     .Lel1
+    /* EL0 目标:usp/蹦床顶先藏进已消费的 elr/psr 槽([sp-16/-8]),
+     * 弹完 31 寄存器后无 scratch,自藏点取回再整库——EL0 的 sp=
+     * SP_EL0 寄存器,必须弹栈之后置 usp(曾先置 usp 再借 sp 弹栈,
+     * SP_EL0 被帧顶覆写,壳以内核栈入场,首压栈即越权→诚实终态,
+     * 冒烟定谳);SP_EL1 同刻复位蹦床(eret→EL0 不变量) */
+    ldr     x5, [x0, #672]          /* task->usp(偏移断言在 rtos.h) */
+    mrs     x6, tpidr_el1
+    ldr     x7, =rt_el0_tramp       /* 32B/核:lsl #5 索引 */
+    add     x7, x7, x6, lsl #5
+    add     x7, x7, #32
+    str     x5, [sp, #-16]          /* usp → 旧 elr 槽 */
+    str     x7, [sp, #-8]           /* 蹦床顶 → 旧 psr 槽 */
+    RT_POP_GPRS                     /* +256:此后 sp=帧基+256 */
+    sub     sp, sp, #272            /* 移回帧基-16(藏点;弹后无人用 sp) */
+    ldr     x5, [sp]                /* 取回 usp */
+    ldr     x6, [sp, #8]            /* 取回蹦床顶 */
+    msr     spsel, #0               /* 归 SP_EL0 库:mov sp 即写用户栈
+                                     * (banked SP 直访 EL1 UNDEF,冒烟定谳) */
+    mov     sp, x5                  /* EL0 的 sp=usp */
+    msr     spsel, #1
+    mov     sp, x6                  /* SP_EL1 := 蹦床顶 */
+    msr     spsel, #0               /* sp 回 SP_EL0=usp(eret 面) */
+    eret
+.Lel1:
+    mrs     x5, spsel
+    cbnz    x5, .Lregs             /* SPSel=1:簿记已写 SP_EL1=task->sp */
+    ldr     x5, [x0]               /* task->sp = EL1h 任务的真栈指针 */
+    msr     spsel, #1
+    mov     sp, x5                  /* SP_EL1 := 归还 */
+    msr     spsel, #0               /* sp 回帧顶(pop 用) */
 .Lregs:
     RT_POP_GPRS
     eret
@@ -158,6 +206,130 @@ guest_sync:
     bl      rt_sync_fault
     add     sp, sp, #16             /* 丢本帧 elr/psr(硬件里的还是原值) */
     b       .Lregs
+
+/* ================= 站二十八:EL0 异常入口(lower-EL 槽) =================
+ *
+ * 硬件事实:EL0 异常进入 EL1 时 SPSel 强制置 1(sp=SP_EL1),而
+ * SP_EL0 仍持用户栈。本 RTOS 帧契约是 EL1h(SPSel=1,活栈驻
+ * SP_EL1——rt_frame_init psr=5/rt_switch_to orr#5/PSCI 0x3C5),
+ * 但 EL0 异常入口的 SP_EL1 必须是蹦床(不变量由 .Lpop EL0 路径
+ * 与 RT_EL0_RET 维护:凡 eret→EL0,SP_EL1:=本核蹦床顶)。
+ * 归一舞蹈:三 scratch(x9-x11)先存 SP_EL1 蹦床(rt_cur 还没找着,
+ * 系统里唯一可用寄存器域);找 rt_cur 存 task->usp;切 SPSel=0,
+ * sp 由 SP_EL0(=用户栈)换 task->ksp 内核栈——SP_EL0 寄存器自此
+ * 充 EL0 处理语境的帧库;RT_PUSH_GPRS 后把蹦床上的用户 x9/x10/x11
+ * 回填帧槽(IRQ 语义要求恢复;SVC 本可豁免 caller-saved,统一走
+ * 稳妥)并复位 SP_EL1 供下次。此后全套帧机器(阻塞/续跑/切换)
+ * 零改动:
+ * - SVC 处理中 rt_sched 阻塞 → rt_switch_to 在内核栈上压协作帧
+ *   (老帧=用户上下文完整驻栈底)→ 醒来继续,eret 落回用户;
+ * - EL0 IRQ + 切走:用户帧即 old->sp(elr=EL0 续跑点),.Lpop 的
+ *   EL0 觉察恢复 usp——两路在既有 .Lpop/.Lcoop_ret 上闭环。 */
+.equ RT_USTK_OFF, 672
+.equ RT_KSTK_OFF, 680
+
+.macro RT_EL0_ENTER
+    stp     x9, x10, [sp, #-16]!   /* 蹦床域存 scratch(基址=tramp 顶) */
+    str     x11, [sp, #-16]!
+    mrs     x9, tpidr_el1
+    ldr     x10, =rt_cur_arr
+    ldr     x10, [x10, x9, lsl #3] /* x10 = rt_cur */
+    msr     spsel, #0              /* 用户栈经当前库读:banked SP 直访
+                                   * EL1 UNDEF(冒烟定谳,同 sp_el1 律) */
+    mov     x11, sp
+    str     x11, [x10, #RT_USTK_OFF]
+    ldr     x11, [x10, #RT_KSTK_OFF]
+    mov     sp, x11                /* 内核帧栈(kstack 顶) */
+    RT_PUSH_GPRS                   /* x9/x10/x11 槽此刻是 scratch 值 */
+    mrs     x0, elr_el1
+    mrs     x1, spsr_el1
+    stp     x0, x1, [sp, #-16]!
+    /* 回填用户 x9/x10/x11(蹦床布局:+0=x11,+16=x9,+24=x10)。
+     * 帧槽偏移(帧基=elr 槽):x0@+16 带 8B hole,x_i 紧排于
+     * 24+8i——x9@+96/x10@+104/x11@+112(站28 冒烟定谳:曾按
+     * 16B 步长错写 160/176/192,即 x19/x21/x23 槽,跨调用 ABI
+     * 寄存器遭偷换) */
+    mrs     x9, tpidr_el1
+    ldr     x10, =rt_el0_tramp
+    add     x10, x10, x9, lsl #5
+    ldr     x11, [x10, #16]
+    str     x11, [sp, #96]         /* 帧 x9 槽(24+8*9) */
+    ldr     x11, [x10, #24]
+    str     x11, [sp, #104]        /* 帧 x10 槽 */
+    ldr     x11, [x10, #0]
+    str     x11, [sp, #112]        /* 帧 x11 槽 */
+    add     x11, x10, #32
+    /* 复位 SP_EL1 经 spsel 换库:直写 msr sp_el1 在 EL1 落 UNDEF
+     * (站 28 冒烟 -d int 定谳,EC=0);换库瞬间 sp 指向 SP_EL1 旧值,
+     * mov sp 后即回 SPsel=0 内核栈帧,DAIF 已掩无中断窗 */
+    msr     spsel, #1
+    mov     sp, x11
+    msr     spsel, #0
+.endm
+
+.macro RT_EL0_RET
+    ldp     x0, x1, [sp], #16      /* elr/psr(硬件现值覆写回帧语义) */
+    msr     elr_el1, x0
+    msr     spsr_el1, x1
+    /* 先抓 GPR 块地址(bank 无关):阻塞唤醒路径以 SPSel=1 抵此
+     * (coop 帧 eret EL1h),SP_EL0 库驻陈旧 coop 顶——裸舞后弹栈
+     * 曾弹出 C 语境寄存器(x20=0,strb 直落 far=0 定谳),故舞后
+     * 须显式归还帧址;同任务路(SPSel=0)此归还为幂等 no-op */
+    mov     x2, sp                  /* GPR 块 = 帧基+16 */
+    mrs     x0, tpidr_el1
+    ldr     x1, =rt_el0_tramp
+    add     x1, x1, x0, lsl #5
+    add     x1, x1, #32
+    msr     spsel, #1
+    mov     sp, x1                  /* SP_EL1 := 蹦床顶(不变量) */
+    msr     spsel, #0
+    mov     sp, x2                  /* 弹栈归 GPR 块(两库同址) */
+    RT_POP_GPRS
+    mrs     x9, tpidr_el1
+    ldr     x10, =rt_cur_arr
+    ldr     x10, [x10, x9, lsl #3]
+    ldr     x11, [x10, #RT_USTK_OFF]
+    mov     sp, x11                /* user SP 归位:SPSel=0 下 mov 即写
+                                     * SP_EL0(banked 直访 EL1 UNDEF) */
+    eret
+.endm
+
+guest_el0_sync:
+    RT_EL0_ENTER
+    mrs     x0, esr_el1
+    lsr     x0, x0, #26
+    cmp     x0, #0x15              /* EC == SVC(AArch64)? */
+    b.ne    1f
+    mov     x0, sp
+    bl      rt_syscall_dispatch    /* 返回值已写帧 x0 槽 */
+    RT_EL0_RET
+1:  mov     x0, sp
+    bl      rt_el0_fault           /* v0 诚实终态:打印+panic,不返回 */
+
+guest_el0_irq:
+    RT_EL0_ENTER
+    bl      rt_irq_dispatch        /* x0:0=续跑原任务,否则新任务指针 */
+    cbz     x0, .Lel0_same
+    RT_SWITCH_BOOKKEEP             /* 用户帧即 old->sp(elr=EL0 续跑点) */
+    b       .Lpop
+.Lel0_same:
+    RT_EL0_RET
+
+/* EL0 任务首帧:elr=entry 直达(psr=EL0t,DAIF 开),x0=arg;帧落
+ * kstack(内核域);usp 初值=u栈顶。entry 不返回(exit 走 sys_hvc
+ * 内核收尸)——x30 槽留零,若返回即落 0 取指=EL0 缺页→诚实终态面。 */
+.global rt_frame_init_el0
+rt_frame_init_el0:                 /* x0=task x1=kstack_top x2=ustack_top
+                                     * x3=entry x4=arg */
+    sub     x1, x1, #272
+    str     x3, [x1, #0]            /* elr = entry */
+    str     xzr, [x1, #8]           /* psr = EL0t */
+    str     x4, [x1, #16]           /* x0 槽 = arg */
+    str     x1, [x0]                /* task->sp = 内核帧顶 */
+    str     x2, [x0, #RT_USTK_OFF]   /* usp */
+    add     x1, x1, #272
+    str     x1, [x0, #RT_KSTK_OFF]  /* ksp = kstack 顶 */
+    ret
 
 /* 主动切换(任务上下文):伪造同款帧,elr=.Lcoop_ret,psr=EL1h+当前
  * DAIF。x0(新任务指针)被 RT_PUSH_GPRS 存进 x0 槽,从 [sp+16] 回捞。 */

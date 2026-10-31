@@ -10,6 +10,12 @@ rt_task_t *volatile rt_cur_arr[RT_NCPU];   /* 站二十:per-CPU(rtos.h 宏保旧
 volatile u64 rt_ticks;
 
 static rt_task_t pool[RT_POOL_MAX];
+
+/* 站二十八:EL0 异常蹦床(每核 32B:SP_EL1 域 scratch 存取;boot/次核
+ * 各置 SP_EL1=本核元素尾)+每池槽 4KB 内核栈(EL0 任务的帧栈/系统
+ * 调用阻塞续跑栈;EL1 任务不入此面)。 */
+u64 rt_el0_tramp[RT_NCPU][4] __attribute__((aligned(16)));
+static u64 rt_kstacks[RT_POOL_MAX][512] __attribute__((aligned(16)));
 /* 站21C:栈行=4096B 可用区 + 哨兵 + 牺牲垫(行距 4368=16×273,
  * 行内 16 对齐保持)。升址:[0..263]=垫(overflower 越哨兵的受控
  * overshoot 预算,~200B+余量;深 sp 处不留栈——异常帧永远不在垫区)
@@ -86,6 +92,54 @@ rt_task_t *rt_task_create(const char *name, void (*entry)(void *),
                           void *arg, u32 prio)
 {
     return rt_task_create_cpu(name, entry, arg, prio, rt_cpu_id());
+}
+
+/* 站28:pid=池槽+1(id 面与参考实现 idr 编号同精神:小整数,稳定,
+ * 供 getpid 与 panic/取证指名)。 */
+static unsigned int pool_slot_of(const rt_task_t *t);
+
+u64 rt_pid_of(rt_task_t *t)
+{
+    unsigned int slot = pool_slot_of(t);
+
+    return slot < RT_POOL_MAX ? (u64)(slot + 1) : 0;
+}
+
+/* 站二十八:EL0 用户任务——内核帧/栈就绪后由 vec.S rt_frame_init_el0
+ * 锻首帧(psr=EL0t,elr=entry 直达);el0 旗置位(tick 栈守卫对
+ * 用户栈不适用——守卫读点在内核语境,lim/ksp 二坐标系混用会假阳,
+ * 豁免并记档)。 */
+rt_task_t *rt_task_create_el0(const char *name, void (*entry)(void *),
+                              void *arg, u32 prio, void *ustack_top)
+{
+    rt_task_t *t = rt_task_create_cpu(name, entry, arg, prio, rt_cpu_id());
+
+    if (!t)
+        return NULL;
+    t->el0 = 1;
+    {
+        u32 slot;
+
+        for (slot = 0; slot < RT_POOL_MAX; slot++)
+            if (&pool[slot] == t)
+                break;
+        /* 帧锻调用契约:x0=task x1=kstack_top x2=ustack_top
+         * x3=entry x4=arg(vec.S rt_frame_init_el0) */
+        {
+            register void *x0 __asm__("x0") = t;
+            register void *x1 __asm__("x1") = rt_kstacks[slot] + 512;
+            register void *x2 __asm__("x2") = ustack_top;
+            register void (*x3)(void *) __asm__("x3") = entry;
+            register void *x4 __asm__("x4") = arg;
+
+            __asm__ volatile("bl rt_frame_init_el0"
+                             :
+                             : "r"(x0), "r"(x1), "r"(x2), "r"(x3),
+                               "r"(x4)
+                             : "x30", "memory");
+        }
+    }
+    return t;
 }
 
 void rt_task_exit(void)             /* noreturn:DEAD 后必切走 */
@@ -197,8 +251,13 @@ static int panic_done;
 static void panic_park(void) __attribute__((noreturn));
 static void panic_park(void)
 {
+    /* 站28 落点加固(同 rt_sched 空转 wfi):宿主泵"停泊双重
+     * 推进"陈疾可能以 +8 复活,+8 须落在受控 nop 上——裸 for(;;)
+     * wfi 的 +8 落进相邻代码(冒烟实测定谳),尸身也保整 */
     for (;;)
-        __asm__ volatile("wfi");
+        __asm__ volatile("wfi\n\t"
+                         "nop\n\t"
+                         "nop" ::: "memory");
 }
 
 void rt_panic(const char *why, unsigned int slot)
@@ -254,6 +313,12 @@ void *rt_cur_stack_limit(void)                 /* 可用区底(哨兵上方) */
 {
     unsigned int slot = pool_slot_of(rt_cur);
 
+    /* 站二十八:EL0 任务豁免——其用户栈不在 task_stacks 坐标系,
+     * tick 守卫读点在内核语境(sp=kstack),lim 取用户栈底=两坐标
+     * 系混用必假阳(站23 教训),返回 NULL 即守卫跳过。EL0 任务
+     * 的用户栈水位防护=30+ 站面(登记 spec §5)。 */
+    if (rt_cur->el0)
+        return NULL;
     return slot < RT_POOL_MAX ? &task_stacks[slot][STK_USABLE] : NULL;
 }
 

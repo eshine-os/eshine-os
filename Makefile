@@ -67,6 +67,7 @@ guest2.bin: guest2.elf
 # fp 自证走手写 asm,全程 -mgeneral-regs-only 不破。
 RT_CFLAGS := $(CFLAGS) -Iguest
 RTOBJS := rtos/start.o rtos/vec.o rtos/rt_sched.o rtos/rt_task.o \
+	rtos/rt_mm0.o rtos/rt_syscall.o \
           rtos/rt_uart.o rtos/rt_shell.o rtos/rt_main.o rtos/rt_fp.o \
           rtos/rt_sync.o rtos/rt_ipc.o rtos/rt_demo.o rtos/rt_timer.o
 
@@ -77,7 +78,7 @@ rtos/vec.o: rtos/vec.S
 rtos/%.o: rtos/%.c rtos/rtos.h
 	$(CC) $(RT_CFLAGS) -c -o $@ $<
 rtos.elf: $(RTOBJS) rtos/linker.ld
-	$(CC) $(RT_CFLAGS) -nostdlib -Wl,--build-id=none -T rtos/linker.ld -o $@ $(RTOBJS)
+	$(CC) $(RT_CFLAGS) -nostdlib -Wl,--build-id=none,--no-warn-rwx-segments -T rtos/linker.ld -o $@ $(RTOBJS)
 rtos.bin: rtos.elf
 	$(CROSS)objcopy -O binary $< $@
 

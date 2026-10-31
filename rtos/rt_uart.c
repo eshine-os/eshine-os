@@ -38,6 +38,7 @@ int rt_rx_pending(void)
     return rrx_h != rrx_t;
 }
 
+
 /* 行级打印临界区:多任务并发打印以行原子(心跳/自证/壳不打架),
  * 行间交错正是并发判据。窗口 = 一行几十次 MMIO 陷阱,100Hz demo
  * 尺度无延迟之虞。
@@ -104,4 +105,15 @@ void rt_puts_hex(const char *pfx, u64 v, const char *sfx)
         line[n++] = sfx[j];
     line[n] = '\0';
     puts_uart(line);
+}
+
+/* 站28:长度式行级打印——sys_write 面的内核落点(buf 非 NUL 终止);
+ * 同 puts_lk 串行化(与 rt_puts/心跳行互不打架,行级原子契约同律)。 */
+void rt_puts_n(const char *s, u32 len)
+{
+    u64 d = rt_spin_lock(&puts_lk);
+
+    for (u32 i = 0; i < len; i++)
+        uart_putc(s[i]);
+    rt_spin_unlock(&puts_lk, d);
 }

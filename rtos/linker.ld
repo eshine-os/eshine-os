@@ -10,10 +10,17 @@ PHDRS
     text   PT_LOAD FLAGS(5);   /* R-X */
     rodata PT_LOAD FLAGS(4);   /* R-- */
     data   PT_LOAD FLAGS(6);   /* RW- */
+    user   PT_LOAD FLAGS(7);   /* RWX(EL0 面:权限由站 28 stage-1 定,非 ELF) */
 }
 
 SECTIONS
 {
+    /* 站二十八:EL0 用户段@0x40200000——与两区式 stage-1 对齐
+     * (L2 块 0=内核 EL1-only,块 1..7=用户 EL0+EL1)。壳整目标
+     * 文件入用户段:代码/串/数据/栈全落用户窗,零逐函数标注。
+     * 声明序=输入段分配序:先于下方内核全配通配符吃段,否则
+     * .text 的 *(.text*) 先吞壳段(实测教训)。 */
+    .user 0x40200000 : { rtos/rt_shell.o(.text* .rodata* .data* .bss* .bss.* COMMON) } :user
     . = 0x40000000;                        /* guest IPA 链接地址(物理在 0x50000000) */
     .text : { KEEP(*(.text.boot)) *(.text .text.*) } :text
     .vectors ALIGN(0x800) : { KEEP(*(.vectors)) } :text

@@ -67,8 +67,20 @@ struct rt_task {
     u32 low_warned;              /* 站23B:live-sp 守卫一次性告警旗
                                   * (create 清零;deepdiver 封窗深潜
                                   * tick 看不见,零假阳性) */
+    /* 站二十八:EL0 用户任务面(结构尾追加,同上契约)。
+     * usp=用户 SP(SP_EL0 硬件域,异常进出由 vec.S 存还);
+     * ksp=本任务内核栈顶(EL0 陷入的帧栈+阻塞续跑栈);
+     * el0=EL0 标记(tick 栈守卫对用户栈不适用,守卫跳过)。
+     * 偏移钉死供 asm .equ 契约(下方断言)。 */
+    u64 usp;                     /* @672 */
+    u64 ksp;                     /* @680 */
+    u32 el0;                     /* @688 */
 };
 typedef struct rt_task rt_task_t;
+_Static_assert(__builtin_offsetof(rt_task_t, usp) == 672, "RT_TASK_USP=672");
+_Static_assert(__builtin_offsetof(rt_task_t, ksp) == 680, "RT_TASK_KSP=680");
+_Static_assert(__builtin_offsetof(rt_task_t, el0) == 688, "RT_TASK_EL0=688");
+
 
 /* asm 契约断言:vec.S 的 .equ RT_TASK_Q/FPCR/FPSR 必须与此一致
  * (改结构必编译期炸——站 17 名字长度栈下标的教训:契约要机器盯) */
@@ -111,6 +123,49 @@ void rt_task_exit(void) __attribute__((noreturn));
 void rt_sleep_ticks(u64 n);
 void rt_block_rx(void);
 const char *rt_state_name(u32 s);
+
+/* ---- 站二十八:EL0 用户态+syscall 骨架 ---- */
+rt_task_t *rt_task_create_el0(const char *name, void (*entry)(void *),
+                              void *arg, u32 prio, void *ustack_top);
+void rt_syscall_dispatch(u64 *frame);
+void rt_syscall_init(void);
+void rt_el0_fault(u64 *frame);
+u64  rt_pid_of(rt_task_t *t);
+void rt_mm0_init(void);
+extern u64 rt_el0_tramp[RT_NCPU][4];   /* 站28:EL0 异常蹦床(vec.S 契约) */
+extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
+
+/* 站二十八 syscall ABI(偏差 #27:Linux arm64 标准——号 x8/参
+ * x0-x5 六参/返 x0 负 errno;标准号=asm-generic 原样,eshine 扩展
+ * 段 512 起;超六参走结构体指针,对参考实现七参是登记偏差)。 */
+#define ES_NR_read        63
+#define ES_NR_write       64
+#define ES_NR_getpid      172
+#define ES_NR_sysinfo     512
+#define ES_NR_hvc         513
+#define ES_NR_demo        514
+#define ES_NR_MAX         600
+#define ES_ENOSYS         38
+#define ES_EINVAL         22
+
+/* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
+ * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
+enum {
+    RT_U_SELFTEST = 1, RT_U_PS, RT_U_SPAWN, RT_U_FP, RT_U_SEMDEMO,
+    RT_U_MUTEXDEMO, RT_U_PIDEMO, RT_U_FPDUAL, RT_U_EVENTDEMO,
+    RT_U_QUEUEDEMO, RT_U_SMPDEMO, RT_U_IPIDEMO, RT_U_FPSMP,
+    RT_U_TMODEMO, RT_U_SWTDEMO, RT_U_IRQDEMO, RT_U_LOWDEMO,
+    RT_U_STKDEMO, RT_U_STACKCHECK, RT_U_OVERFLOW, RT_U_FPSTAT,
+    RT_U_HB, RT_U_SLEEP,
+};
+
+/* ES_NR_sysinfo 的共享结构(user<->kernel) */
+struct rt_sysinfo {
+    char ver[24];
+    u64 tick;
+    u32 el0;
+    u32 rsv;
+};
 void rt_task_wake_all(u32 mask);         /* 扫池:命中等待位的 BLOCK->READY */
 void rt_task_wake_sleepers(void);       /* 扫池:到期的 SLEEP->READY */
 rt_task_t *rt_ps_first(unsigned int *idx);
@@ -146,6 +201,7 @@ int  rt_need_switch(void);
 /* rt_uart.c:自有 RX 环(miniuart.h 的 static 环 per-TU,多 TU 会各持
  * 一份串不成一环——本环是唯一真环,ISR 与壳都走这里) */
 void rt_puts(const char *s);     /* 行级临界区(DAIF 屏蔽)打印 */
+void rt_puts_n(const char *s, u32 len); /* 站28:长度式行级打印(sys_write 面) */
 void rt_puts_u64(const char *pfx, u64 v, const char *sfx);
 void rt_puts_hex(const char *pfx, u64 v, const char *sfx); /* 站21B:十六进制
                                    * 裸打(不取 puts_lk)——panic/诊断面,

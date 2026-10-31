@@ -52,6 +52,12 @@ void rtos_secondary_main(u32 cpu)
     rt_task_t *idle = rt_idle1_task();
 
     (void)cpu;                       /* tpidr 已在入口 asm 登记为 1 */
+    /* 站二十八:次核同律开 stage-1(表幂等,寄存器 per-CPU)+蹦床 */
+    rt_mm0_init();
+    /* 蹦床不在此臂:SP_EL1=蹦床顶的不变量在 eret→EL0 边界维护
+     * (vec.S .Lpop EL0 路径),首帧派发必经 .Lpop;此处直写
+     * SP_EL1 曾把引导栈(恰驻 SP_EL1,EL1h 契约)覆写成蹦床址,
+     * 冒烟定谳为 sp=0 压栈环绕→address-size fault→park */
     rt_cur = idle;
     idle->entry = (void (*)(void *))rt_idle_loop;
     idle->prio = RT_NPRIO - 1;
@@ -238,6 +244,14 @@ void guest_main(void)
     __asm__ volatile("msr tpidr_el1, %0" :: "r"(0UL));  /* 站二十:本核
                                               * 索引登记(簿记宏/rt_cur 宏;
                                               * 次核入口自写 1) */
+    /* 站二十八:两区式 stage-1 v0 先于一切 MMIO(设备窗入表后
+     * vuart/vgic/virtio 陷阱照走 stage-2 EMULATED 面);SP_EL1=
+     * 本核蹦床顶(EL0 异常入口的 scratch 域,vec.S 契约);syscall
+     * 表先立(壳首发即达)。恒等映射切换取指连续,零过渡窗。 */
+    rt_mm0_init();
+    /* 蹦床不在此臂(不变量归 eret→EL0 边界,见 vec.S .Lpop;
+     * 此处直写 SP_EL1 曾覆写引导栈致 sp=0 压栈环绕,冒烟定谳) */
+    rt_syscall_init();
     uart_pl011_init();                /* 站13:身份证+开机(先开机才有输出) */
     rt_puts("eshine-rtos " ESHINE_VERSION_STR " @EL1 via stage-2 (vuart @trap)\n");
     /* RTOS 世界先立(引导语境转正 idle):任何潜在 IRQ 到达前,rt_cur 必须有效 */
@@ -256,7 +270,10 @@ void guest_main(void)
 
     /* 任务世界:壳与心跳上池 */
     rt_ticks = 0;
-    shell_task = rt_task_create("shell", rt_shell_task, NULL, 5);
+    /* 站二十八:壳=EL0 用户任务(内核栈+用户栈双就绪,vec.S 锻
+     * EL0t 首帧;心跳维持内核任务——demo 期过渡态见 spec §4) */
+    shell_task = rt_task_create_el0("shell", rt_shell_task, NULL, 5,
+                                    rt_shell_ustack + sizeof(rt_shell_ustack));
     rt_task_create("heartbeat", heartbeat_task, NULL, 10);
 
     /* 站23A:四路登记(解 IRQ 前无中断,序贯免锁)——27 tick 单
