@@ -387,18 +387,41 @@ int rt_as_munmap(struct rt_proc *p, u64 start, u64 len)
 /* mmap(ANON):VA(块 6)自游标派段,VMA 登记,页 lazy——首访缺页
  * 零填(prot/flags v0 不分档:RW anon)。返回段首,满窗 -ENOMEM
  * 由调用侧转 errno。 */
-u64 rt_as_mmap(struct rt_proc *p, u64 len)
+/* 站33:hint 撞既有 VMA 判(loader 段定位的防御面) */
+static int as_vma_hits(struct rt_proc *p, u64 s, u64 e)
+{
+    u32 i;
+
+    for (i = 0; i < p->nvma; i++)
+        if (p->vma[i].start < e && s < p->vma[i].end)
+            return 1;
+    return 0;
+}
+
+u64 rt_as_mmap(struct rt_proc *p, u64 hint, u64 len)
 {
     u64 va, end;
 
     len = (len + AS_PAGE - 1) & ~(AS_PAGE - 1);
-    if (!len || p->mmap_next + len > AS_MMAP_END)
+    if (!len)
         return 0;
-    va = p->mmap_next;
-    end = va + len;
+    /* 站33:hint 尊重(loader 段定位契约)——窗内+页对齐+不撞
+     * 既有 VMA 即落 hint;否则游标分配(musl mmap(NULL,...) 与
+     * 老调用面零感)。游标恒越过 hint 段尾防回头重叠。 */
+    if (hint >= AS_MMAP_BASE && (hint & (AS_PAGE - 1)) == 0 &&
+        hint + len <= AS_MMAP_END && !as_vma_hits(p, hint, hint + len)) {
+        va = hint;
+        end = va + len;
+    } else {
+        if (p->mmap_next + len > AS_MMAP_END)
+            return 0;
+        va = p->mmap_next;
+        end = va + len;
+    }
     if (as_declare_pool(p, va, end) < 0)
         return 0;
-    p->mmap_next = end;
+    if (p->mmap_next < end)
+        p->mmap_next = end;
     return va;
 }
 

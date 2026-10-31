@@ -326,7 +326,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（90 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（92 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -434,10 +434,19 @@ va},站 21 单窗阻塞机器第三笔复用。[86] sigdemo——跨进程 kill 
 t->usp 不在 272B 帧内——投递对必存还 usp,否则 handler 序言压帧+
 sigreturn 跳过 epilogue=用户栈错窗读局部(冒烟打出序言预存槽的别家
 字面,反汇编定谳)**;号面=真 Linux 98/129/134/139,errno EINTR=4）** →
+**站33 双 musl 世界两门（[77] vm2 右翼：同一 48KB 静态 ELF
+字节（tools/ramfs/bin/hello=build-musl.sh 产物入仓）在 vm2
+busybox Linux 上跑；[88] vm0 左翼：run /bin/hello 全链=用户态
+loader（fd=通道三元组读 ramfs→hint-mmap 段+EL0 预触缺页→
+栈块 auxv→exec_setup 七参帧改写，内核零镜像字节红线保全）→
+musl init→printf（writev）→exit_group→wait4 收尸；同字节，
+两个 OS，一台 hypervisor；musl 1.2.5 上游零 patch 直连，
+真 asm-generic 号面兑现日；EL0 FP 陷阱体自 EL1 向量抽出共用=
+per-task FP 机器补 EL0 面）** →
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-90 步手动走查清单。
+92 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

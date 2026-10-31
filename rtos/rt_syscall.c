@@ -129,12 +129,13 @@ static long sys_exit(u64 *frame)
 
 static long sys_mmap(u64 *frame)
 {
-    u64 len = FR(1);                     /* x0=addr hint(v0 忽略) */
+    u64 hint = FR(0);                    /* 站33:窗内合法 hint 落位 */
+    u64 len = FR(1);
     u64 va;
 
     if (!rt_cur->proc)
         return -ES_EINVAL;
-    va = rt_as_mmap(rt_cur->proc, len);
+    va = rt_as_mmap(rt_cur->proc, hint, len);
     return va ? (long)va : -ES_ENOMEM;
 }
 
@@ -365,7 +366,7 @@ static long sys_fdread(u64 *frame)
 {
     char *ub = (char *)FR(1);
     u32 len = (u32)FR(2);
-    char kbuf[56];
+    char kbuf[64];
     long r;
 
     if (!rt_cur->proc)
@@ -428,6 +429,102 @@ static long sys_sigaction(u64 *frame)
 static long sys_rt_sigreturn(u64 *frame)
 {
     return rt_sig_return(frame);
+}
+
+/* 站三十三:musl 薄面(启动期实测需求;全真 Linux 号)。 */
+static long sys_writev(u64 *frame)
+{
+    /* musl stdio __stdout_write 走 writev(iov 链)=printf 真通路。
+     * fd 1/2 走原始行打印面(与 sys_write 同律;fd 表的 resmgr
+     * stdio=并发面,musl stdout 直挂原始面确定性优先)。 */
+    const u64 *iov = (const u64 *)FR(1);
+    u64 cnt = FR(2);
+    long total = 0;
+    u32 i;
+
+    if (cnt > 8)
+        return -ES_EINVAL;
+    if (cnt && !access_ok(iov, cnt * 16))
+        return -ES_EFAULT;
+    for (i = 0; i < (u32)cnt; i++) {
+        const char *ub = (const char *)iov[i * 2];
+        u64 len = iov[i * 2 + 1];
+        char kbuf[256];
+
+        if (len > sizeof(kbuf))
+            len = sizeof(kbuf);
+        if (len && !access_ok(ub, len))
+            return -ES_EFAULT;
+        for (u64 k = 0; k < len; k++)
+            kbuf[k] = ub[k];
+        if (len)
+            rt_puts_n(kbuf, (u32)len);
+        total += (long)len;
+    }
+    return total;
+}
+
+static long sys_ioctl(u64 *frame)
+{
+    /* isatty 探测恒"非 tty"(=-ENOTTY):musl 判 stdout 非 tty=
+     * 全缓冲+exit 冲刷——输出时机确定(v0 判据面)。 */
+    (void)frame;
+    return -25;
+}
+
+static long sys_set_tid_address(u64 *frame)
+{
+    /* musl __init_tp 写线程号位;tid 清除地址 v0 存档不落
+     * (threads=站 33+ 弧),回 pid 即安其心。 */
+    (void)frame;
+    return (long)rt_pid_of(rt_cur);
+}
+
+static long sys_rt_sigprocmask(u64 *frame)
+{
+    /* 站32 位图掩码的 syscall 兑现面:musl sigset=8B,v0 位图 32 位
+     * (上 32 清零);how 面 POSIX 三态;old 先于 how 判出(POSIX:
+     * how 非法=EINVAL,old 未定义——先判更严)。 */
+    struct rt_proc *p = rt_cur->proc;
+    u32 how = (u32)FR(0);
+    const u64 *uset = (const u64 *)FR(1);
+    u64 *uold = (u64 *)FR(2);
+
+    if (!p)
+        return -ES_EINVAL;
+    if (uset) {
+        if (how > 2)
+            return -ES_EINVAL;
+        if (!access_ok(uset, 8))
+            return -ES_EFAULT;
+    }
+    if (uold) {
+        if (!access_ok(uold, 8))
+            return -ES_EFAULT;
+        *uold = (u64)p->sig_blocked;
+    }
+    if (uset) {
+        u32 set = (u32)(*uset & 0xFFFFFFFFULL);
+
+        if (how == 0)
+            p->sig_blocked |= set;      /* SIG_BLOCK */
+        else if (how == 1)
+            p->sig_blocked &= ~set;     /* SIG_UNBLOCK */
+        else
+            p->sig_blocked = set;       /* SIG_SETMASK */
+    }
+    return 0;
+}
+
+static long sys_lseek(u64 *frame)
+{
+    /* loader 段定位:v0 只认 SEEK_SET(whence!=0 -> EINVAL,
+     * 文件面 ESPIPE 语义归并);offset 截 32 位(ramfs 域内)。 */
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if ((u32)FR(2) != 0 || FR(1) > 0xFFFFFFFFULL)
+        return -ES_EINVAL;
+    return rt_fd_seek(rt_cur->proc, (int)FR(0), (u32)FR(1));
 }
 
 static long sys_hvc(u64 *frame)
@@ -662,6 +759,13 @@ void rt_syscall_init(void)
     table[ES_NR_kill]         = sys_kill;
     table[ES_NR_rt_sigaction] = sys_sigaction;
     table[ES_NR_rt_sigreturn] = sys_rt_sigreturn;
+    /* 站33:musl 薄面(exit_group 与 exit 同路=帧判据共面) */
+    table[ES_NR_writev]          = sys_writev;
+    table[ES_NR_ioctl]           = sys_ioctl;
+    table[ES_NR_exit_group]      = sys_exit;
+    table[ES_NR_set_tid_address] = sys_set_tid_address;
+    table[ES_NR_rt_sigprocmask]  = sys_rt_sigprocmask;
+    table[ES_NR_lseek]           = sys_lseek;
 }
 
 void rt_syscall_dispatch(u64 *frame)
@@ -683,6 +787,13 @@ void rt_el0_fault(u64 *frame)
 
     __asm__ volatile("mrs %0, esr_el1" : "=r"(esr));
     __asm__ volatile("mrs %0, far_el1" : "=r"(far));
+    /* 站33:FP 陷阱先缺页判——musl memcpy/printf 的 NEON 首触在
+     * EL0(EC 0x07),落此必须走 per-task FP 轮转而非终态面
+     * (冒烟定谳:只挂 EL1 向量时 musl 一触即 panic)。 */
+    if ((esr >> 26) == 0x07) {
+        rt_fp_trap_cur();
+        return;                        /* RT_EL0_RET 原地重执行 */
+    }
     /* 站29:翻译错(FSC 0x04..0x07)先走缺页接管——VMA 命中即补页,
      * 帧未动,调用侧 RT_EL0_RET 原地重执行即中;VMA 外野访与
      * 其余 FSC(权限/外部等)原样落终态面(v0 边界不松)。 */

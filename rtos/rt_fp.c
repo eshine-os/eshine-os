@@ -121,32 +121,41 @@ static void fp_frame_load(rt_task_t *t)
 /* 站19C:guest_sync 入口(vec.S bl)。EC 0x07=CPACR FPEN 陷阱:
  * 活 FP 现场此刻仍属旧持有者(本任务首条 FP 指令未执行),存旧装新
  * 开 FPEN,返回后原指令重执行。未知 EC 停车(原 guest_park 语义)。 */
+/* 站33:FP 陷阱体抽出——EL1 guest_sync 与 EL0 guest_el0_sync 共用
+ * (musl memcpy/printf 的 NEON 首触在 EL0,旧形只挂 EL1 向量,
+ * EL0 sync 落终态面 panic,冒烟定谳 esr EC 0x07 elr=镜像内)。
+ * 调用者已判 EC==0x07;返回后原指令重执行。 */
+void rt_fp_trap_cur(void)
+{
+    rt_task_t *cur = rt_cur;
+    rt_task_t *old;
+
+    /* FPEN 必须先于任何帧指令(q 存取自身就是 FP 指令,关着执行
+     * = 自陷阱递归炸栈——探针实锤,cur/owner 恒初值)。 */
+    __asm__ volatile(
+        "mrs x9, cpacr_el1\n\t"
+        "orr x9, x9, #0x300000\n\t"
+        "msr cpacr_el1, x9\n\t"
+        "isb"
+        ::: "x9", "memory");
+    old = rt_fp_owner;
+    if (old && old != cur) {
+        fp_frame_save(old);            /* 现场此刻仍属旧持有者 */
+        rt_fp_saves++;
+    }
+    if (old != cur) {
+        fp_frame_load(cur);
+        rt_fp_owner = cur;
+    }
+}
+
 void rt_sync_fault(void)
 {
     u64 esr;
 
     __asm__ volatile("mrs %0, esr_el1" : "=r"(esr));
     if ((esr >> 26) == 0x07) {
-        rt_task_t *cur = rt_cur;
-        rt_task_t *old;
-
-        /* FPEN 必须先于任何帧指令(q 存取自身就是 FP 指令,关着执行
-         * = 自陷阱递归炸栈——探针实锤,cur/owner 恒初值)。 */
-        __asm__ volatile(
-            "mrs x9, cpacr_el1\n\t"
-            "orr x9, x9, #0x300000\n\t"
-            "msr cpacr_el1, x9\n\t"
-            "isb"
-            ::: "x9", "memory");
-        old = rt_fp_owner;
-        if (old && old != cur) {
-            fp_frame_save(old);        /* 现场此刻仍属旧持有者 */
-            rt_fp_saves++;
-        }
-        if (old != cur) {
-            fp_frame_load(cur);
-            rt_fp_owner = cur;
-        }
+        rt_fp_trap_cur();              /* 站33:陷阱体抽出共用 */
     } else {
         /* 站21B:未知 EC 不再静默 wfi 停车(排障全靠猜)——ESR/ELR/
          * FAR 此刻架构有效,印完即终态停泊(他核照跑,宿主可处决)。 */

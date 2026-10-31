@@ -25,7 +25,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (90 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (92 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -74,22 +74,24 @@ static void cmd_help(void)
     console_puts("  hb 注入(站24)  -> tick 递增夹 boot 流=双客并发 [69]\n");
     console_puts("  ttyAMA0 / vda 128 blocks / initramfs / busybox 壳 [70-73]\n");
     console_puts("    (0x1d Ctrl-] = 宿主夺回;owner 不再自动归还)\n");
-    console_puts("  echo TOKEN / cat /proc/cpuinfo(cpuinfo 0xd07) [74-75]\n");
+    console_puts("  echo TOKEN / cat /proc/cpuinfo(cpuinfo 0xd07) [75-76]\n");
     console_puts("  cat /proc/cpuinfo -> processor 1(双核用户态)  [76]\n");
-    console_puts("  utest               -> EL0 syscall 面(pid/NI/sysinfo)  [77]\n");
-    console_puts("  forkdemo            -> COPY_UCONTEXT 全生命周期    [78]\n");
-    console_puts("  mmapdemo            -> 缺页零填+rw+munmap         [79]\n");
-    console_puts("  exedemo             -> EXEC_SETUP 帧改写(pc/sp/x0) [80]\n");
-    console_puts("  ipcdemo             -> 三段消息+优先级传播       [81]\n");
-    console_puts("  pulsedemo           -> 异步脉冲 5 连发/排空     [82]\n");
-    console_puts("  abortdemo           -> 发送超时+UNBLOCK 脉冲    [83]\n");
-    console_puts("  fddemo              -> fd=通道三元组四脸走服务器 [84]\n");
-    console_puts("  futexdemo           -> WAIT/WAKE 四脸+真阻塞   [85]\n");
-    console_puts("  sigdemo             -> 跨进程 kill+EINTR+帧手术 [86]\n");
-    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [87]\n");
-    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [88]\n");
-    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [89]\n");
-    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [90]\n");
+    console_puts("  /bin/hello -> 同一 musl ELF 双世界右翼   [77]\n");
+    console_puts("  utest               -> EL0 syscall 面(pid/NI/sysinfo)  [78]\n");
+    console_puts("  forkdemo            -> COPY_UCONTEXT 全生命周期    [79]\n");
+    console_puts("  mmapdemo            -> 缺页零填+rw+munmap         [80]\n");
+    console_puts("  exedemo             -> EXEC_SETUP 帧改写(pc/sp/x0) [81]\n");
+    console_puts("  ipcdemo             -> 三段消息+优先级传播       [82]\n");
+    console_puts("  pulsedemo           -> 异步脉冲 5 连发/排空     [83]\n");
+    console_puts("  abortdemo           -> 发送超时+UNBLOCK 脉冲    [84]\n");
+    console_puts("  fddemo              -> fd=通道三元组四脸走服务器 [85]\n");
+    console_puts("  futexdemo           -> WAIT/WAKE 四脸+真阻塞   [86]\n");
+    console_puts("  sigdemo             -> 跨进程 kill+EINTR+帧手术 [87]\n");
+    console_puts("  run /bin/hello      -> musl 双世界左翼(用户态 loader) [88]\n");
+    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [89]\n");
+    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [90]\n");
+    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [91]\n");
+    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [92]\n");
 }
 
 static void cmd_version(void)

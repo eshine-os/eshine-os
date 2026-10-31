@@ -33,10 +33,13 @@
 #define RT_FDOP_WRITE   3u
 #define RT_FDOP_CLOSE   4u
 #define RT_FDOP_DUP     5u
+#define RT_FDOP_SEEK    6u     /* 站33:loader 段定位(SEEK_SET 面) */
 
 #define RT_FD_DATA      44u    /* 请求内联窗:OPEN 路径/WRITE 数据 */
 #define RT_FD_PATH      43u    /* 路径窗(43 字符+NUL 收口) */
-#define RT_FD_RDATA     56u    /* READ 回复数据窗 */
+#define RT_FD_RDATA     64u    /* READ 回复数据窗(站33:status 走
+                                 * reply 面,rbuf 可满 64——站 31 留的
+                                 * 8B 白舍,loader 往返数-12.5%) */
 #define SRV_TICKS       100u   /* fd 层趟输窗(拍) */
 #define CLOSE_TICKS     50u    /* 关闭/继承面窗(收窄:死服不拖尸) */
 
@@ -159,6 +162,9 @@ static void srv_tty(void *arg)
             break;
         case RT_FDOP_DUP:
             r = ocb_ref((int)req.ocb);
+            break;
+        case RT_FDOP_SEEK:
+            r = -22;                   /* 字符面无 seek(ESPIPE 意) */
             break;
         default:
             r = -22;
@@ -330,6 +336,17 @@ static void srv_ramfs(void *arg)
         case RT_FDOP_DUP:
             r = ocb_ref((int)req.ocb);
             break;
+        case RT_FDOP_SEEK: {          /* 站33:SEEK_SET 绝对位 */
+            struct srv_ocb *o = ocb_get((int)req.ocb);
+
+            if (!o) {
+                r = -9;
+                break;
+            }
+            o->off = req.a;
+            r = 0;
+            break;
+        }
         default:
             r = -22;                   /* WRITE/未知:文件面无此操作 */
         }
@@ -450,6 +467,23 @@ long rt_fd_write(struct rt_proc *p, int fd, const char *kbuf, u32 len)
     r = rt_msg_send(p->fds[fd].coid, &req, sizeof(req), NULL, 0,
                     SRV_TICKS);
     return r < 0 ? r : (r > (long)len ? (long)len : r);
+}
+
+/* 站33:SEEK_SET 绝对位(loader 段定位;whence 其余面=调用侧拒) */
+long rt_fd_seek(struct rt_proc *p, int fd, u32 off)
+{
+    struct rt_fdreq req;
+    long r;
+
+    if (!fd_slot_ok(p, fd))
+        return -9;
+    fd_zero(&req, sizeof(req));
+    req.op = RT_FDOP_SEEK;
+    req.a = off;
+    req.ocb = p->fds[fd].ocb;
+    r = rt_msg_send(p->fds[fd].coid, &req, sizeof(req), NULL, 0,
+                    SRV_TICKS);
+    return r < 0 ? r : 0;
 }
 
 int rt_fd_close(struct rt_proc *p, int fd)

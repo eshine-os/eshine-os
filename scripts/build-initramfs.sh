@@ -44,6 +44,9 @@ rm -rf "$ROOT"
 mkdir -p "$ROOT/bin" "$ROOT/dev" "$ROOT/proc" "$ROOT/sys" "$ROOT/tmp" \
          "$ROOT/mnt" "$ROOT/root" "$ROOT/etc"
 cp busybox "$ROOT/bin/busybox"
+# 站33:双 musl 世界右翼——与 vm0 ramfs 同一 ELF 字节(tools/
+# ramfs/bin/hello,build-musl.sh 产物入仓);48KB vs 8MB 槽余量足
+cp "$REPO/tools/ramfs/bin/hello" "$ROOT/bin/hello"
 # 内核 initramfs 默认 init=/init:挂 proc/sys(/proc/cpuinfo 自证判据的
 # 前提)后 exec sh,PID 1 平滑过渡给 shell
 cat > "$ROOT/init" <<'EOF_INIT'

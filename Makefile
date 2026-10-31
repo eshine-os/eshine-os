@@ -75,7 +75,7 @@ RTOBJS := rtos/start.o rtos/vec.o rtos/rt_sched.o rtos/rt_task.o \
 
 # 站31:rootfs 构建期打包——tools/ramfs 树 -> cpio(newc),ramfs.S
 # .incbin 内嵌(汇编期展开,-MMD 抓不到 -> ramfs.o 显式依赖归档)
-rtos/ramfs.cpio: tools/gen_ramfs.py $(wildcard tools/ramfs/*)
+rtos/ramfs.cpio: tools/gen_ramfs.py $(shell find tools/ramfs -type f 2>/dev/null)
 	python3 tools/gen_ramfs.py tools/ramfs rtos/ramfs.cpio
 
 rtos/start.o: rtos/start.S

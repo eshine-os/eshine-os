@@ -213,6 +213,17 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define RT_FUTEX_WAIT       0
 #define RT_FUTEX_WAKE       1
 
+/* 站三十三:musl 薄面号(全真 Linux asm-generic;musl 启动期实测
+ * 需求面:writev=stdio 真通路/exit_group=真退场/set_tid_address=
+ * __init_tp/ioctl=isatty 探测/rt_sigprocmask=掩码兑现/lseek=
+ * loader 段定位;exit_group 94 与 exit 93 同面直挂) */
+#define ES_NR_ioctl         29
+#define ES_NR_lseek         62
+#define ES_NR_writev        66
+#define ES_NR_exit_group    94
+#define ES_NR_set_tid_address 96
+#define ES_NR_rt_sigprocmask 135
+
 /* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
  * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
 enum {
@@ -390,6 +401,7 @@ int  rt_msg_conn_ref(int coid);   /* 站31:coid 引用+1(fork 继承面) */
  * 记档+协商位留后)。 */
 int  rt_fd_open(struct rt_proc *p, const char *kpath);
 int  rt_fd_close(struct rt_proc *p, int fd);
+long rt_fd_seek(struct rt_proc *p, int fd, u32 off);  /* 站33:SEEK_SET 面 */
 long rt_fd_read(struct rt_proc *p, int fd, char *kbuf, u32 len);
 long rt_fd_write(struct rt_proc *p, int fd, const char *kbuf, u32 len);
 void rt_fd_fork(struct rt_proc *pp, struct rt_proc *cp);
@@ -411,6 +423,7 @@ long rt_sig_return(u64 *frame);        /* sig_saved 回拷+x0 同值回写 */
 void rt_sig_fork(struct rt_proc *pp, struct rt_proc *cp);
 struct rt_proc *rt_proc_lookup(int pid);  /* 活进程查(死=ESRCH 面) */
 void rt_futex_poke(struct rt_proc *p, u64 va, u64 delay);  /* 扑克(sys_demo 面) */
+void rt_fp_trap_cur(void);   /* 站33:FP 陷阱体(EL0/EL1 共用) */
 struct rt_proc *rt_proc_of(rt_task_t *t);  /* 任务->进程(NULL=内核) */
 int  rt_proc_create(rt_task_t *leader, struct rt_proc **out); /* CREATE 挂起态 */
 u64  rt_proc_ttbr(struct rt_proc *p);     /* 切换值 asid<<48|L0 */
@@ -422,7 +435,7 @@ int  rt_proc_fork_as(struct rt_proc *parent,
 long sys_exec_setup_impl(u64 *frame, u64 entry, u64 sp,
                          u64 a0, u64 a1, u64 a2, u64 a3);
 void rt_proc_boot_shell(rt_task_t *shell);  /* 进程 1:镜像/栈申报+预映 */
-u64  rt_as_mmap(struct rt_proc *p, u64 len);  /* ANON 派段,0=满/败 */
+u64  rt_as_mmap(struct rt_proc *p, u64 hint, u64 len);  /* 站33:hint 落位,0=满/败 */
 int  rt_as_munmap(struct rt_proc *p, u64 start, u64 len);
 struct rt_proc *rt_proc_zombie_find(int pid, int *exit_code);
 void rt_proc_reap(struct rt_proc *p);          /* ZOMBIE 槽全回收 */

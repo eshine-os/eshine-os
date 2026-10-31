@@ -441,12 +441,201 @@ static void cmd_sigdemo(void)
                      : "sigdemo: reap FAIL\n");
 }
 
+/* ---- 站33:用户态 loader(参考实现 "loader 在用户态"机制;内核零镜像
+ * 字节红线保全)——`run <path>`:fork->子全用户态装 ELF(fd=通道
+ * 三元组读 ramfs)hint-mmap 段+拷->栈块(argc/argv/envp/auxv)
+ * ->exec_setup 七参帧改写;父 wait4 收 code。musl 零 patch:号面
+ * =站 28-32 真 asm-generic,启动期薄面(writev/exit_group/
+ * set_tid_address/ioctl ENOTTY/sigprocmask/lseek)在内核侧。 */
+
+struct ux_ehdr {
+    u8 e_ident[16];
+    u16 type, machine;
+    u32 version;
+    u64 entry, phoff, shoff;
+    u32 flags;
+    u16 ehsize, phentsize, phnum, shentsize, shnum, shstrndx;
+};
+struct ux_phdr {
+    u32 type, flags;
+    u64 offset, vaddr, paddr, filesz, memsz, align;
+};
+
+/* 段头驻 .user 静态区:AT_PHDR 指此(exec 后旧像恒驻=站33 v0
+ * 边界,不撤销旧映射;phdr 在文件内偏移、段数据 0x10000 起,
+ * 两不相属,故须在位副本)。 */
+static struct ux_phdr ux_phs[8];
+
+/* AT_RANDOM:无栈保护编译,值仅须可读——ELF 魔数头即"随机" */
+static const u8 ux_rand[16] = { 0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4,
+                               5, 6, 7, 8, 9, 10, 11, 12 };
+
+#define UX_STACK_HINT 0x40D00000UL   /* mmap 窗内,与段基 0x40C00000 不撞 */
+#define UX_STACK_LEN  0x20000UL
+
+static int ux_read_n(long fd, u8 *dst, u32 n)
+{
+    /* 64B 窗直读(fdread 的内核拷贝即落目标 VA——access_ok 域内) */
+    while (n) {
+        u32 want = n > 64 ? 64 : n;
+        long r = sys3(ES_NR_fdread, fd, (long)dst, (long)want);
+
+        if (r <= 0)
+            return -1;
+        dst += r;
+        n -= (u32)r;
+    }
+    return 0;
+}
+
+static int ux_copy_seg(long fd, u64 vaddr, u32 filesz)
+{
+    while (filesz) {
+        u32 n = filesz > 64 ? 64 : filesz;
+
+        if (ux_read_n(fd, (u8 *)(unsigned long)vaddr, n) < 0)
+            return -1;
+        vaddr += n;
+        filesz -= n;
+    }
+    return 0;                            /* 段尾 memsz-filesz=mmap 零填 */
+}
+
+static void ux_exec(const char *path)
+{
+    struct ux_ehdr eh;
+    u64 stk, top, sp, randp, argv0p;
+    u64 *blk;
+    u32 i, n;
+    long fd;
+
+    fd = sys1(ES_NR_fdopen, (long)path);
+    if (fd < 0) {
+        sys_puts("run: open failed\n");
+        goto fail;
+    }
+    if (ux_read_n(fd, (u8 *)&eh, sizeof(eh)) < 0 ||
+        eh.e_ident[0] != 0x7f || eh.e_ident[1] != 'E' ||
+        eh.e_ident[2] != 'L' || eh.e_ident[3] != 'F' ||
+        eh.e_ident[4] != 2 || eh.machine != 0xb7 || eh.type != 2) {
+        sys_puts("run: bad elf\n");
+        goto fail;
+    }
+    if (eh.phnum < 1 || eh.phnum > 8 || eh.phentsize != 56) {
+        sys_puts("run: bad phdrs\n");
+        goto fail;
+    }
+    if (sys3(ES_NR_lseek, fd, (long)(u32)eh.phoff, 0) != 0) {
+        sys_puts("run: seek phoff failed\n");
+        goto fail;
+    }
+    for (i = 0; i < eh.phnum; i++) {
+        if (ux_read_n(fd, (u8 *)&ux_phs[i], sizeof(ux_phs[0])) < 0) {
+            sys_puts("run: phdr read failed\n");
+            goto fail;
+        }
+    }
+    for (i = 0; i < eh.phnum; i++) {
+        struct ux_phdr *ph = &ux_phs[i];
+        u64 pglen;
+
+        if (ph->type != 1)              /* PT_LOAD */
+            continue;
+        pglen = (ph->memsz + 4095) & ~4095ULL;
+        if (!pglen)
+            continue;
+        if ((u64)sys2(ES_NR_mmap, (long)ph->vaddr, (long)pglen) !=
+            ph->vaddr) {
+            sys_puts("run: mmap miss\n");   /* hint 落位=loader 契约 */
+            goto fail;
+        }
+        {   /* 段页先用户态预触:逐页写零在 EL0 触缺页(站 29 机器
+             * 只挂 EL0 面);否则内核 uaccess(拷贝落段)先于映射,
+             * EL1 打穿=panic(esr=0x96 FSC=0x06 far=段基,冒烟定谳) */
+            u8 *pg = (u8 *)(unsigned long)ph->vaddr;
+            u64 k;
+
+            for (k = 0; k < pglen; k += 4096)
+                pg[k] = 0;
+        }
+        if (ph->filesz) {
+            if (sys3(ES_NR_lseek, fd, (long)(u32)ph->offset, 0) != 0 ||
+                ux_copy_seg(fd, ph->vaddr, (u32)ph->filesz) < 0) {
+                sys_puts("run: seg copy failed\n");
+                goto fail;
+            }
+        }
+    }
+    sys1(ES_NR_fdclose, fd);
+    /* 栈+启动块(自顶向下:串/AT_RANDOM/auxv/argv/envp/argc) */
+    stk = (u64)sys2(ES_NR_mmap, (long)UX_STACK_HINT, (long)UX_STACK_LEN);
+    if (stk != UX_STACK_HINT) {
+        sys_puts("run: stack mmap miss\n");
+        goto fail;
+    }
+    top = stk + UX_STACK_LEN;
+    {   /* argv[0] 串 */
+        const char *s = path;
+
+        for (n = 0; s[n]; n++)
+            ;
+        n++;
+        top -= n;
+        argv0p = top;
+        for (i = 0; i < n; i++)
+            ((u8 *)(unsigned long)top)[i] = s[i];
+        top &= ~15UL;
+    }
+    top -= 16;                           /* AT_RANDOM 数据 */
+    randp = top;
+    for (i = 0; i < 16; i++)
+        ((u8 *)(unsigned long)randp)[i] = ux_rand[i];
+    top &= ~15UL;
+    /* 固定区:argc(8)+argv[0]+NULL(16)+envp NULL(8)+auxv(128) */
+    sp = top - 160;
+    blk = (u64 *)(unsigned long)sp;
+    blk[0] = 1;                          /* argc */
+    blk[1] = argv0p;
+    blk[2] = 0;                         /* argv NULL */
+    blk[3] = 0;                         /* envp: NULL */
+    blk[4] = 3; blk[5] = (u64)(unsigned long)ux_phs;   /* AT_PHDR */
+    blk[6] = 4; blk[7] = 56;                            /* AT_PHENT */
+    blk[8] = 5; blk[9] = eh.phnum;                       /* AT_PHNUM */
+    blk[10] = 6; blk[11] = 4096;                        /* AT_PAGESZ */
+    blk[12] = 9; blk[13] = eh.entry;                     /* AT_ENTRY */
+    blk[14] = 25; blk[15] = randp;                       /* AT_RANDOM */
+    blk[16] = 23; blk[17] = 0;                          /* AT_SECURE */
+    blk[18] = 0; blk[19] = 0;                           /* AT_NULL */
+    sys3(ES_NR_exec_setup, (long)eh.entry, (long)sp, 0);
+    sys_puts("run: exec returned?!\n");   /* 不达 */
+fail:
+    sys1(ES_NR_exit, 1);
+}
+
+static void cmd_run(const char *path)
+{
+    long st = 0, pid;
+
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {   /* COPY_UCONTEXT 子支 */
+        ux_exec(path);                  /* 不归(或失败退场) */
+    }
+    if (pid < 0) {
+        sys_puts("run: fork failed\n");
+        return;
+    }
+    pid = sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts("run: exited code=");
+    sys_put_dec((u64)st);
+    sys_puts("\n");
+}
+
 /* 站31:fd=通道三元组走查——open/read/close 全走 resmgr 服务器
  * (fd 层->三段消息->ramfs);EOF(status=0)收口,字节数自证。 */
 static void fd_dump(const char *path, const char *tag)
 {
     long fd, n, total = 0;
-    char buf[56];
+    char buf[64];
 
     fd = sys1(ES_NR_fdopen, (long)path);
     if (fd < 0) {
@@ -548,6 +737,8 @@ static void shell_line(char *line)
         cmd_abortdemo();
     } else if (streq(line, "fddemo")) {
         cmd_fddemo();
+    } else if (starts(line, "run ")) {
+        cmd_run(line + 4);
     } else if (streq(line, "futexdemo")) {
         cmd_futexdemo();
     } else if (streq(line, "sigdemo")) {
@@ -578,7 +769,7 @@ static void shell_line(char *line)
     } else if (line[0]) {
         sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
                  " | forkdemo | mmapdemo | exedemo | ipcdemo | pulsedemo | abortdemo | fddemo"
-                 " | futexdemo | sigdemo"
+                 " | futexdemo | sigdemo | run <p>"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");
