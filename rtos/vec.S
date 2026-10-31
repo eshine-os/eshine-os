@@ -183,11 +183,23 @@ guest_irq:
     eret
 .Lel1:
     mrs     x5, spsel
-    cbnz    x5, .Lregs             /* SPSel=1:簿记已写 SP_EL1=task->sp */
-    ldr     x5, [x0]               /* task->sp = EL1h 任务的真栈指针 */
+    cbnz    x5, .Lregs             /* SPSel=1:簿记 mov sp 已写 SP_EL1,
+                                     * .Lpop 顶 ldp 亦已推进本库,零改动 */
+    /* SPSel=0 语境(自 EL0 异常处理链切来):.Lpop 顶 ldp 已把当前库
+     * (SP_EL0)推到 task->sp+16 = GPR 块基(bank 无关)。弹栈必须在
+     * 目标的 SP_EL1 库就地进行:换库前抓现值,换库后原地弹到底——
+     * 弹栈的推进即归 SP_EL1,eret 后 EL1h 的 sp=task->sp+272 全量
+     * 回卷。曾以帧基 [x0] 归位后切回 SP_EL0 库弹:推进全记在
+     * SP_EL0,eret 后 SP_EL1 仍是未弹旧顶——每轮自 EL0 语境向
+     * EL1h 派发净漏 272B,idle 引导栈 ~20 周期踩穿(8KB),tick 帧
+     * (272B)落进 .bss tp[] 软定时器表,"回复在而 tick 冻结"全案
+     * 即此(站28 vtimer 专站:gdb 棘轮直方图+差分三采样定谳)。
+     * 修正版曾漏 +16(帧基 ≠ GPR 块基):弹栈整体左移一字,寄存器
+     * 全串位,heartbeat elr=0x0 IABT 即时定谳——故用抓现值习语
+     * (同 RT_EL0_RET mov x2,sp),消灭重载+补偏的重复记账 */
+    mov     x5, sp                 /* GPR 块基 = task->sp+16(换库前) */
     msr     spsel, #1
-    mov     sp, x5                  /* SP_EL1 := 归还 */
-    msr     spsel, #0               /* sp 回帧顶(pop 用) */
+    mov     sp, x5                 /* SP_EL1 := GPR 块基,留在本库弹 */
 .Lregs:
     RT_POP_GPRS
     eret
@@ -300,6 +312,15 @@ guest_el0_sync:
     lsr     x0, x0, #26
     cmp     x0, #0x15              /* EC == SVC(AArch64)? */
     b.ne    1f
+    /* 站28 vtimer 专站定谳:SVC 处理语境解锁 DAIF。阻塞系统调用
+     * (read 之 block_rx、demo 之 sleep)会把本语境挂到空闲 wfi——
+     * 硬件异常入口的全掩 DAIF 若不解除,泊位 pstate 即存成掩码:
+     * 唤醒后 LR 注入的虚拟 tick 永递不进(PSTATE.I 拦),cval 冻结
+     * → CARM-STALL 绊线停醒 = "回复在而 tick 冻结"(wake_retries
+     * 实测 89576、psr=0x3c5、ctl ISTATUS=1 三证齐)。站16-27 任务
+     * 语境恒非掩(EL1h 壳阻塞即此形),本行 = 该契约在 syscall
+     * 边界的延续;dispatch 内阻塞/锁机器本按可抢占建成。 */
+    msr     daifclr, #0xf
     mov     x0, sp
     bl      rt_syscall_dispatch    /* 返回值已写帧 x0 槽 */
     RT_EL0_RET

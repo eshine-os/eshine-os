@@ -75,8 +75,31 @@ void el2_irq_host(void)
              * 降线保挂:线挂期间重复 27 由本分支廉价吸收,停泊
              * 落定后 26 每拍扫描(smp.c 已补)接管再发现,有界
              * (≤1s)自愈;真无主(客已死/停)时下一位进场的
-             * WOKE 熄火把线合拢。 */
+             * WOKE 熄火把线合拢。
+             * 站28 vtimer 专站修真(第四类,本站定谳):上列三分支
+             * 漏了一种活火——可跑客的 vtimer 在宿主片隙(量轮换
+             * 片隙/壳命令窗)到点:sweep 只认泊者、inflight 只认
+             * LR 在途,双不中即落此"无主"收尸(仅 eoi_drop):
+             * 物理 27 被 claim 成永 active 且零注入,线恒高、
+             * active 挡再投递,滴答永死——"回复在而 tick 冻结"
+             * 的宿主真身(trail ev15→ev8 后 CPU0 27 绝迹;cval
+             * 冻结≈40s 落后、pend+act 双置、vLR 陈尸四证齐)。
+             * 第四类判据=本核 sched_vtimer_last 业主可跑且 PPI27
+             * 使能:照 el2_irq_guest 律注入,并回写业主帧 lr 槽
+             * (泵下一圈进场装回;无此写则入场恢复以旧帧覆掉本次
+             * 注入=站16"活不过切换"律),guest 消费后虚 EOI 经
+             * HW-LR 联动撤物理 active,闭环。 */
+            struct vcpu *ov = vm_vtimer_runnable_owner(cpu_id());
+            struct eshine_vm *ovm = ov ? vm_of_vcpu(ov) : NULL;
+
             gicv3_eoi_drop(GIC_PPI_VTIMER);
+            if (ovm && vgic_ppi_enabled(&ovm->vgic, GIC_PPI_VTIMER)) {
+                vgic_inject_vtimer(vgic_ppi_prio(&ovm->vgic,
+                                                 GIC_PPI_VTIMER));
+                __asm__ volatile("mrs %0, ich_lr0_el2"
+                                 : "=r"(ov->lr_vtimer));
+                trail_add(16, 1, 0);
+            }
         }
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
@@ -111,11 +134,36 @@ void el2_irq_guest(void)
          * 没人替它落线)。电平重挂窗口=guest 进 handler 的几条
          * 指令,陷阱间恒前进,自限。EOI-drop 照做:claim 抬起的
          * 物理 RPR 不还,后续 26/27 全哑(物理 active 位不撤无妨,
-         * active+pending 照常可投)。 */
-        gicv3_eoi_drop(GIC_PPI_VTIMER);
-        trail_add(14, timer_ticks(), cur_vcpu ? 1 : 0);
-        vgic_inject_vtimer(vgic_ppi_prio(&vm_of_vcpu(cur_vcpu)->vgic,
-                                         GIC_PPI_VTIMER));
+         * active+pending 照常可投)。
+         * 站28 vtimer 专站第二脸(跨 VM 串台窗,站16"串台消费"
+         * 律的在途拍面):27 在"别人跑"的片里到点(同核轮转多客,
+         * 如 vm1 spinner 与 vm0.v0 共 CPU0)——旧代码无条件注硬
+         * LR0,虚 27 被送进**跑者**的 GIC 面:跑者无 27 处理面
+         * 永不认领,HW-LR 挂起又由恒高物理线驱动,跑者被喂成
+         * 认领-EOI-再挂无限风暴(TCG 满速磨穿,泵"跑到出"楔死
+         * 宿主壳=hb 门"回复<2+串行撕裂"脸,-d int 定谳);认领
+         * 窗内业主进场则硬 LR 已被跑者帧保存劫走,物 理 active
+         * 再无虚 EOI 撤销=业主滴答永死。修真:跑者==业主照旧硬
+         * 注(即时消费);跑者≠业主且业主可跑——**只写业主帧 lr
+         * 槽**(同源 vgic_make_vtimer_lr,不碰跑者硬 LR),泵下
+         * 一圈进场装回、业主消费、虚 EOI 撤物理 active 闭环;
+         * 业主泊者(可跑判空)不注入——每拍扫描的 cval 再发现/
+         * WOKE 注入照走(站25C 兜底),物理 active 同由其虚 EOI
+         * 合拢。 */
+        {
+            struct vcpu *ov = vm_vtimer_runnable_owner(cpu_id());
+
+            gicv3_eoi_drop(GIC_PPI_VTIMER);
+            trail_add(14, timer_ticks(), cur_vcpu ? 1 : 0);
+            if (ov == cur_vcpu) {
+                vgic_inject_vtimer(vgic_ppi_prio(&vm_of_vcpu(cur_vcpu)->vgic,
+                                                 GIC_PPI_VTIMER));
+            } else if (ov) {
+                ov->lr_vtimer = vgic_make_vtimer_lr(
+                    vgic_ppi_prio(&vm_of_vcpu(ov)->vgic, GIC_PPI_VTIMER));
+                trail_add(17, 1, 0);
+            }
+        }
     } else if (intid != IAR_SPURIOUS) {
         gicv3_eoi_dir(intid);
     }

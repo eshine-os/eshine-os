@@ -63,6 +63,8 @@ int  vm_start(u32 id);           /* 异步启动:置 RUNNING 立即回 */
 struct vcpu *vm_vcpu(u32 id);         /* id -> vcpu(console owner 用) */
 struct vcpu *vm_vcpu_idx(u32 id, u32 vidx);  /* 站19D:(id,vidx) -> vcpu */
 struct eshine_vm *vm_of_vcpu(struct vcpu *v);   /* vcpu -> 所属 VM(mmio 分发用) */
+struct vcpu *vm_vtimer_runnable_owner(u32 cpu); /* 站28:本核 vtimer 归属的可跑业主
+                                                 * (27 宿主语境第四类活火判据) */
 u64 vm_ipa_to_pa(struct eshine_vm *vm, u64 ipa, u64 size);  /* 静态翻译(virtio/vuart 设备数据面) */
 int  vm_kill(u32 id);
 void vm_list(void);

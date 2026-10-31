@@ -122,26 +122,28 @@ static void sys_put_dec(u64 v)
 
 static void cmd_utest(void)
 {
-    u64 el;
     long pid, ni, r;
     struct rt_sysinfo si;
     int ok = 1;
 
-    /* EL0 自证:CurrentEL EL0 可读且只读为 0 */
-    __asm__ volatile("mrs %0, CurrentEL" : "=r"(el));
-    el >>= 2;
+    /* EL0 自证改道(站28 收口定谳):首版 mrs CurrentEL 在 EL0 落
+     * UNDEF(EC 0;ARMv8 ID 类寄存器 EL1+ 方可读,a57 诚实行刑,
+     * EL0 fault far=0 现场实证)——EL0 存在性证词改由 syscall 面
+     * 本身出:SVC 仅 EL0 有正当通道(EL1 的 0x15 走 rt_sync 未知
+     * EC 停车面),getpid>0/NI -ENOSYS/sysinfo 回填三判据在此面
+     * 即自证。 */
     pid = sys1(ES_NR_getpid, 0);
     ni = sys0(650);                 /* 未注册号:ni 面期望 -ENOSYS */
     r = sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
-    if (el != 0 || pid <= 0 || ni != -ES_ENOSYS || r != 0 ||
+    if (pid <= 0 || ni != -ES_ENOSYS || r != 0 ||
         si.tick == 0 || si.ver[0] == '\0')
         ok = 0;
-    sys_puts("utest: el=");
-    sys_put_dec(el);
-    sys_puts(" pid=");
+    sys_puts("utest: pid=");
     sys_put_dec((u64)pid);
     sys_puts(" ni=");
-    sys_put_dec((u64)(-(ni + 38)));  /* 38=|ENOSYS|,展示值 */
+    sys_put_dec((u64)(-ni));         /* 38=|ENOSYS|,展示值 */
+    sys_puts(" tick=");
+    sys_put_dec(si.tick);
     sys_puts(" ver=");
     sys_puts(si.ver);
     sys_puts("\n");
@@ -229,7 +231,7 @@ static void shell_line(char *line)
         sys_puts(line + 5);
         sys_puts("\n");
     } else if (line[0]) {
-        sys_puts("rtos: try echo <t> | selftest | ps | spawn <n> | sleep [1-9]"
+        sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");

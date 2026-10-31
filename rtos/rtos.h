@@ -168,6 +168,7 @@ struct rt_sysinfo {
 };
 void rt_task_wake_all(u32 mask);         /* 扫池:命中等待位的 BLOCK->READY */
 void rt_task_wake_sleepers(void);       /* 扫池:到期的 SLEEP->READY */
+rt_task_t *rt_pool_base(void);            /* 站28:tp 守卫用池域判据 */
 rt_task_t *rt_ps_first(unsigned int *idx);
 rt_task_t *rt_ps_next(unsigned int *idx);
 rt_task_t *rt_idle_task(void);

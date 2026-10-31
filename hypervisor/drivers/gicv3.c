@@ -106,19 +106,26 @@ bool vtimer_inflight(void)
     return (lr & ICH_LR_HW) && (lr & ICH_LR_PENDING);
 }
 
-void vgic_inject_vtimer(u8 prio)
+u64 vgic_make_vtimer_lr(u8 prio)
 {
     /* HW 映射:vINTID=27(guest CNTV 视角),pINTID=27(物理同号线);
      * Group+HW+pending 三位全置——HW LR 的挂起语义由物理线驱动,EOI
      * 联动撤线。第八站位号正名:bit61=HW,bit62=State(pending),
      * 缺状态位即 LR 无效(QEMU 弃投,实测 uart 首版只置 61 的教训)。
      * 站十四:[55:48] 优先级随 guest 自配(IPRIORITYR 镜像),
-     * 硬 0x00 会落进 Linux pseudo-NMI 阈值把 tick 走成 NMI 路径。 */
-    u64 lr = GIC_PPI_VTIMER | (GIC_PPI_VTIMER << 32)   /* [31:0]v / [47:32]p */
-           | ((u64)(prio & 0xFFu) << 48)              /* [55:48] 优先级 */
-           | ICH_LR_GROUP1 | ICH_LR_PENDING | ICH_LR_HW;
+     * 硬 0x00 会落进 Linux pseudo-NMI 阈值把 tick 走成 NMI 路径。
+     * 站28 vtimer 专站抽值器:同款 LR 值两个消费面——硬注(现
+     * 路径)与"跨 VM 串台窗"的业主帧直写(el2_irq_guest 27 分支:
+     * 跑者≠业主时不碰跑者的硬 LR,值进业主帧槽,泵下一圈装回)。 */
+    return GIC_PPI_VTIMER | (GIC_PPI_VTIMER << 32)   /* [31:0]v / [47:32]p */
+         | ((u64)(prio & 0xFFu) << 48)              /* [55:48] 优先级 */
+         | ICH_LR_GROUP1 | ICH_LR_PENDING | ICH_LR_HW;
+}
 
-    __asm__ volatile("msr ich_lr0_el2, %0" :: "r"(lr));
+void vgic_inject_vtimer(u8 prio)
+{
+    __asm__ volatile("msr ich_lr0_el2, %0"
+                     :: "r"(vgic_make_vtimer_lr(prio)));
     __asm__ volatile("isb");
 }
 

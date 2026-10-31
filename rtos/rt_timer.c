@@ -89,6 +89,32 @@ void rt_timer_tick(void)
 {
     unsigned int i;
 
+    /* 站28 vtimer 专站取证守卫:tp[] 曾被池形数据成块错投
+     * (far=0x340/0x345 双案,rt_timer_tick 遍历即崩)。合法定时器
+     * 指针必为 pool 槽对齐;坏值入表后 ≤1 拍(10ms)自报,
+     * 带 \n 即时冲刷——不依赖外仪,海森伯免疫 */
+    static u8 guard_hit;
+
+    if (!guard_hit) {
+        for (i = 0; i < RT_TMAX; i++) {
+            u64 v = (u64)tp[i];
+
+            u64 base = (u64)rt_pool_base();
+
+            if (v != 0 &&
+                (v < base ||
+                 v >= base + (u64)RT_POOL_MAX * sizeof(rt_task_t) ||
+                 (v - base) % sizeof(rt_task_t) != 0)) {
+                rt_puts_u64("tp-corrupt tick=", rt_ticks, " idx=");
+                rt_puts_u64("", i, " val=");
+                rt_puts_hex("", v, " cur=");
+                rt_puts(rt_cur->name);
+                rt_puts("\n");
+                guard_hit = 1;
+                break;
+            }
+        }
+    }
     for (i = 0; i < RT_TMAX; i++) {
         rt_timer_t *t = tp[i];
 

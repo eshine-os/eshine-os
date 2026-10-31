@@ -214,6 +214,23 @@ int vm_create(u32 id)
                                       * 自会写入 init_task) */
             v->wait_reason = 0UL;
             v->wait_state = 0UL;
+            /* 站28 vtimer 专站补遗(帧即真相同律的站16 漏网):SCTLR/
+             * TTBR0/TCR/VBAR/CPACR/LR0/VMCR/FP 入帧后从未进"槽位复用
+             * 不许带旧值"复位清单——DEAD->CREATE 复用时新客带着前世
+             * SCTLR(M=1)入场:引导的 bss 清零抹掉正在翻译的页表,
+             * 取指即 L2 翻译错;向量取指落同址=向量自陷风暴,泵
+             * "跑到出"楔死宿主壳([79] 脸;-d int 230MB 风暴定谳,
+             * ELR=FAR=VBAR 同址无限循环)。全清=与冷靴 bss 帧
+             * 完全同构,引导自会按新几何建表、设 VBAR、配 ICV。 */
+            v->sctlr = 0UL;         /* MMU 关起步 */
+            v->ttbr0 = 0UL;
+            v->tcr = 0UL;
+            v->vbar = 0UL;           /* guest 首异常前自设(boot 契约) */
+            v->cpacr = 0UL;          /* FPEN 关:首 FP 指令走 guest lazy 陷阱 */
+            v->lr_vtimer = 0UL;      /* 无陈尸 vLR 可装 */
+            v->vmcr = 0UL;           /* 虚拟面全关起步,guest 经 ICV 自配 */
+            v->fpcr = 0UL;
+            v->fpsr = 0UL;
             if (vi == 0) {
                 v->pc = vm_geo[id].entry;      /* 帧即真相:新跑=初始化帧 */
                 v->sp = 0x40200000UL;          /* guest 自会重设 */
@@ -400,6 +417,33 @@ struct eshine_vm *vm_of_vcpu(struct vcpu *v)
                 return &vm_table[id];
     }
     panic("vm_of_vcpu: vcpu not in vm_table");
+}
+
+/* 站28 vtimer 专站:本核 vtimer 归属(sched_vtimer_last)的可跑业主判定。
+ * 27 在宿主语境起火的第四类判据——可跑客的活火落在片隙(sweep 只认
+ * 泊者,inflight 只认 LR 在途,双不中被老代码当"无主"收尸=滴答永死,
+ * trail ev15→ev8 终局定谳)。返回 NULL=非可跑业主(回落老语义);
+ * 否则=业主帧指针,调用方注入后回写其 lr_vtimer 槽(泵下一圈进场
+ * 装回,防站16"活不过切换"律以旧帧覆掉注入)。 */
+struct vcpu *vm_vtimer_runnable_owner(u32 cpu)
+{
+    u64 own = sched_vtimer_last[cpu];
+    struct eshine_vm *vm;
+    struct vcpu *v;
+
+    /* 哨兵碰撞修真(站28 定谳):(id<<4)|vi 对 vm0.vcpu0 打包值=0,
+     * 与数组 bss 初值不可分——但泵入场(685)必先写,27 能起火则本核
+     * 必已入过场,0=真业主 vm0.vcpu0 是唯一诚实读法;真守门员是
+     * 下面的 VM_RUNNING 态判(未建客 state=INIT 必拒)。
+     * 曾以 own==0 早退,首轮猎捕 ev8 后无 ev16 为证拒掉了唯一
+     * 受害者,滴答照死——此行不复。 */
+    if (cpu >= 4UL || (own >> 4) >= ESHINE_MAX_VMS)
+        return NULL;
+    vm = &vm_table[own >> 4];
+    v = &vm->vcpus[own & 0xFUL];
+    if (vm->state != VM_RUNNING || v->wait_state != 0UL)
+        return NULL;
+    return v;
 }
 
 /* 静态翻译(第九站建/第十站 virtio 数据面):IPA 落 mem[] 区且全尺寸含 → PA,
@@ -659,16 +703,19 @@ static bool pump_run_vcpu(u32 id, u32 vi)
                 wake_retries_cval[slot] = v->vtimer_cval;
                 wake_retries[slot] = 0;
             }
-            if (++wake_retries[slot] > 2000) {
-                /* 站25 评审修真(b 腿同案):标记行整行持锁,内层
-                 * puts/putdec 复入零成本。 */
-                console_lock();
-                console_puts("CARM-STALL: vm=");
-                util_putdec(id);
-                console_puts(".");
-                util_putdec(vi);
-                console_puts(" cval frozen (consume-fail face)\n");
-                console_unlock();
+            ++wake_retries[slot];
+            /* 站28 修真:绊线越过 2000 恒停醒(原语义),标记只印
+             * 一次(旧代码每泵圈一印,冻结尸曾洪 9 万行淹串口) */
+            if (wake_retries[slot] > 2000) {
+                if (wake_retries[slot] == 2001) {
+                    console_lock();
+                    console_puts("CARM-STALL: vm=");
+                    util_putdec(id);
+                    console_puts(".");
+                    util_putdec(vi);
+                    console_puts(" cval frozen (consume-fail face)\n");
+                    console_unlock();
+                }
                 return false;          /* 停醒:证物交 verify 自动取证 */
             }
             v->wait_state = 2UL;
@@ -1102,6 +1149,16 @@ void vm_rx_dump(void)
             console_puthex(vc);
             console_puts(" hpcval=");
             __asm__ volatile("mrs %0, cnthp_cval_el2" : "=r"(vv));
+            console_puthex(vv);
+            /* 站28 vtimer 专站:虚拟接口三面直读——ICH_HCR(En 总闸)、
+             * ICH_VMCR(VENG1/VPMR=guest ICV 底座)。vLR 双 pending 而
+             * guest 未掩却两拍不取,唯此可判:En=0/VENG1=0/VPMR=0
+             * 皆"线在而面灭"。 */
+            console_puts(" hcr=");
+            __asm__ volatile("mrs %0, ich_hcr_el2" : "=r"(vv));
+            console_puthex(vv);
+            console_puts(" vmcr=");
+            __asm__ volatile("mrs %0, ich_vmcr_el2" : "=r"(vv));
             console_puthex(vv);
             console_puts("\n");
         }

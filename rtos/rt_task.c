@@ -11,6 +11,13 @@ volatile u64 rt_ticks;
 
 static rt_task_t pool[RT_POOL_MAX];
 
+/* 站28:tp[] 完整性守卫要判合法池域,池基出口
+ * (只读访问,写仍限本文件) */
+rt_task_t *rt_pool_base(void)
+{
+    return pool;
+}
+
 /* 站二十八:EL0 异常蹦床(每核 32B:SP_EL1 域 scratch 存取;boot/次核
  * 各置 SP_EL1=本核元素尾)+每池槽 4KB 内核栈(EL0 任务的帧栈/系统
  * 调用阻塞续跑栈;EL1 任务不入此面)。 */

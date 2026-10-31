@@ -129,8 +129,22 @@ spec 时点的设计在十一个运行时根因面前修正如下,以下为裁�
 4. **syscall wrapper 须声明全 caller-saved clobber(x3-x18)**。
 5. **两区几何**:T0SZ=25=39 位 VA=两级走(1GB 表→2MB 块);
    AP[2:1] 真值表:00=EL1-only RW,01=双级 RW,1x=只读。
-6. **宿主 vtimer 陈疾挂账升级**:站 24 [41]/[69]("回复在而
-   tick 冻结")被本站 EL0 壳撞上判据面,门 [24+] 间歇游走
-   失败直至其专站根治;客人侧已尽落点加固(wfi 双 nop 垫)。
-   DoD 之"81×2 双绿"在 vtimer 专站前不可承诺,WIP 检查点诚实
-   入档(门 [1-23] 稳定绿)。
+6. **宿主 vtimer 陈疾挂账——收口定谳**:"回复在而 tick 冻结"
+   由三个独立缺陷担纲,全部根治、81×2 双绿达成(细节见同日
+   devlog 2026-10-31-station28-vtimer-closure.md):
+   - .Lel1 弹栈错库(guest):SPSel=0 语境切 EL1h 弹栈推进记错库,
+     每轮净漏 272B,idle 引导栈 20 周期踩穿 tp[]——修=换库前
+     mov x5,sp 抓 GPR 块基、留目标库弹到底;
+   - "无主"27 三分支漏第四类(host):可跑客活火落宿主片隙被
+     当无主收尸(claim 永 active+零注入)——修=业主可跑则注入
+     并回写其帧 lr 槽;
+   - 帧复用清单漏站 16 字段(host):带前世 MMU-on SCTLR 入场,
+     bss 清零抹活页表=向量自陷风暴([79] 脸)——修=九字段全清;
+   - 跨 VM 串台窗(host):同核他客跑着时 27 硬 LR0 被喂进跑者
+     的面([69] 脸)——修=跑者≠业主只写业主帧槽;
+   - utest 的 mrs CurrentEL 在 EL0 落 UNDEF(ID 类寄存器 EL1+
+     方可读)——修=EL0 证词改由 SVC 通道本身出。
+7. **[77] utest 门**:EL0 syscall 面一门全验(getpid>0/未注册
+   号 -ENOSYS/sysinfo ver+tick 回填),EL0 自证=SVC 通道本身;
+   门禁 80→81([77-80] 顺移),三处同步同批(verify/宿主壳
+   走查表/ARCHITECTURE)。
