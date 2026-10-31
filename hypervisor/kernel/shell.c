@@ -25,7 +25,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (92 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (93 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -92,6 +92,7 @@ static void cmd_help(void)
     console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [90]\n");
     console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [91]\n");
     console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [92]\n");
+    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[93]\n");
 }
 
 static void cmd_version(void)

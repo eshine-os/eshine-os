@@ -12,3 +12,5 @@ eshine.elf
 __pycache__/
 # 站31:rootfs 归档为构建产物(Makefile 规则生成;ramfs.o 显式依赖)
 rtos/ramfs.cpio
+# 站34:源归档=层内构建工件(git archive 生成,构建吃提交树)
+meta-eshine/recipes-eshine/eshine-rtos/files/eshine-os-*.tar.gz

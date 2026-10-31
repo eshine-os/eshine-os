@@ -326,7 +326,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（92 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（93 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -443,10 +443,16 @@ musl init→printf（writev）→exit_group→wait4 收尸；同字节，
 两个 OS，一台 hypervisor；musl 1.2.5 上游零 patch 直连，
 真 asm-generic 号面兑现日；EL0 FP 陷阱体自 EL1 向量抽出共用=
 per-task FP 机器补 EL0 面）** →
+**站34 yocto 门（[93]——meta-eshine 层入仓：git archive 提交树
+出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
+零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
+部署四件（eshine.elf/rtos.bin/guest2.bin/ramfs.cpio）；判据=
+部署产物真实可靴——第二台 QEMU 吃部署物起 vm0 跑出 musl run，
+非 parse-only）** →
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-92 步手动走查清单。
+93 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；
