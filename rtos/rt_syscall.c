@@ -117,6 +117,9 @@ static long sys_exit(u64 *frame)
     struct rt_proc *p = rt_cur->proc;
 
     if (p) {
+        /* 站31:逐 fd CLOSE(服务器 ocb 引用减+断连)——死亡关流;
+         * rt_cur=死者本人,阻塞往返合法(仅此处调,ISR 无涉) */
+        rt_fd_close_all(p);
         rt_proc_exit(p, (int)code);       /* 页池回收+L2 清+TLB 冲 */
         rt_task_wake_all(RT_PROC_BIT);    /* 父 wait4 的收尸唤醒 */
     }
@@ -198,6 +201,7 @@ static long sys_fork(u64 *frame)
     }
     cp->state = RT_PROC_RUN;
     cp->parent = pp->pid;
+    rt_fd_fork(pp, cp);                /* 站31:fdtable 组拷+双侧引用 */
     ct = rt_task_create_el0("child", NULL, NULL, rt_cur->prio + 1,
                             (void *)rt_cur->usp);
     if (!ct) {
@@ -333,6 +337,65 @@ static long sys_msg_reply(u64 *frame)
 static long sys_msg_pulse(u64 *frame)
 {
     return rt_msg_pulse((int)FR(0), (s64)FR(1), FR(2));
+}
+
+/* 站三十一:fd=通道三元组面(EL0 壳->fd 层->三段消息->resmgr
+ * 服务器;uaccess 纪律同站 28/30:access_ok+拷贝)。 */
+static long sys_fdopen(u64 *frame)
+{
+    char kpath[48];
+    struct rt_proc *p = rt_cur->proc;
+
+    if (!p)
+        return -ES_EINVAL;
+    if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
+        return -ES_EFAULT;
+    return rt_fd_open(p, kpath);
+}
+
+static long sys_fdclose(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_fd_close(rt_cur->proc, (int)FR(0));
+}
+
+static long sys_fdread(u64 *frame)
+{
+    char *ub = (char *)FR(1);
+    u32 len = (u32)FR(2);
+    char kbuf[56];
+    long r;
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (len > sizeof(kbuf))
+        len = sizeof(kbuf);
+    if (len && !access_ok(ub, len))
+        return -ES_EFAULT;
+    r = rt_fd_read(rt_cur->proc, (int)FR(0), kbuf, len);
+    if (r > 0) {
+        for (u32 i = 0; i < (u32)r; i++)
+            ub[i] = kbuf[i];
+    }
+    return r;
+}
+
+static long sys_fdwrite(u64 *frame)
+{
+    const char *ub = (const char *)FR(1);
+    u32 len = (u32)FR(2);
+    char kbuf[44];
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (len > sizeof(kbuf))
+        len = sizeof(kbuf);
+    if (len && !access_ok(ub, len))
+        return -ES_EFAULT;
+    for (u32 i = 0; i < len; i++)
+        kbuf[i] = ub[i];
+    return rt_fd_write(rt_cur->proc, (int)FR(0), kbuf, len);
 }
 
 static long sys_hvc(u64 *frame)
@@ -552,6 +615,11 @@ void rt_syscall_init(void)
     table[ES_NR_msg_recv]    = sys_msg_recv;
     table[ES_NR_msg_reply]   = sys_msg_reply;
     table[ES_NR_msg_pulse]   = sys_msg_pulse;
+    /* 站31:fd=通道三元组面(fdtable->resmgr) */
+    table[ES_NR_fdopen]      = sys_fdopen;
+    table[ES_NR_fdclose]     = sys_fdclose;
+    table[ES_NR_fdread]      = sys_fdread;
+    table[ES_NR_fdwrite]     = sys_fdwrite;
 }
 
 void rt_syscall_dispatch(u64 *frame)

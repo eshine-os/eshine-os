@@ -326,7 +326,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（87 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（88 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -419,10 +419,16 @@ eager 全拷+exit42+父 wait4 收尸；[79] mmapdemo 缺页零填——VMA 命�
 传播——壳在 prio-6 占先干扰下 dt=0 快返=提权活证;[82] pulsedemo
 异步脉冲 5 连发/排空;[83] abortdemo 发送者超时+UNBLOCK 脉冲 QNX
 镜像;内核槽中继+coid 实体+引用计数+层级命名+CHF_UNBLOCK flags）** →
+**站31 fd=通道三元组门（[84] fddemo——fdtable{coid,ocb}→三段消息
+→resmgr 服务器:fdwrite(1) 经 tty 服务器落串口=全链活证,/etc/motd
++/etc/version 经 ramfs 服务器(cpio newc 构建期打包+内嵌解析+逐路径
+挂名)读出全文+字节数自证;fork=fdtable 组拷+DUP 双侧引用,exit=逐
+fd CLOSE——POCB 引用计数镜像;服务器 v0=内核任务,用户态 server
+二进制=站 33 musl 弧）** →
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-87 步手动走查清单。
+88 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

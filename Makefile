@@ -70,11 +70,18 @@ RTOBJS := rtos/start.o rtos/vec.o rtos/rt_sched.o rtos/rt_task.o \
 	rtos/rt_mm0.o rtos/rt_syscall.o \
           rtos/rt_uart.o rtos/rt_shell.o rtos/rt_main.o rtos/rt_fp.o \
           rtos/rt_sync.o rtos/rt_ipc.o rtos/rt_demo.o rtos/rt_timer.o \
-          rtos/rt_as.o rtos/rt_msg.o
+          rtos/rt_as.o rtos/rt_msg.o rtos/rt_fsrv.o rtos/ramfs.o
+
+# 站31:rootfs 构建期打包——tools/ramfs 树 -> cpio(newc),ramfs.S
+# .incbin 内嵌(汇编期展开,-MMD 抓不到 -> ramfs.o 显式依赖归档)
+rtos/ramfs.cpio: tools/gen_ramfs.py $(wildcard tools/ramfs/*)
+	python3 tools/gen_ramfs.py tools/ramfs rtos/ramfs.cpio
 
 rtos/start.o: rtos/start.S
 	$(CC) $(ASFLAGS) -c -o $@ $<
 rtos/vec.o: rtos/vec.S
+	$(CC) $(ASFLAGS) -c -o $@ $<
+rtos/ramfs.o: rtos/ramfs.S rtos/ramfs.cpio
 	$(CC) $(ASFLAGS) -c -o $@ $<
 rtos/%.o: rtos/%.c rtos/rtos.h
 	$(CC) $(RT_CFLAGS) -c -o $@ $<
@@ -85,7 +92,7 @@ rtos.bin: rtos.elf
 
 clean:
 	rm -f $(OBJS) $(TARGET) $(OBJS:.o=.d) $(GOBJS) guest/*.d guest1.elf guest2.elf guest1.bin guest2.bin \
-	       $(RTOBJS) rtos/*.d rtos.elf rtos.bin
+	       $(RTOBJS) rtos/*.d rtos.elf rtos.bin rtos/ramfs.cpio
 
 .PHONY: all run verify clean
 

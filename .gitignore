@@ -10,3 +10,5 @@ eshine.elf
 # Generated dependency files (-MMD)
 *.d
 __pycache__/
+# 站31:rootfs 归档为构建产物(Makefile 规则生成;ramfs.o 显式依赖)
+rtos/ramfs.cpio

@@ -185,6 +185,14 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define RT_CHF_UNBLOCK     1u    /* abort 面递送 UNBLOCK 脉冲(系统码负) */
 #define RT_PULSE_UNBLOCK   (-1)  /* 参考实现 PULSE_CODE_UNBLOCK 镜像 */
 
+/* 站三十一:fd=通道三元组号面(参考实现 fdtable/posix_queue 会合点的
+ * 站内收编;QNX resmgr 模型。Linux 号统一迁移=站 33 musl 弧,v0
+ * 走扩展段诚实独立——read/write 63/64 仍属原始字符面) */
+#define ES_NR_fdopen      550   /* 路径->fd(三元组{coid,ocb}) */
+#define ES_NR_fdclose     551   /* fd 释放(CLOSE->服务器 ocb 引用减) */
+#define ES_NR_fdread      552   /* fd 读(READ 走三段消息;0=EOF) */
+#define ES_NR_fdwrite     553   /* fd 写(WRITE 数据内联≤44B/次) */
+
 /* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
  * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
 enum {
@@ -213,6 +221,16 @@ rt_task_t *rt_pool_base(void);            /* 站28:tp 守卫用池域判据 */
 #define RT_PROC_MAX 4u
 #define RT_AS_VMA_MAX 6u
 
+/* 站三十一:fd 表(=通道三元组,参考实现 fdtable 站内收编)——
+ * 路由面=连接实体(->服务器通道),状态面=ocb(服务器侧每打开
+ * 一份;fd 只是这两字的本地名)。stdio 0/1/2=PM 开机绑 /dev/tty。 */
+#define RT_FD_MAX 8u
+struct rt_fd {
+    u32 used;
+    int coid;
+    u32 ocb;
+};
+
 enum { RT_PROC_CREATE, RT_PROC_RUN, RT_PROC_ZOMBIE };
 
 struct rt_vma {
@@ -233,6 +251,7 @@ struct rt_proc {
     struct rt_vma vma[RT_AS_VMA_MAX];
     u32 nvma;
     u64 mmap_next;                /* ANON VA 游标(mmap 窗) */
+    struct rt_fd fds[RT_FD_MAX];  /* 站31:fdtable(=通道三元组) */
     struct rt_task *leader;
 };
 typedef struct rt_proc rt_proc_t;
@@ -326,6 +345,23 @@ void rt_msg_demo_server(void *arg);
 void rt_msg_demo_spinner(void *arg);
 void rt_msg_pulse_server(void *arg);
 void rt_msg_abort_server(void *arg);
+int  rt_msg_conn_ref(int coid);   /* 站31:coid 引用+1(fork 继承面) */
+
+/* ---- 站三十一:fd 层+resmgr 服务器(rt_fsrv.c) ----
+ * fd=通道三元组:open=查名->连接+服务器立 ocb;读写经三段消息
+ * 往返到 resmgr 服务面(tty 服务器/ramfs 服务器);fork=fdtable
+ * 组拷+每继承 coid 引用+1(参考实现 COPY_UCONTEXT 同款);exit=逐 fd
+ * CLOSE(服务器 ocb 引用减)+断连——POCB 引用计数的客户端镜像。
+ * v0 服务器=内核任务直调 IPC 层("用户态 server"二进制=站 33
+ * musl 弧;开机链=固定序列 tty->ramfs->pm,参考实现 F3-18 僵化审计
+ * 记档+协商位留后)。 */
+int  rt_fd_open(struct rt_proc *p, const char *kpath);
+int  rt_fd_close(struct rt_proc *p, int fd);
+long rt_fd_read(struct rt_proc *p, int fd, char *kbuf, u32 len);
+long rt_fd_write(struct rt_proc *p, int fd, const char *kbuf, u32 len);
+void rt_fd_fork(struct rt_proc *pp, struct rt_proc *cp);
+void rt_fd_close_all(struct rt_proc *p);
+void rt_srv_boot(rt_task_t *shell);   /* 固定序列 spawn(boot 链面) */
 struct rt_proc *rt_proc_of(rt_task_t *t);  /* 任务->进程(NULL=内核) */
 int  rt_proc_create(rt_task_t *leader, struct rt_proc **out); /* CREATE 挂起态 */
 u64  rt_proc_ttbr(struct rt_proc *p);     /* 切换值 asid<<48|L0 */

@@ -278,6 +278,10 @@ void guest_main(void)
      * 申报+eager 预映(首指令前无缺页悬念;ttbr 已入任务帧)。 */
     rt_proc_boot_shell(shell_task);
     rt_task_create("heartbeat", heartbeat_task, NULL, 10);
+    /* 站31:开机链(参考实现 PM 固定序列形状,协商位留后)——tty->
+     * ramfs->pm。spawn 序=同优先级 FIFO 序:壳先跑打横幅后阻塞,
+     * 服务器逐个起立挂名,PM 的 stdio open 一次即中。 */
+    rt_srv_boot(shell_task);
 
     /* 站23A:四路登记(解 IRQ 前无中断,序贯免锁)——27 tick 单
      * 写者面/0 SGI 重调度/33 uart drain+RX 唤醒/35 virtio 完成。 */

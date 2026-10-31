@@ -115,6 +115,16 @@ int rt_msg_conn_detach(int coid)
     return 0;
 }
 
+int rt_msg_conn_ref(int coid)
+{
+    /* 站31:fdtable 组拷的继承面——子进程逐 fd 各持一份连接,
+     * 引用+1(与服务器侧 ocb 引用互为镜像;detach 对称减)。 */
+    if (coid <= 0 || (u32)coid > RT_CONN_MAX || !conns[coid - 1].used)
+        return -22;
+    conns[coid - 1].refcnt++;
+    return 0;
+}
+
 /* ---- 命名面(六差距④:层级路径分段比较;平表=站内尺度) ---- */
 
 static int name_cmp(const char *a, const char *b)

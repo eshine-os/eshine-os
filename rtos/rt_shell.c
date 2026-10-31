@@ -331,6 +331,47 @@ static void cmd_abortdemo(void)
 
 /* ---- 命令面(输出串与原壳逐字一致——门禁判据锚) ---- */
 
+/* 站31:fd=通道三元组走查——open/read/close 全走 resmgr 服务器
+ * (fd 层->三段消息->ramfs);EOF(status=0)收口,字节数自证。 */
+static void fd_dump(const char *path, const char *tag)
+{
+    long fd, n, total = 0;
+    char buf[56];
+
+    fd = sys1(ES_NR_fdopen, (long)path);
+    if (fd < 0) {
+        sys_puts("fddemo: open ");
+        sys_puts(path);
+        sys_puts(" failed\n");
+        return;
+    }
+    for (;;) {
+        n = sys3(ES_NR_fdread, fd, (long)buf, sizeof(buf));
+        if (n <= 0)
+            break;                    /* 0=EOF;负=趟输错 */
+        sys3(ES_NR_write, 1, (long)buf, (long)n);
+        total += n;
+    }
+    sys1(ES_NR_fdclose, fd);
+    sys_puts(tag);
+    sys_put_dec((u64)total);
+    sys_puts(" bytes\n");
+}
+
+static void cmd_fddemo(void)
+{
+    long n;
+
+    /* fd 1(=stdio,PM 开机绑的 /dev/tty 通道)写字面——全链
+     * fd->连接->服务器通道->resmgr WRITE->串口,此行即活证。 */
+    n = sys3(ES_NR_fdwrite, 1, (long)"fddemo: via fd tty\n", 19);
+    sys_puts("fddemo: tty wrote ");
+    sys_put_dec((u64)n);
+    sys_puts("\n");
+    fd_dump("/etc/motd", "fddemo: motd ");
+    fd_dump("/etc/version", "fddemo: version ");
+}
+
 static void shell_line(char *line)
 {
     if (streq(line, "exit")) {
@@ -395,6 +436,8 @@ static void shell_line(char *line)
         cmd_pulsedemo();
     } else if (streq(line, "abortdemo")) {
         cmd_abortdemo();
+    } else if (streq(line, "fddemo")) {
+        cmd_fddemo();
     } else if (starts(line, "spawn ")) {
         sys3(ES_NR_demo, RT_U_SPAWN, (long)(line + 6), 0);
     } else if (starts(line, "sleep")) {
@@ -420,7 +463,7 @@ static void shell_line(char *line)
         sys_puts("\n");
     } else if (line[0]) {
         sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
-                 " | forkdemo | mmapdemo | exedemo | ipcdemo | pulsedemo | abortdemo"
+                 " | forkdemo | mmapdemo | exedemo | ipcdemo | pulsedemo | abortdemo | fddemo"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");
