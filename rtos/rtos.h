@@ -24,6 +24,8 @@ typedef unsigned char u8;
 
 #define RT_RX_BIT    0x0001u          /* BLOCK 等待位:串口 RX
                                        * (通用原语——信号量/互斥——留十七站) */
+#define RT_PROC_BIT  0x0004u          /* 站29:子进程收尸唤醒位
+                                       * (sys_exit 置 ZOMBIE 后广播) */
 
 #define RT_READY  0u
 #define RT_RUN    1u
@@ -75,11 +77,19 @@ struct rt_task {
     u64 usp;                     /* @672 */
     u64 ksp;                     /* @680 */
     u32 el0;                     /* @688 */
+    u32 _pad0;                   /* 尾扩前的 4 填充(显式,免暗排) */
+    /* 站二十九:进程+地址空间(结构尾追加,同上契约)。
+     * ttbr=本任务的 TTBR0 全值(asid<<48|L0;0=内核 PGD——RT_SWITCH_
+     * BOOKKEEP 每切换必装,偏移钉死供 asm .equ);
+     * proc=所属进程(EL0 任务非空;内核任务 NULL)。 */
+    u64 ttbr;                    /* @696 */
+    struct rt_proc *proc;        /* @704 */
 };
 typedef struct rt_task rt_task_t;
 _Static_assert(__builtin_offsetof(rt_task_t, usp) == 672, "RT_TASK_USP=672");
 _Static_assert(__builtin_offsetof(rt_task_t, ksp) == 680, "RT_TASK_KSP=680");
 _Static_assert(__builtin_offsetof(rt_task_t, el0) == 688, "RT_TASK_EL0=688");
+_Static_assert(__builtin_offsetof(rt_task_t, ttbr) == 696, "RT_TASK_TTBR=696");
 
 
 /* asm 契约断言:vec.S 的 .equ RT_TASK_Q/FPCR/FPSR 必须与此一致
@@ -148,6 +158,17 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define ES_ENOSYS         38
 #define ES_EINVAL         22
 
+/* 站二十九:进程+地址空间号面(标准号优先——站 27 偏差 #24 续行;
+ * fork/exec_setup 走扩展段:语义为参考实现 COPY_UCONTEXT/EXEC_SETUP
+ * 形状,非 Linux clone 旗语/execve,诚实独立号) */
+#define ES_NR_exit        93    /* 标准 __NR_exit:进程退场+回收链 */
+#define ES_NR_munmap      215   /* 标准 __NR_munmap(ANON 段摘除) */
+#define ES_NR_mmap        222   /* 标准 __NR_mmap(ANON 零填,lazy 补页) */
+#define ES_NR_wait4       260   /* 标准 __NR_wait4(子集:指定子+无 options) */
+#define ES_NR_fork        520   /* 扩展:COPY_UCONTEXT eaged 全拷 */
+#define ES_NR_exec_setup  521   /* 扩展:7-参帧改写式 exec(内核不读镜像) */
+#define RT_FORK_MAGIC     0x464B4348ULL  /* "FKCH":fork 子进程返回值自证 */
+
 /* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
  * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
 enum {
@@ -169,6 +190,51 @@ struct rt_sysinfo {
 void rt_task_wake_all(u32 mask);         /* 扫池:命中等待位的 BLOCK->READY */
 void rt_task_wake_sleepers(void);       /* 扫池:到期的 SLEEP->READY */
 rt_task_t *rt_pool_base(void);            /* 站28:tp 守卫用池域判据 */
+
+/* ---- 站二十九:进程+地址空间(rt_as.c) ----
+ * 进程对象(参考实现 task_group 的站内尺度):pid/ASID/自持 L0-L1-L2/
+ * VMA 申报/父子关系。高低半区几何与页池驻 rt_as.c(实现面)。 */
+#define RT_PROC_MAX 4u
+#define RT_AS_VMA_MAX 6u
+
+enum { RT_PROC_CREATE, RT_PROC_RUN, RT_PROC_ZOMBIE };
+
+struct rt_vma {
+    u64 start, end;               /* [start, end) */
+    u32 pool;                     /* 0=ID 恒等(镜像/栈),1=页池 */
+    u32 rsv;
+};
+
+struct rt_proc {
+    u32 used;
+    u32 state;                    /* CREATE(挂起)/RUN/ZOMBIE */
+    int pid;
+    int parent;
+    int exit_code;
+    u32 asid;
+    u64 *l0, *l1;
+    u64 *l2[8];                   /* l1 槽 1..7 页表(按需) */
+    struct rt_vma vma[RT_AS_VMA_MAX];
+    u32 nvma;
+    u64 mmap_next;                /* ANON VA 游标(mmap 窗) */
+    struct rt_task *leader;
+};
+typedef struct rt_proc rt_proc_t;
+struct rt_proc *rt_proc_of(rt_task_t *t);  /* 任务->进程(NULL=内核) */
+int  rt_proc_create(rt_task_t *leader, struct rt_proc **out); /* CREATE 挂起态 */
+u64  rt_proc_ttbr(struct rt_proc *p);     /* 切换值 asid<<48|L0 */
+void rt_as_declare(struct rt_proc *p, u64 start, u64 end);   /* VMA 申报 */
+int  rt_pfault(u64 va, u64 esr);           /* 缺页补页;0=已补,-1=VMA 外 */
+void rt_proc_exit(struct rt_proc *p, int code);  /* 退场+页池回收+TLB 冲 */
+int  rt_proc_fork_as(struct rt_proc *parent,
+                     struct rt_proc *child);     /* eager 全拷 */
+long sys_exec_setup_impl(u64 *frame, u64 entry, u64 sp,
+                         u64 a0, u64 a1, u64 a2, u64 a3);
+void rt_proc_boot_shell(rt_task_t *shell);  /* 进程 1:镜像/栈申报+预映 */
+u64  rt_as_mmap(struct rt_proc *p, u64 len);  /* ANON 派段,0=满/败 */
+int  rt_as_munmap(struct rt_proc *p, u64 start, u64 len);
+struct rt_proc *rt_proc_zombie_find(int pid, int *exit_code);
+void rt_proc_reap(struct rt_proc *p);          /* ZOMBIE 槽全回收 */
 rt_task_t *rt_ps_first(unsigned int *idx);
 rt_task_t *rt_ps_next(unsigned int *idx);
 rt_task_t *rt_idle_task(void);

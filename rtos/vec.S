@@ -127,6 +127,18 @@ guest_park:
     str     x0, [x1, x9, lsl #3]   /* rt_cur = 新(本核槽) */
     ldr     x3, [x0]
     mov     sp, x3                 /* sp = 新帧顶 */
+    /* 站29:地址空间切换点(参考实现 switch_mm 的调度器内联形)。任务
+     * ttbr(asid<<48|L0;@696 契约)每切换必装:ASID 标签保 TLB 存活,
+     * 免逐切换冲刷;0=内核 PGD(EL0 永不上内核表——.user/mmap 槽
+     * 在 mm0 置 0,物理隔离由 per-process 表承担)。x3 此处已死
+     * (sp 已取走其值),复用免加 scratch。 */
+    ldr     x3, [x0, #696]
+    cbnz    x3, 3f
+    ldr     x1, =rt_mm0_l0          /* 内核 PGD(双间接) */
+    ldr     x3, [x1]
+3:
+    msr     ttbr0_el1, x3
+    isb
 .endm
 
 guest_irq:
@@ -325,7 +337,11 @@ guest_el0_sync:
     bl      rt_syscall_dispatch    /* 返回值已写帧 x0 槽 */
     RT_EL0_RET
 1:  mov     x0, sp
-    bl      rt_el0_fault           /* v0 诚实终态:打印+panic,不返回 */
+    bl      rt_el0_fault           /* 站29:翻译错经 rt_pfault 补页后
+                                     * 正常返回(帧未动,原地重执行);
+                                     * VMA 外/其余 FSC=诚实终态不归 */
+
+    RT_EL0_RET
 
 guest_el0_irq:
     RT_EL0_ENTER

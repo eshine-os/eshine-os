@@ -105,6 +105,128 @@ static long sys_sysinfo(u64 *frame)
 
 /* ---------------- eshine 扩展面 ---------------- */
 
+/* 站二十九:进程+地址空间六面(机制形状参考实现 §7/§8;号面见
+ * rtos.h——exit/mmap/munmap/wait4 标准, fork/exec_setup 扩展)。 */
+
+#define ES_EAGAIN 11
+#define ES_ENOMEM 12
+
+static long sys_exit(u64 *frame)
+{
+    long code = (long)FR(0);
+    struct rt_proc *p = rt_cur->proc;
+
+    if (p) {
+        rt_proc_exit(p, (int)code);       /* 页池回收+L2 清+TLB 冲 */
+        rt_task_wake_all(RT_PROC_BIT);    /* 父 wait4 的收尸唤醒 */
+    }
+    rt_task_exit();                      /* 任务 DEAD+切走,noreturn */
+    __builtin_unreachable();
+}
+
+static long sys_mmap(u64 *frame)
+{
+    u64 len = FR(1);                     /* x0=addr hint(v0 忽略) */
+    u64 va;
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    va = rt_as_mmap(rt_cur->proc, len);
+    return va ? (long)va : -ES_ENOMEM;
+}
+
+static long sys_munmap(u64 *frame)
+{
+    if (!rt_cur->proc ||
+        rt_as_munmap(rt_cur->proc, FR(0), FR(1)) < 0)
+        return -ES_EINVAL;
+    return 0;
+}
+
+static long sys_wait4(u64 *frame)
+{
+    long pid = (long)FR(0);
+    u64 *ust = (u64 *)FR(1);
+    struct rt_proc *z;
+    int code = 0;
+
+    if (pid <= 0)
+        return -ES_EINVAL;
+    for (;;) {
+        z = rt_proc_zombie_find((int)pid, &code);
+        if (z)
+            break;
+        /* 站17 纪律同 rt_block_rx:判-挂-摘同入 DAIF 屏蔽窗,
+         * 窗内终判已 ZOMBIE 则不挂(零窗竞);窗后挂起已可见,
+         * 子 exit 的广播唤醒走回流令牌兑付。 */
+        {
+            u64 d = rt_daif_save();
+
+            if (rt_proc_zombie_find((int)pid, &code))
+                break;
+            rt_cur->wait_mask = RT_PROC_BIT;
+            rt_cur->state = RT_BLOCK;
+            rdy_remove(rt_cur);
+            rt_daif_load(d);
+        }
+        rt_sched();
+    }
+    rt_proc_reap(z);
+    if (ust) {
+        if (!access_ok(ust, 8))
+            return -ES_EFAULT;
+        *ust = (u64)(u32)code;
+    }
+    return pid;
+}
+
+/* COPY_UCONTEXT(参考实现 fork 形状):子进程 eager 全拷+子任务帧整拷
+ * (272B 紧布局),x0=魔数辨 child。协作式无抢占窗,帧覆写与子首
+ * 派发之间零竞(父 prio 低于子,父续跑到显式让位)。 */
+static long sys_fork(u64 *frame)
+{
+    struct rt_proc *pp = rt_cur->proc, *cp;
+    rt_task_t *ct;
+
+    if (!pp)
+        return -ES_EINVAL;
+    if (rt_proc_create(NULL, &cp) < 0)
+        return -ES_EAGAIN;
+    if (rt_proc_fork_as(pp, cp) < 0) {
+        rt_proc_reap(cp);                /* 表无映射,槽回收不伤人 */
+        return -ES_ENOMEM;
+    }
+    cp->state = RT_PROC_RUN;
+    cp->parent = pp->pid;
+    ct = rt_task_create_el0("child", NULL, NULL, rt_cur->prio + 1,
+                            (void *)rt_cur->usp);
+    if (!ct) {
+        rt_proc_reap(cp);
+        return -ES_EAGAIN;
+    }
+    {   /* 帧整拷+魔数;任务 sp=帧顶契约(@0)直取 */
+        u64 *dst = (u64 *)(void *)ct->sp;
+        u32 i;
+
+        for (i = 0; i < 272 / 8; i++)
+            dst[i] = frame[i];
+        dst[2] = RT_FORK_MAGIC;          /* x0 槽@16 */
+    }
+    ct->usp = rt_cur->usp;
+    ct->proc = cp;
+    ct->ttbr = rt_proc_ttbr(cp);
+    cp->leader = ct;
+    return (long)cp->pid;
+}
+
+static long sys_exec_setup(u64 *frame)
+{
+    /* 帧改写(参考实现 EXEC_SETUP 形状,内核不读任何镜像字节):
+     * v0 入参 x0=entry x1=sp x2=arg;x3-x5 不读(壳 wrapper 只
+     * 3 参;impl 侧整帧卫生清零,残值不进新帧)。 */
+    return sys_exec_setup_impl(frame, FR(0), FR(1), FR(2), 0, 0, 0);
+}
+
 static long sys_hvc(u64 *frame)
 {
     long fn = (long)FR(0);          /* 首参 x0(壳 sys1 映射) */
@@ -286,6 +408,13 @@ void rt_syscall_init(void)
     table[ES_NR_sysinfo] = sys_sysinfo;
     table[ES_NR_hvc]     = sys_hvc;
     table[ES_NR_demo]    = sys_demo;
+    /* 站29:进程+地址空间面 */
+    table[ES_NR_exit]       = sys_exit;
+    table[ES_NR_mmap]       = sys_mmap;
+    table[ES_NR_munmap]     = sys_munmap;
+    table[ES_NR_wait4]      = sys_wait4;
+    table[ES_NR_fork]       = sys_fork;
+    table[ES_NR_exec_setup] = sys_exec_setup;
 }
 
 void rt_syscall_dispatch(u64 *frame)
@@ -304,8 +433,17 @@ void rt_el0_fault(u64 *frame)
 
     __asm__ volatile("mrs %0, esr_el1" : "=r"(esr));
     __asm__ volatile("mrs %0, far_el1" : "=r"(far));
+    /* 站29:翻译错(FSC 0x04..0x07)先走缺页接管——VMA 命中即补页,
+     * 帧未动,调用侧 RT_EL0_RET 原地重执行即中;VMA 外野访与
+     * 其余 FSC(权限/外部等)原样落终态面(v0 边界不松)。 */
+    {
+        u32 fsc = (u32)(esr & 0x3Fu);
+
+        if (fsc >= 0x04 && fsc <= 0x07 && rt_pfault(far, esr) == 0)
+            return;
+    }
     rt_puts_hex("EL0 fault: esr=0x", esr,
-                " (v0: no demand paging, see station-29)\n");
+                " (unmapped/wild: no VMA covers, terminal)\n");
     rt_puts_hex("EL0 fault: elr=0x", frame[0], "\n");
     rt_puts_hex("EL0 fault: far=0x", far, "\n");
     rt_panic("EL0 sync fault (v0 terminal face)",

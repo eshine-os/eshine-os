@@ -78,6 +78,11 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
     t->pend_owner = NULL;
     t->timed_out = 0;
     t->low_warned = 0;              /* 站23B:守卫一次性旗,复用槽必清 */
+    t->ttbr = 0;                    /* 站29:0=内核 PGD;EL0 任务由
+                                      * 进程创建路径(proc_boot_shell/
+                                      * fork)另赋——复用槽必清,
+                                      * 站16 帧复用教训同律 */
+    t->proc = NULL;
     t->entry = entry;
     t->arg = arg;
     t->prio = prio < RT_NPRIO ? prio : RT_NPRIO - 1;

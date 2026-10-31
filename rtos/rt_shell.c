@@ -153,6 +153,71 @@ static void cmd_utest(void)
         sys_puts("EL0 syscall FAIL\n");
 }
 
+/* ---- 站29:进程三 demo(fork/mmap/exec) ---- */
+
+static void cmd_forkdemo(void)
+{
+    long r = sys0(ES_NR_fork);
+
+    if (r == (long)RT_FORK_MAGIC) {        /* COPY_UCONTEXT 子支 */
+        sys_puts("fork: child alive\n");
+        sys1(ES_NR_exit, 42);              /* 进程退场,noreturn */
+    }
+    if (r < 0) {
+        sys_puts("forkdemo: fork failed\n");
+        return;
+    }
+    {
+        u64 st = 0;
+        long pid = sys3(ES_NR_wait4, r, (long)&st, 0);
+
+        sys_puts("fork: reaped pid=");
+        sys_put_dec((u64)pid);
+        sys_puts(" code=");
+        sys_put_dec(st);
+        sys_puts("\n");
+    }
+}
+
+static void cmd_mmapdemo(void)
+{
+    long va = sys2(ES_NR_mmap, 0, 4096);
+    volatile u64 *p;
+
+    if (va <= 0) {
+        sys_puts("mmapdemo: mmap failed\n");
+        return;
+    }
+    p = (volatile u64 *)va;               /* 首写=缺页零填自证 */
+    *p = 0x5A5A1234ULL;
+    if (*p == 0x5A5A1234ULL)
+        sys_puts("mmap: lazy zero+rw ok\n");
+    else
+        sys_puts("mmap: rw FAIL\n");
+    sys2(ES_NR_munmap, va, 4096);
+    sys_puts("mmapdemo: unmapped\n");
+}
+
+/* exec 二相演示体:帧改写后的新入口(x0=arg 落点自证);不经
+ * return——x30 语义已随帧改写退役,演毕 exec 回壳任务续行。 */
+static void exe_phase2(void *arg)
+{
+    sys_puts("exec: phase2 entered arg=");
+    sys_put_dec((u64)arg);
+    sys_puts("\n");
+    sys3(ES_NR_exec_setup, (u64)rt_shell_task,
+         (u64)(rt_shell_ustack + sizeof(rt_shell_ustack)), 0);
+}
+
+static void cmd_exedemo(void)
+{
+    volatile u64 anchor = 0;
+
+    sys3(ES_NR_exec_setup, (u64)exe_phase2,
+         (u64)&anchor - 256, 0x2A);
+    sys_puts("exec: NOT REACHED\n");     /* 帧已改写,此行不达 */
+}
+
 /* ---- 命令面(输出串与原壳逐字一致——门禁判据锚) ---- */
 
 static void shell_line(char *line)
@@ -207,6 +272,12 @@ static void shell_line(char *line)
         sys2(ES_NR_demo, RT_U_HB, 0);
     } else if (streq(line, "utest")) {
         cmd_utest();
+    } else if (streq(line, "forkdemo")) {
+        cmd_forkdemo();
+    } else if (streq(line, "mmapdemo")) {
+        cmd_mmapdemo();
+    } else if (streq(line, "exedemo")) {
+        cmd_exedemo();
     } else if (starts(line, "spawn ")) {
         sys3(ES_NR_demo, RT_U_SPAWN, (long)(line + 6), 0);
     } else if (starts(line, "sleep")) {
@@ -232,6 +303,7 @@ static void shell_line(char *line)
         sys_puts("\n");
     } else if (line[0]) {
         sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
+                 " | forkdemo | mmapdemo | exedemo"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");

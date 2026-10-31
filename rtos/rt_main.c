@@ -274,6 +274,9 @@ void guest_main(void)
      * EL0t 首帧;心跳维持内核任务——demo 期过渡态见 spec §4) */
     shell_task = rt_task_create_el0("shell", rt_shell_task, NULL, 5,
                                     rt_shell_ustack + sizeof(rt_shell_ustack));
+    /* 站29:进程 1=壳——per-process PGD/ASID 建立+.user 镜像/栈 VMA
+     * 申报+eager 预映(首指令前无缺页悬念;ttbr 已入任务帧)。 */
+    rt_proc_boot_shell(shell_task);
     rt_task_create("heartbeat", heartbeat_task, NULL, 10);
 
     /* 站23A:四路登记(解 IRQ 前无中断,序贯免锁)——27 tick 单

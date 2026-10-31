@@ -20,7 +20,14 @@ SECTIONS
      * 文件入用户段:代码/串/数据/栈全落用户窗,零逐函数标注。
      * 声明序=输入段分配序:先于下方内核全配通配符吃段,否则
      * .text 的 *(.text*) 先吞壳段(实测教训)。 */
-    .user 0x40200000 : { rtos/rt_shell.o(.text* .rodata* .data* .bss* .bss.* COMMON) } :user
+    /* 站29:__user_start/__user_end=进程 1 的镜像 VMA 申报界
+     * (rt_as.c eager 预映与 fork 拷贝循此;页对齐收口)。 */
+    .user 0x40200000 : {
+        __user_start = .;
+        rtos/rt_shell.o(.text* .rodata* .data* .bss* .bss.* COMMON)
+        . = ALIGN(4096);
+        __user_end = .;
+    } :user
     . = 0x40000000;                        /* guest IPA 链接地址(物理在 0x50000000) */
     .text : { KEEP(*(.text.boot)) *(.text .text.*) } :text
     .vectors ALIGN(0x800) : { KEEP(*(.vectors)) } :text

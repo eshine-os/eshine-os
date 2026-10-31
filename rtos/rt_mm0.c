@@ -70,8 +70,25 @@
  *   L0[VA>>30]:(0x08000000→[0] 设备群,0x40000000→[1] RAM)
  *   L1[(VA>>21)&511]:设备窗块 64/72/80;RAM 块 0..7 */
 static u64 mm0_l0[512]    __attribute__((aligned(4096)));
+u64 *const rt_mm0_l0 = mm0_l0;               /* 站29:内核 PGD(vec.S
+                                              * BOOKKEEP 经此双间接装,
+                                              * 任务 ttbr==0 时) */
+u64 *rt_mm0_l1_dev;                          /* 站29:per-process L0[0] 共享(导出) */
 static u64 mm0_l1_dev[512] __attribute__((aligned(4096)));
 static u64 mm0_l1_ram[512] __attribute__((aligned(4096)));
+
+/* 站29:内核 PGD 的 L1 半区重划(进程+地址空间接管用户窗):
+ *   [0]   内核块 EL1-only(不变)
+ *   [1]   .user 段 —— **置 0**:EL0 永不在内核 PGD 上执行,
+ *         壳/子进程经各自 per-process 表访此段
+ *   [2..5]页池 0x40400000-0x40C00000 EL1-only 恒等——"内核高半区"
+ *         (fork 拷贝/mmap 零填后备,任何语境可写,用户不可见)
+ *   [6]   mmap 窗 0x40C00000 —— 置 0(per-process 表管辖)
+ *   [7]   DTB 块 EL1 只读——内核 fdt 读(站 28 曾 BOTH,窗口
+ *         收编后收紧为 EL1-only,用户面经自身表另判) */
+#define MM0_DESC_NORMAL_EL1_RO(pa) \
+    ((pa) | MM0_DESC_VALID | (MM0_ATTRIDX_NORMAL << 2) | \
+     ((1UL << 7) | MM0_AP_EL1) | MM0_SH_INNER | MM0_AF)
 
 void rt_mm0_init(void)
 {
@@ -89,13 +106,20 @@ void rt_mm0_init(void)
         mm0_l1_dev[0x09000000UL >> 21] = MM0_DESC_DEVICE_EL1(0x09000000UL);
         mm0_l1_dev[0x0A000000UL >> 21] = MM0_DESC_DEVICE_EL1(0x0A000000UL);
 
-        /* RAM 八块:块 0 内核 EL1-only,块 1..7 用户 EL0+EL1 */
+        /* RAM 八块(站29 半区重划,见上注) */
         for (i = 0; i < 8; i++) {
             u64 pa = MM0_KERN_BASE + (u64)i * MM0_BLOCK;
 
-            mm0_l1_ram[i] = (i == 0) ? MM0_DESC_NORMAL_EL1(pa)
-                                      : MM0_DESC_NORMAL_BOTH(pa);
+            if (i == 0)
+                mm0_l1_ram[i] = MM0_DESC_NORMAL_EL1(pa);
+            else if (i >= 2 && i <= 5)
+                mm0_l1_ram[i] = MM0_DESC_NORMAL_EL1(pa);
+            else if (i == 7)
+                mm0_l1_ram[i] = MM0_DESC_NORMAL_EL1_RO(pa);
+            else
+                mm0_l1_ram[i] = 0;        /* [1]/[6]:per-process 表 */
         }
+        rt_mm0_l1_dev = mm0_l1_dev;
     }
 
     /* per-CPU 寄存器(两核各置) */
