@@ -230,6 +230,41 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define RT_XSPACE_BASE     0x41000000UL
 #define RT_XSPACE_SPAN     (RT_SHM_SEG_PAGES * 4096UL)
 
+/* 站三十七:posix_queue 弧——mqueue(命名优先级队列)+
+ * pipe(骑站 31 resmgr 的字节流)+长消息 1024B+MsgRead 镜像
+ * (参考实现机制白描:msg/stream 双 ops;长消息拷内核缓冲;
+ * 接收者事后按偏移再读所持消息)。 */
+/* 站37 起:fd wire 契约驻此(跨文件:rt_fsrv.c+rt_pipe.c 同吃) */
+#define RT_FDOP_OPEN    1u
+#define RT_FDOP_READ    2u
+#define RT_FDOP_WRITE   3u
+#define RT_FDOP_CLOSE   4u
+#define RT_FDOP_DUP     5u
+#define RT_FDOP_SEEK    6u     /* 站33:loader 段定位(SEEK_SET 面) */
+
+#define RT_FD_DATA      44u    /* 请求内联窗:OPEN 路径/WRITE 数据 */
+#define RT_FD_RDATA     64u    /* READ 回复数据窗(站33:status 走
+                                 * reply 面,rbuf 可满 64) */
+struct rt_fdreq {
+    u32 op;
+    u32 a;                     /* READ:窗长;WRITE:数据长 */
+    u32 ocb;                   /* READ/CLOSE/DUP:ocb 号 */
+    u32 rsv;
+    char data[RT_FD_DATA];
+};
+
+#define ES_NR_mq_open      570   /* 路径->mqd(查名或建) */
+#define ES_NR_mq_send      571   /* (mqd,val,prio) */
+#define ES_NR_mq_receive   572   /* (mqd,timeout)->val(FR(0)=val 出) */
+#define ES_NR_mq_close     573
+#define ES_NR_mq_unlink    574   /* 路径摘名 */
+#define ES_NR_msg_read     575   /* MsgRead 镜像(chid,rcvid,off,buf,len) */
+#define ES_NR_pipe         576   /* ->两 fd(read/write 端) */
+#define RT_MQ_MAX          8     /* 命名队列表 */
+#define RT_MQ_DEPTH        8     /* 每队列深 */
+#define RT_MSG_LONG        1024u /* 长消息上限(>64B 走长槽池) */
+#define RT_MSGLONG_MAX     8u    /* 长槽池 */
+
 /* 站三十二:signal+futex 号面——真 Linux arm64(asm-generic)原号,
  * 站 33 musl 直连。v0 偏差(spec §2 记档,站 33 对齐):futex 四参
  * (uaddr,op,val,ticks——Linux 第四参 timespec 指针)/sigaction
@@ -266,6 +301,7 @@ enum {
     RT_U_TMODEMO, RT_U_SWTDEMO, RT_U_IRQDEMO, RT_U_LOWDEMO,
     RT_U_STKDEMO, RT_U_STACKCHECK, RT_U_OVERFLOW, RT_U_FPSTAT,
     RT_U_HB, RT_U_SLEEP, RT_U_IPCDEMO, RT_U_PULSEDEMO, RT_U_ABORTDEMO,
+    RT_U_LONGDEMO,
     RT_U_FUPOKE,
 };
 
@@ -375,6 +411,7 @@ struct rt_msg {
     u64 value;                  /* 脉冲值 */
     u32 len;
     char data[RT_MSG_BYTES];
+    u32 long_idx;               /* 站37:长槽号+1(0=短内联) */
     rt_sem_t reply_sem;         /* 发送者等回执(1 槽) */
     u32 rlen;
     char rdata[RT_MSG_BYTES];
@@ -415,6 +452,17 @@ long rt_msg_send(int coid, const void *sbuf, u32 slen,
                  void *rbuf, u32 rlen, u64 ticks);
 long rt_msg_recv(int chid, void *buf, u32 buflen, u64 ticks,
                 struct rt_recvinfo *info);
+long rt_msg_read(int chid, u64 rcvid, u64 off,
+                 void *buf, u32 len);   /* 站37:MsgRead 镜像 */
+/* 站37:mqueue(rt_mq.c)——命名优先级队列,阻塞=站 17 pend 机器 */
+long rt_mq_open(const char *path);       /* ->mqd 或负 errno */
+long rt_mq_send(long mqd, u64 val, u32 prio);
+long rt_mq_receive(long mqd, u64 *val, u64 ticks);
+long rt_mq_close(long mqd);
+long rt_mq_unlink(const char *path);
+/* 站37:pipe(rt_pipe.c)——pipesrv(站 31 resmgr 形) */
+long rt_pipe_create(struct rt_proc *p);  /* ->0(两 fd 出参 FR 面) */
+void rt_pipe_boot(void);                 /* 开机:服务器起立+挂名 */
 long rt_msg_reply(int chid, u64 rcvid, const void *rbuf, u32 rlen,
                   long status);
 long rt_msg_pulse(int coid, s64 code, u64 value);
@@ -422,6 +470,7 @@ long rt_msg_pulse(int coid, s64 code, u64 value);
 void rt_msg_demo_server(void *arg);
 void rt_msg_demo_spinner(void *arg);
 void rt_msg_pulse_server(void *arg);
+void rt_msg_long_server(void *arg);   /* 站37:长消息+MsgRead 镜像 */
 void rt_msg_abort_server(void *arg);
 int  rt_msg_conn_ref(int coid);   /* 站31:coid 引用+1(fork 继承面) */
 

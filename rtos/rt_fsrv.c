@@ -28,31 +28,14 @@
  * 不可见——文件内容只经三段消息送达,这正是 fd=通道三元组
  * 的本义)。ramfs 服务器开机解析索引(PNODE)+逐路径挂名。 */
 
-#define RT_FDOP_OPEN    1u
-#define RT_FDOP_READ    2u
-#define RT_FDOP_WRITE   3u
-#define RT_FDOP_CLOSE   4u
-#define RT_FDOP_DUP     5u
-#define RT_FDOP_SEEK    6u     /* 站33:loader 段定位(SEEK_SET 面) */
+/* 站37:fd wire 契约(RT_FDOP 族+rt_fdreq+窗常量)移驻
+ * rtos.h——跨文件契约(pipesrv 同吃);本文件沿用,
+ * SRV_TICKS 与 CLOSE_TICKS 及 ocb 池仍驻此。 */
 
-#define RT_FD_DATA      44u    /* 请求内联窗:OPEN 路径/WRITE 数据 */
-#define RT_FD_PATH      43u    /* 路径窗(43 字符+NUL 收口) */
-#define RT_FD_RDATA     64u    /* READ 回复数据窗(站33:status 走
-                                 * reply 面,rbuf 可满 64——站 31 留的
-                                 * 8B 白舍,loader 往返数-12.5%) */
 #define SRV_TICKS       100u   /* fd 层趟输窗(拍) */
 #define CLOSE_TICKS     50u    /* 关闭/继承面窗(收窄:死服不拖尸) */
-
 #define SRV_OCB_MAX     8u     /* POCB 池(tty+ramfs 共表;stdio 独占 3,
                                 * motd/version 并开即贴 4 上限,放宽余量) */
-
-struct rt_fdreq {
-    u32 op;
-    u32 a;                     /* READ:窗长;WRITE:数据长 */
-    u32 ocb;                   /* READ/CLOSE/DUP:ocb 号 */
-    u32 rsv;
-    char data[RT_FD_DATA];
-};
 
 /* ---- 通用小件(freestanding,无 libc) ---- */
 
@@ -462,6 +445,10 @@ long rt_fd_write(struct rt_proc *p, int fd, const char *kbuf, u32 len)
     fd_zero(&req, sizeof(req));
     req.op = RT_FDOP_WRITE;
     req.a = len;
+    req.ocb = p->fds[fd].ocb;     /* 站37 定谳:站31 起此处漏填
+                                   * ——tty/ramfs 的 WRITE 不读 ocb
+                                   * 故无感;pipesrv 按端分发即爆
+                                   * (PIPEDBG: write ocb=0 实抓) */
     for (i = 0; i < len; i++)
         req.data[i] = kbuf[i];
     r = rt_msg_send(p->fds[fd].coid, &req, sizeof(req), NULL, 0,
@@ -554,4 +541,6 @@ void rt_srv_boot(rt_task_t *shell)
         rt_puts("srv: ramfs spawn failed\n");
     if (!rt_task_create("pm", srv_pm, shell, 8))
         rt_puts("srv: pm spawn failed\n");
+    rt_pipe_boot();                  /* 站37:pipesrv(stdio 绑定后起,
+                                      * 与 tty/ramfs 无交互序) */
 }

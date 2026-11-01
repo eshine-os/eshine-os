@@ -24,6 +24,32 @@ static struct rt_conn conns[RT_CONN_MAX];
 static struct rt_msg  msgs[RT_MSGSLOT_MAX];
 static struct rt_name names[RT_NAME_MAX];
 
+/* 站37:长槽池——>64B 消息拷入内核缓冲(参考实现 "≤1024B 短消息
+ * 拷缓冲"形状;>1024B 映射形=后弧)。生命周期=消息本尊:归还
+ * 三口即所有 used=0 位(sender 正常醒/abort 未收走直接撤/reply
+ * 见 aborted 静默收尾)——拷槽进/槽出,MsgRead 镜像收后按偏移
+ * 再读所持(延迟访问),全程不重拷。 */
+static u8   long_used[RT_MSGLONG_MAX];
+static char long_bufs[RT_MSGLONG_MAX][RT_MSG_LONG];
+
+static u32 long_alloc(void)
+{
+    u32 i;
+
+    for (i = 0; i < RT_MSGLONG_MAX; i++)
+        if (!long_used[i]) {
+            long_used[i] = 1;
+            return i + 1;            /* 1 基:0=无(m.零初始化友好) */
+        }
+    return 0;
+}
+
+static void long_free(u32 idx1)
+{
+    if (idx1 && idx1 <= RT_MSGLONG_MAX)
+        long_used[idx1 - 1] = 0;
+}
+
 static void msg_copy(void *dst, const void *src, u32 n)
 {
     const char *s = src;
@@ -289,7 +315,7 @@ long rt_msg_send(int coid, const void *sbuf, u32 slen,
 
     if (coid <= 0 || (u32)coid > RT_CONN_MAX || !conns[coid - 1].used)
         return -22;
-    if (slen > RT_MSG_BYTES || rlen > RT_MSG_BYTES)
+    if (slen > RT_MSG_LONG || rlen > RT_MSG_BYTES)
         return -22;
     ch = &chans[conns[coid - 1].chid - 1];
     for (i = 0; i < RT_MSGSLOT_MAX; i++) {
@@ -305,8 +331,18 @@ long rt_msg_send(int coid, const void *sbuf, u32 slen,
     m->sender = rt_cur;
     m->sprio = rt_cur->prio;
     m->len = slen;
-    if (slen)
+    if (slen > RT_MSG_BYTES) {        /* 站37:长路拷槽 */
+        u32 li = long_alloc();
+
+        if (!li) {
+            m->used = 0;
+            return -12;               /* -ENOMEM:长槽池满 */
+        }
+        msg_copy(long_bufs[li - 1], sbuf, slen);
+        m->long_idx = li;
+    } else if (slen) {
         msg_copy(m->data, sbuf, slen);
+    }
     rt_sem_init(&m->reply_sem, 0);
     q_insert(ch, m);
     boost_receiver(ch, rt_cur->prio);
@@ -317,6 +353,7 @@ long rt_msg_send(int coid, const void *sbuf, u32 slen,
     if (r != 0) {
         if (m->state == 0) {           /* QUEUED:未收走,直接撤 */
             q_remove(ch, m);
+            long_free(m->long_idx);
             m->used = 0;
             return -110;               /* -ETIMEDOUT */
         }
@@ -351,6 +388,7 @@ long rt_msg_send(int coid, const void *sbuf, u32 slen,
         msg_copy(rbuf, m->rdata, n);
     }
     r = m->status;
+    long_free(m->long_idx);
     m->used = 0;
     return r;
 }
@@ -384,7 +422,7 @@ long rt_msg_recv(int chid, void *buf, u32 buflen, u64 ticks,
     }
     if (!m->is_pulse && m->len && buflen) {
         n = m->len < buflen ? m->len : buflen;
-        msg_copy(buf, m->data, n);
+        msg_copy(buf, m->long_idx ? long_bufs[m->long_idx - 1] : m->data, n);
     }
     if (m->is_pulse)
         m->used = 0;                   /* 脉冲即取即释(无回执) */
@@ -396,7 +434,6 @@ long rt_msg_recv(int chid, void *buf, u32 buflen, u64 ticks,
 long rt_msg_reply(int chid, u64 rcvid, const void *rbuf, u32 rlen,
                   long status)
 {
-    struct rt_chan *ch;
     struct rt_msg *m;
     u32 slot;
 
@@ -420,7 +457,8 @@ long rt_msg_reply(int chid, u64 rcvid, const void *rbuf, u32 rlen,
         msg_copy(m->rdata, rbuf, rlen);
     m->status = status;
     if (m->aborted) {
-        m->used = 0;                   /* 客户端已超时先走:静默收尾 */
+        long_free(m->long_idx);
+        m->used = 0;                  /* 客户端已超时先走:静默收尾 */
     } else {
         rt_sem_give(&m->reply_sem);    /* 发送者醒:status 即其返回值 */
     }
@@ -431,7 +469,79 @@ long rt_msg_reply(int chid, u64 rcvid, const void *rbuf, u32 rlen,
     return 0;
 }
 
+/* 站37:MsgRead 镜像(参考实现 MsgRead/MsgWrite 形)——接收者收后
+ * (RECEIVED 持有窗)按偏移再读所持消息:长消息延迟访问的内核
+ * 面,重复读不重拷(缓冲在槽)。接收者 mm 活跃,copy 直达。 */
+long rt_msg_read(int chid, u64 rcvid, u64 off, void *buf, u32 len)
+{
+    struct rt_msg *m;
+    u32 slot;
+
+    if (chid <= 0 || (u32)chid > RT_CH_MAX || !chans[chid - 1].used)
+        return -22;
+    if ((rcvid >> 4) != (u64)chid || !(rcvid & 0xFULL))
+        return -22;
+    slot = (u32)(rcvid & 0xFULL) - 1;
+    if (slot >= RT_MSGSLOT_MAX)
+        return -22;
+    m = &msgs[slot];
+    if (!m->used || m->state != 1 || m->is_pulse)
+        return -3;                     /* -ESRCH:非持有态 */
+    if (off >= m->len)
+        return 0;
+    if ((u64)len > m->len - off)
+        len = (u32)(m->len - off);
+    msg_copy(buf, m->long_idx ? &long_bufs[m->long_idx - 1][off]
+                               : &m->data[off], len);
+    return (long)len;
+}
+
+static long srv_recv1(int chid, char *buf,
+                     struct rt_recvinfo *ri, u64 ticks);
+
 /* ---- demo 体(sys_demo 蹦床 spawn;服务器=内核任务直调本层) ----
+ * 站37 长消息服务器:收 1024B(len>64 自动走长槽),msg_read 两段
+ * 512B 镜像验图案,回执 42(收后按偏移再读所持=MsgRead 延迟访问)。 */
+void rt_msg_long_server(void *arg)
+{
+    int chid = rt_msg_ch_create(0);
+    char head[RT_MSG_BYTES];
+    char half[512];
+    struct rt_recvinfo ri;
+    u32 i, ok = 1;
+    long n1, n2;
+
+    (void)arg;
+    if (chid > 0 && rt_msg_name_attach("/ipc/long", chid) == 0) {
+        if (srv_recv1(chid, head, &ri, 300) == 0 && ri.rcvid != 0) {
+            rt_puts_u64("long: got len=", (u64)ri.len, "\n");
+            if (ri.len != 1024)
+                ok = 0;
+            /* MsgRead 镜像:收后按偏移两段再读(不重拷,槽在) */
+            n1 = rt_msg_read(chid, ri.rcvid, 0, half, 512);
+            for (i = 0; i < 512; i++)
+                if (half[i] != (char)(u8)(i & 0xFF))
+                    ok = 0;
+            n2 = rt_msg_read(chid, ri.rcvid, 512, half, 512);
+            for (i = 0; i < 512; i++)
+                if (half[i] != (char)(u8)((512 + i) & 0xFF))
+                    ok = 0;
+            if (n1 == 512 && n2 == 512 && ok) {
+                rt_puts("long: 1024B via long slot ok\n");
+                rt_puts("long: msg_read mirror ok\n");
+            } else {
+                rt_puts("long: mirror FAIL\n");
+            }
+            rt_msg_reply(chid, ri.rcvid, NULL, 0, ok ? 42 : -1);
+        }
+        rt_msg_name_detach("/ipc/long");
+        rt_msg_ch_destroy(chid);
+    }
+    return;
+    /* 单发单收即收场:服务器任务自行退场(task exit 池回收) */
+}
+
+/* ---- 旧 demo 体 ----
  * 三案:ipc=三段全链+优先级传播实证;pulse=异步脉冲 5 连发;
  * abort=发送者超时先走+UNBLOCK 脉冲(QNX unblock 镜像)。 */
 

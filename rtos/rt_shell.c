@@ -555,6 +555,103 @@ static void cmd_msgsegdemo(void)
     sys1(ES_NR_ch_destroy, chid);
 }
 
+/* ---- 站37:posix_queue 弧客户端——mqueue 优先级/pipe 字节流
+ * /长消息+MsgRead 镜像。 */
+static void cmd_mqdemo(void)
+{
+    long mqd, pid, r;
+    u64 v = 0;
+    int st = 0;
+
+    mqd = sys1(ES_NR_mq_open, (long)"/mq/demo");
+    if (mqd <= 0) {
+        sys_puts("mqdemo: open FAIL\n");
+        return;
+    }
+    r = sys3(ES_NR_mq_receive, (long)&v, mqd, 0);   /* 空队 no-wait */
+    sys_puts(r == -110 ? "mqdemo: empty no-wait -110 ok\n"
+                       : "mqdemo: no-wait FAIL\n");
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {
+        sys3(ES_NR_mq_send, mqd, 5, 5);
+        sys3(ES_NR_mq_send, mqd, 1, 1);
+        sys3(ES_NR_mq_send, mqd, 3, 3);
+        sys1(ES_NR_exit, 0);
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    {
+        u64 v1 = 0, v2 = 0, v3 = 0;
+
+        sys3(ES_NR_mq_receive, (long)&v1, mqd, 100);
+        sys3(ES_NR_mq_receive, (long)&v2, mqd, 100);
+        sys3(ES_NR_mq_receive, (long)&v3, mqd, 100);
+        sys_puts(v1 == 5 && v2 == 3 && v3 == 1
+                 ? "mqdemo: order 5 3 1 ok\n" : "mqdemo: order FAIL\n");
+    }
+    sys1(ES_NR_mq_close, mqd);
+    r = sys1(ES_NR_mq_unlink, (long)"/mq/demo");
+    sys_puts(r == 0 ? "mqdemo: unlinked ok\n"
+                    : "mqdemo: unlink FAIL\n");
+}
+
+static void cmd_pipedemo(void)
+{
+    long r, wfd, rfd, n, pid;
+    int st = 0;
+    char buf[64];
+
+    r = sys0(ES_NR_pipe);
+    if (r < 0) {
+        sys_puts("pipedemo: pipe FAIL\n");
+        return;
+    }
+    rfd = r & 0xFFFF;
+    wfd = (r >> 16) & 0xFFFF;
+    sys_puts("pipedemo: fds ok\n");
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {   /* 子:写 16B+双端关 */
+        r = sys3(ES_NR_fdwrite, wfd, (long)"through the pipe", 16);
+        if (r != 16) {
+            sys_puts("pipedemo: child write r=");
+            sys_put_dec((u64)(long)r);
+            sys_puts("\n");
+        }
+        sys1(ES_NR_fdclose, wfd);
+        sys1(ES_NR_fdclose, rfd);
+        sys1(ES_NR_exit, 0);
+    }
+    sys1(ES_NR_fdclose, wfd);           /* 父关自持写端=EOF 可判 */
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    n = sys3(ES_NR_fdread, rfd, (long)buf, 64);
+    buf[16] = '\0';
+    sys_puts(n == 16 ? "pipedemo: got 'through the pipe' ok\n"
+                     : "pipedemo: read FAIL\n");
+    n = sys3(ES_NR_fdread, rfd, (long)buf, 64);
+    sys_puts(n == 0 ? "pipedemo: eof ok\n" : "pipedemo: eof FAIL\n");
+    sys1(ES_NR_fdclose, rfd);
+    sys_puts("pipedemo: closed ok\n");
+}
+
+static void cmd_longdemo(void)
+{
+    static char pat[1024];
+    long coid, r;
+    int i;
+
+    for (i = 0; i < 1024; i++)
+        pat[i] = (char)(i & 0xFF);
+    sys2(ES_NR_demo, RT_U_LONGDEMO, 0);          /* spawn 服务器 */
+    coid = ipc_open_wait("/ipc/long");
+    if (coid <= 0) {
+        sys_puts("longdemo: server not found\n");
+        return;
+    }
+    r = sys6(ES_NR_msg_send, coid, (long)pat, 1024, 0, 0, 100);
+    sys_puts(r == 42 ? "longdemo: reply 42 ok\n"
+                     : "longdemo: reply FAIL\n");
+    sys1(ES_NR_conn_detach, coid);
+}
+
 /* ---- 站33:用户态 loader(参考实现 "loader 在用户态"机制;内核零镜像
  * 字节红线保全)——`run <path>`:fork->子全用户态装 ELF(fd=通道
  * 三元组读 ramfs)hint-mmap 段+拷->栈块(argc/argv/envp/auxv)
@@ -861,6 +958,12 @@ static void shell_line(char *line)
         cmd_shmdemo();
     } else if (streq(line, "msgseg")) {
         cmd_msgsegdemo();
+    } else if (streq(line, "mqdemo")) {
+        cmd_mqdemo();
+    } else if (streq(line, "pipedemo")) {
+        cmd_pipedemo();
+    } else if (streq(line, "longdemo")) {
+        cmd_longdemo();
     } else if (starts(line, "spawn ")) {
         sys3(ES_NR_demo, RT_U_SPAWN, (long)(line + 6), 0);
     } else if (starts(line, "sleep")) {
@@ -887,7 +990,7 @@ static void shell_line(char *line)
     } else if (line[0]) {
         sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
                  " | forkdemo | mmapdemo | exedemo | ipcdemo | pulsedemo | abortdemo | fddemo"
-                 " | futexdemo | sigdemo | shmdemo | msgseg | run <p>"
+                 " | futexdemo | sigdemo | shmdemo | msgseg | mqdemo | pipedemo | longdemo | run <p>"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");

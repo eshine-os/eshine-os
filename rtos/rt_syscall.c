@@ -390,6 +390,70 @@ static long sys_shm_destroy(u64 *frame)
     return rt_shm_destroy((long)FR(0));
 }
 
+/* ---- 站37:posix_queue 弧(mqueue/pipe/MsgRead 镜像) ---- */
+static long sys_mq_open(u64 *frame)
+{
+    char kpath[32];
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
+        return -ES_EFAULT;
+    return rt_mq_open(kpath);
+}
+
+static long sys_mq_send(u64 *frame)
+{
+    return rt_mq_send((long)FR(0), FR(1), (u32)FR(2));
+}
+
+static long sys_mq_receive(u64 *frame)
+{
+    u64 v = 0;
+    long r;
+
+    if (!access_ok((void *)FR(0), sizeof(v)))
+        return -ES_EFAULT;
+    r = rt_mq_receive((long)FR(1), &v, FR(2));
+    if (r == 0)
+        *(u64 *)FR(0) = v;           /* 值面直写用户字(已 access_ok) */
+    return r;
+}
+
+static long sys_mq_close(u64 *frame)
+{
+    return rt_mq_close((long)FR(0));
+}
+
+static long sys_mq_unlink(u64 *frame)
+{
+    char kpath[32];
+
+    if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
+        return -ES_EFAULT;
+    return rt_mq_unlink(kpath);
+}
+
+static long sys_msg_read(u64 *frame)
+{
+    if (!access_ok((void *)FR(3), (u32)FR(4)))
+        return -ES_EFAULT;
+    return rt_msg_read((int)FR(0), FR(1), FR(2),
+                       (void *)FR(3), (u32)FR(4));
+}
+
+static long sys_pipe(u64 *frame)
+{
+    long r;
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    r = rt_pipe_create(rt_cur->proc);
+    if (r < 0)
+        return r;
+    return r;                        /* (fd0 | fd1<<16) 打包 */
+}
+
 static long sys_fdclose(u64 *frame)
 {
     if (!rt_cur->proc)
@@ -783,6 +847,10 @@ static long sys_demo(u64 *frame)
         if (!rt_task_create("pulsesrv", rt_msg_pulse_server, NULL, 8))
             rt_puts("ipc: pulse server full\n");
         break;
+    case RT_U_LONGDEMO:
+        if (!rt_task_create("longsrv", rt_msg_long_server, NULL, 8))
+            rt_puts("ipc: long server full\n");
+        break;
     case RT_U_ABORTDEMO:
         if (!rt_task_create("abortsrv", rt_msg_abort_server, NULL, 8))
             rt_puts("ipc: abort server full\n");
@@ -848,6 +916,13 @@ void rt_syscall_init(void)
     table[ES_NR_shm_attach]  = sys_shm_attach;
     table[ES_NR_shm_detach]  = sys_shm_detach;
     table[ES_NR_shm_destroy] = sys_shm_destroy;
+    table[ES_NR_mq_open]     = sys_mq_open;
+    table[ES_NR_mq_send]     = sys_mq_send;
+    table[ES_NR_mq_receive]  = sys_mq_receive;
+    table[ES_NR_mq_close]    = sys_mq_close;
+    table[ES_NR_mq_unlink]   = sys_mq_unlink;
+    table[ES_NR_msg_read]    = sys_msg_read;
+    table[ES_NR_pipe]        = sys_pipe;
     /* 站32:signal+futex 面(真 Linux 号,musl 直连) */
     table[ES_NR_futex]        = sys_futex;
     table[ES_NR_kill]         = sys_kill;

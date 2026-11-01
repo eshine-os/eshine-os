@@ -17,6 +17,12 @@ if [ ! -d "$Poky/bitbake" ] || [ ! -f "$BUILD/conf/local.conf" ]; then
     exit 2
 fi
 
+# 站37 自愈定谳:归档=gitignore 工件,站34 后无人重生则 bitbake
+# 恒吃参考实现——[99] 曾以站34 部署物混过三轮绿灯(参考实现也有
+# hello)。每次构建前重生=门恒验当下提交树(源变即新哈希,
+# sstate 自然失配重建)。
+bash "$REPO/scripts/archive-source.sh" > /dev/null
+
 cd "$BUILD"
 # oe-init-build-env 需 bash 且打印帮助:静默化;环境就位即可
 . "$Poky/oe-init-build-env" "$BUILD" > /dev/null 2>&1
