@@ -72,7 +72,7 @@ RTOBJS := rtos/start.o rtos/vec.o rtos/rt_sched.o rtos/rt_task.o \
           rtos/rt_sync.o rtos/rt_ipc.o rtos/rt_demo.o rtos/rt_timer.o \
           rtos/rt_as.o rtos/rt_msg.o rtos/rt_fsrv.o rtos/ramfs.o \
           rtos/rt_sig.o rtos/rt_shm.o rtos/rt_mq.o rtos/rt_pipe.o rtos/rt_blk.o \
-          rtos/rt_thr.o rtos/rt_rng.o rtos/rt_procfs.o rtos/rt_slog.o rtos/rt_part.o
+          rtos/rt_thr.o rtos/rt_rng.o rtos/rt_procfs.o rtos/rt_slog.o rtos/rt_part.o rtos/rt_crash.o
 
 # 站31:rootfs 构建期打包——tools/ramfs 树 -> cpio(newc),ramfs.S
 # .incbin 内嵌(汇编期展开,-MMD 抓不到 -> ramfs.o 显式依赖归档)

@@ -206,6 +206,21 @@ u64 rt_as_page_alloc(void)
     return as_pool_alloc();
 }
 
+/* 站46:用户 VA 映射查(crash 用户帧链的逐读映射门——坏栈不得
+ * 把取证变成 EL1 二次事故;只认 user/mmap 两块=xspage 不可
+ * 走访面同律)。 */
+int rt_as_user_mapped(struct rt_proc *p, u64 va)
+{
+    u32 bi = (u32)((va >> 21) & 511);
+    u32 pi = (u32)((va >> 12) & 511);
+
+    if (!p)
+        return 0;
+    if (bi != AS_BLK_USER && bi != AS_BLK_MMAP)
+        return 0;
+    return p->l2[bi] && (p->l2[bi][pi] & 1UL) != 0;
+}
+
 void rt_as_page_free(u64 pa)
 {
     as_pool_free_if_owned(pa & ~0xFFFUL);

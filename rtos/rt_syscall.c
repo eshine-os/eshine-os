@@ -1314,6 +1314,9 @@ static long sys_demo(u64 *frame)
         rt_cpart_show();                /* k_aps_show 镜像(参考实现白描) */
         rt_mpart_show();
         break;
+    case RT_U_CRASHINFO:               /* 站46:crash 环倾倒(僵尸面) */
+        rt_crash_show();
+        break;
     default:
         return -ES_EINVAL;
     }
@@ -2097,6 +2100,9 @@ void rt_syscall_dispatch(u64 *frame)
         if (term) {
             frame[2] = (u64)(long)term;  /* x0 槽=退出码(sys_exit
                                           * 读 FR(0);帧不再 eret) */
+            rt_crash_record(rt_cur->proc, frame, 0, 0, 0,
+                            (u32)term);  /* 站46:信号路径记录
+                                          * (无硬件三元=0 面) */
             sys_exit(frame);
             __builtin_unreachable();
         }
@@ -2129,9 +2135,14 @@ void rt_el0_fault(u64 *frame)
             return;
     }
     rt_puts_hex("EL0 fault: esr=0x", esr,
-                " (unmapped/wild: no VMA covers, terminal)\n");
+                " (wild: no VMA covers)\n");
     rt_puts_hex("EL0 fault: elr=0x", frame[0], "\n");
     rt_puts_hex("EL0 fault: far=0x", far, "\n");
-    rt_panic("EL0 sync fault (v0 terminal face)",
-             (unsigned int)(rt_pid_of(rt_cur) - 1));
+    /* 站46:站29"野访终态面留边"翻案——死者本人 exit 链+取证
+     * 记录(崩溃不再连坐全 VM);EL1 panic 面不动(内核 bug 仍
+     * 全驻车)。code=139=128+11(SIGSEGV 面),同信号终局机器。 */
+    rt_crash_record(rt_cur->proc, frame, esr, frame[0], far, 139u);
+    frame[2] = 139;                    /* x0 槽=退出码(sys_exit 读 FR(0)) */
+    sys_exit(frame);
+    __builtin_unreachable();
 }

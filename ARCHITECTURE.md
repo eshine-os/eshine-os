@@ -624,6 +624,20 @@ fork 孙 -12/munmap 复 ok/退场 cur 0）+parts（两表,k_aps_show
 记账钩子下 .user 块 14 页被当匿名预算收,修=pool 0 走专口
 rt_as_declare 零记账。零新 syscall（demo 蹦床面,k_part_create
 同位）** →
+**站46 崩溃取证链（[125-126]——参考实现 coredump 白描的内存形状,
+站29"野访终态面留边"翻案日）：EL0 无 VMA 野访由**全系统 rt_panic
+升死者本人 exit 链**（code=139=128+11 SIGSEGV 面,同信号终局机器
+fd 清+线程群扫+ZOMBIE;EL1 panic 面不动=内核 bug 仍全驻车）。
+**crash 环**（rt_crash.c,2 槽）：{tick,pid,名,esr/elr/far 三元,
+code,x0-x5+x29 寄存器面,用户 x29 帧链前 4 帧}——ELF 核文件不可为
+（ramfs=只读 rodata）,内存记录+shell 倾倒=v0 诚实形记档。记录点
+两处：野访终态（硬件三元全）+信号默认动作（esr/elr/far=0）。
+**用户帧链窗门**（identity∪mmap 两窗）+**映射门**（逐读前 l2 PTE
+present 查——坏栈不得把取证变成 EL1 二次事故）+单调门。**-O2
+omit-frame-pointer 定谳**：用户码默认无 x29 链,首版 walk 0 帧
+（x29 残值在窗内但 [fp+8] 非返回址）;optimize 属性方案污染全 TU
+代码生成炸 strlen 弃;修=crashdemo 法医夹具手工挂 {x29,x30} 帧,
+真链用户构建（-fno-omit）同一机器即全链** →
 **站34 yocto 门（[123]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
@@ -633,7 +647,7 @@ rt_as_declare 零记账。零新 syscall（demo 蹦床面,k_part_create
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-129 步手动走查清单。
+131 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

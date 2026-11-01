@@ -413,7 +413,7 @@ enum {
     RT_U_LONGDEMO, RT_U_CALLTRACE,
     RT_U_FUPOKE,
     RT_U_APS, RT_U_MPART_ALLOC, RT_U_MPART_ATTACH, RT_U_MPART_FREE,
-    RT_U_PARTS,
+    RT_U_PARTS, RT_U_CRASHINFO,
 };
 
 /* ES_NR_sysinfo 的共享结构(user<->kernel) */
@@ -749,6 +749,13 @@ void rt_mpart_show(void);
 void rt_cpart_free(int id);              /* 站45:预算还 system,demo 收口 */
 void rt_mpart_free(int id);
 void rt_aps_demo(void);                  /* 站45:CPU 分区判据体(蹦床调) */
+
+/* ---- 站四十六:崩溃取证链(rt_crash.c)——crash 环+寄存器面+
+ *      用户帧链(参考实现 coredump 白描的内存形状) ---- */
+void rt_crash_record(struct rt_proc *p, u64 *frame,
+                     u64 esr, u64 elr, u64 far, u32 code);
+void rt_crash_show(void);
+int  rt_as_user_mapped(struct rt_proc *p, u64 va);   /* 映射门 */
 rt_task_t *rt_idle1_task(void);      /* 站二十:次核 idle(池外伪任务) */
 void rtos_secondary_main(u32 cpu);   /* 站二十:次核世界(asm 入口落点) */
 void rtos_secondary_entry(void);      /* 站二十:asm 入口(vec.S .global) */

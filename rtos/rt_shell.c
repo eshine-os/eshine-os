@@ -1762,6 +1762,38 @@ static void cmd_mprtdemo(void)
     sys_puts("mprtdemo: done\n");
 }
 
+static void cmd_crashdemo(void)
+{
+    /* 站46:野读 0x4F000000(两用户窗皆无 VMA)——子死 code=139
+     * (SIGSEGV 面),父收尸=崩溃不再连坐全 VM;crashinfo 倾倒
+     * 硬件三元+用户帧链。 */
+    long pid, st = 0;
+
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {
+        volatile u64 *bad = (volatile u64 *)0x4F000000UL;
+
+        sys_puts("crash: child touching wild va\n");
+        /* 站46 法医夹具:-O2 默认 omit-frame-pointer,用户码无
+         * x29 链(crash_record 实测 0 帧,walk 空走)。手工挂一帧
+         * {x29,x30}——walk 由野读点起证:真链码(任何
+         * -fno-omit 用户构建)同一机器即可走全链。 */
+        __asm__ volatile(
+            "stp x29, x30, [sp, #-16]!\n"
+            "mov x29, sp\n"
+            ::: "memory");
+        (void)*bad;                    /* 野读:野访终态翻案入口 */
+        sys_puts("crash: child alive?!\n");   /* 不可达面 */
+        sys1(ES_NR_exit, 0);
+    }
+    sys_puts("crashdemo: child running\n");
+    pid = sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts(st == 139 ? "crash: reaped code=139 ok\n"
+                       : "crash: reap FAIL\n");
+    sys2(ES_NR_demo, RT_U_CRASHINFO, 0);
+    sys_puts("crashdemo: done\n");
+}
+
 static void cmd_unamedemo(void)
 {
     char buf[6 * 65];
@@ -2041,6 +2073,10 @@ static void shell_line(char *line)
         cmd_mprtdemo();
     } else if (streq(line, "parts")) {
         sys2(ES_NR_demo, RT_U_PARTS, 0);
+    } else if (streq(line, "crashdemo")) {
+        cmd_crashdemo();
+    } else if (streq(line, "crashinfo")) {
+        sys2(ES_NR_demo, RT_U_CRASHINFO, 0);
     } else if (streq(line, "futexdemo")) {
         cmd_futexdemo();
     } else if (streq(line, "sigdemo")) {
