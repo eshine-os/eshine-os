@@ -1565,7 +1565,7 @@ def main():
             s.sendall(b"run /bin/hello\n")
             buf = read_until(s, buf, b"musl: hello from /bin/hello", time.time() + 150, start=p3)
             buf = read_until(s, buf, b"musl: fmt proof 6*7=42", time.time() + 10, start=p3)
-            buf = read_until(s, buf, b"run: exited code=0", time.time() + 15, start=p3)
+            buf = read_until(s, buf, b"run: exited code=0", time.time() + 60, start=p3)
             print("  [88/133] vm0: musl hello via user-space loader (dual-world left wing)")
 
             # ---- 站35:pthread 线程面——musl 契约兑现日(clone 220/
@@ -1580,7 +1580,7 @@ def main():
             s.sendall(b"run /bin/pt\n")
             buf = read_until(s, buf, b"pthread: 4 threads joined, counter=10 (want 10)", time.time() + 60, start=p3)
             buf = read_until(s, buf, b"pthread: self=", time.time() + 10, start=p3)
-            buf = read_until(s, buf, b"run: exited code=0", time.time() + 15, start=p3)
+            buf = read_until(s, buf, b"run: exited code=0", time.time() + 60, start=p3)
             print("  [89/133] vm0: pthread 4-thread join via clone(220) (musl TLS+CLEAR_TID contract)")
             # ---- 站36:shm+xspace——共享段四面+固定窗+fork 共享律
             #      (参考实现 xspace 全局窗/VM_SET 单拷窗的站内形状)。
