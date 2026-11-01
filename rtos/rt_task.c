@@ -120,6 +120,7 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
                                       * sigqueueinfo 的 tid 定向
                                       * (电池序才撞:孤立跑任务位
                                       * 干净不现;站38 律第四现)。 */
+    t->wait_src = RT_WSRC_NONE;     /* 站43:归属列,复用槽必清(站38 律) */
     t->el0 = 0;                     /* 站40 定谳(12 站潜伏):el0 域
                                       * 站28 入槽时漏清单——boot 期
                                       * initmark/beat 子(首批早期
@@ -219,6 +220,7 @@ void rt_task_exit(void)             /* noreturn:DEAD 后必切走 */
 void rt_sleep_ticks(u64 n)
 {
     rt_cur->wake_tick = rt_ticks + n;
+    rt_cur->wait_src = RT_WSRC_SLEEP;  /* 站43:归属列 */
     rt_cur->state = RT_SLEEP;
     rdy_remove(rt_cur);              /* 站19:真挂睡前清自拣令牌——不清则
                                       * rt_sched 摘到自己即"醒",睡不
@@ -242,6 +244,7 @@ void rt_block_rx(void)
         return;                      /* 迟到字节:不挂起,壳循环顶再取 */
     }
     rt_cur->wait_mask = RT_RX_BIT;
+    rt_cur->wait_src = RT_WSRC_RX;  /* 站43:归属列 */
     rt_cur->state = RT_BLOCK;
     rdy_remove(rt_cur);              /* 站19:同上,真阻塞必清令牌 */
     rt_daif_load(d);                /* 窗闭合:此后 ISR 见 BLOCK 即正确唤醒 */
@@ -340,6 +343,33 @@ void rt_panic(const char *why, unsigned int slot)
     panic_park();
 }
 
+/* 站43:FP 链回溯——崩溃自证的最小仪器(参考实现 calltrace 白描的站内形)。
+ * 逐帧走 x29 链([fp]=上级 fp,[fp+8]=返回地址);出文本窗即收+16 帧
+ * 保险丝(野帧环帧皆拒)。符号名=后弧(kallsyms);v0 打地址,
+ * addr2line 离线译名——机器先能开口,再谈会说话。 */
+void rt_calltrace(void)
+{
+    u64 fp;
+    u32 n = 0;
+
+    __asm__ volatile("mov %0, x29" : "=r"(fp));
+    puts_uart("calltrace:\n");
+    while (fp && n < 16) {
+        u64 ret = *(u64 *)(void *)(fp + 8);
+        u64 nxt = *(u64 *)(void *)fp;
+
+        if (ret < 0x40000000ULL || ret >= 0x40200000ULL)
+            break;                       /* 野帧:出内核文本窗即收 */
+        rt_puts_hex("  #", n, " pc=0x");
+        rt_puts_hex("", ret, "\n");
+        if (nxt <= fp)
+            break;                       /* 栈底/环 */
+        fp = nxt;
+        n++;
+    }
+    rt_puts_hex("  frames=", n, "\n");
+}
+
 void rt_panic_fault(const char *why)
 {
     u64 esr, elr, far;
@@ -358,6 +388,7 @@ void rt_panic_fault(const char *why)
         rt_puts_hex("esr=0x", esr, " ");
         rt_puts_hex("elr=0x", elr, " ");
         rt_puts_hex("far=0x", far, "\n");
+        rt_calltrace();                /* 站43:panic 即回溯(帧机器自证) */
     }
     panic_park();
 }

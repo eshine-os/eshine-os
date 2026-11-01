@@ -1672,6 +1672,45 @@ static void cmd_cloexecdemo(void)
     sys_puts("cloexecdemo: done\n");
 }
 
+static void cmd_polldemo(void)
+{
+    /* 站43:ppoll 三脸(管道)——空管超时 0/写后 POLLIN/读后回空;
+     * pollfd={fd,ev,rev}=8B 自洽;ts 传 {sec,nsec}。 */
+    struct { int fd; short ev; short rev; } pfd[2];   /* Linux pollfd 8B */
+    struct { u64 sec, nsec; } ts = {0, 30000000ULL};
+    long r = sys0(ES_NR_pipe), rdy;
+    long rfd, wfd, n;
+    char b[16];
+
+    if (r < 0) {
+        sys_puts("polldemo: pipe FAIL\n");
+        return;
+    }
+    rfd = r & 0xFFFF;
+    wfd = (r >> 16) & 0xFFFF;
+    pfd[0].fd = rfd;
+    pfd[0].ev = 1;                    /* POLLIN */
+    pfd[0].rev = 0;
+    rdy = sys6(ES_NR_ppoll, (long)pfd, 1, (long)&ts, 0, 8, 0);
+    sys_puts(rdy == 0 ? "poll: empty pipe times out ok\n"
+                     : "poll: empty pipe ready?!\n");
+    sys3(ES_NR_fdwrite, wfd, (long)"poll-in-8", 9);
+    pfd[0].rev = 0;
+    rdy = sys6(ES_NR_ppoll, (long)pfd, 1, 0, 0, 8, 0);   /* ts=NULL 无限 */
+    sys_puts(rdy == 1 && pfd[0].rev == 1 ? "poll: POLLIN after write ok\n"
+                                         : "poll: POLLIN wrong?!\n");
+    n = sys3(ES_NR_fdread, rfd, (long)b, 9);
+    pfd[0].rev = 0;
+    ts.sec = 0;
+    ts.nsec = 20000000ULL;
+    rdy = sys6(ES_NR_ppoll, (long)pfd, 1, (long)&ts, 0, 8, 0);
+    sys_puts(n == 9 && rdy == 0 ? "poll: drained back to empty ok\n"
+                                : "poll: drain wrong?!\n");
+    sys1(ES_NR_fdclose, rfd);
+    sys1(ES_NR_fdclose, wfd);
+    sys_puts("polldemo: done\n");
+}
+
 static void cmd_unamedemo(void)
 {
     char buf[6 * 65];
@@ -1941,6 +1980,10 @@ static void shell_line(char *line)
         cmd_cloexecdemo();
     } else if (streq(line, "unamedemo")) {
         cmd_unamedemo();
+    } else if (streq(line, "polldemo")) {
+        cmd_polldemo();
+    } else if (streq(line, "calltrace")) {
+        sys2(ES_NR_demo, RT_U_CALLTRACE, 0);
     } else if (streq(line, "futexdemo")) {
         cmd_futexdemo();
     } else if (streq(line, "sigdemo")) {

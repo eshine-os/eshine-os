@@ -1139,6 +1139,14 @@ static void k_selftest(void)
         rt_puts("\nselftest FAIL\n");
 }
 
+static const char *wsrc_name(u32 w)
+{
+    static const char *const n[] = { "-", "rx", "sem", "mut",
+                                     "futx", "msg", "slep" };
+
+    return w < 7 ? n[w] : "?";
+}
+
 static void k_ps(void)
 {
     unsigned int idx;
@@ -1152,6 +1160,8 @@ static void k_ps(void)
             rt_puts_u64("", t->prio, "");
             rt_puts("  ");
             rt_puts(rt_state_name(t->state));
+            rt_puts(" blk ");
+            rt_puts(wsrc_name(t->wait_src));       /* 站43:归属列 */
             rt_puts(" stk ");
             if (idx < RT_POOL_MAX)
                 rt_puts_u64("", rt_cur_stack_margin(idx), "");
@@ -1273,6 +1283,10 @@ static long sys_demo(u64 *frame)
     case RT_U_LONGDEMO:
         if (!rt_task_create("longsrv", rt_msg_long_server, NULL, 8))
             rt_puts("ipc: long server full\n");
+        break;
+    case RT_U_CALLTRACE:           /* 站43:观测面活证(蹦床语境=壳
+                                    * 任务内核栈,帧链直达 dispatch) */
+        rt_calltrace();
         break;
     case RT_U_ABORTDEMO:
         if (!rt_task_create("abortsrv", rt_msg_abort_server, NULL, 8))
@@ -1863,6 +1877,62 @@ static long sys_getitimer(u64 *frame)
     return 0;
 }
 
+/* 站43:ppoll 73(musl poll 即走此;fd 串行 POLL 往返+tick 轮询
+ * 节律——事件回调后弧)。pollfd={s32 fd,s16 ev,s16 rev}=8B;
+ * ts NULL=无限;POLLOUT(4) v0 恒可写;fd 无=POLLNVAL(0x20)。 */
+static long sys_ppoll(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    u64 ufds = FR(0), ts = FR(2);
+    u32 n = (u32)FR(1), i;
+    u64 dl = 0;                       /* 0=无限 */
+    long ready;
+
+    if (!p || !n || n > 16u)
+        return -22;
+    if (!access_ok((void *)ufds, n * 8))
+        return -14;
+    if (ts && access_ok((void *)ts, 16)) {
+        u64 sec = *(u64 *)(void *)ts, nsec = *(u64 *)(void *)(ts + 8);
+
+        dl = rt_ticks + sec * 100 + (nsec + 9999999ULL) / 10000000ULL;
+        if (!dl)
+            dl = 1;
+    }
+    for (;;) {
+        ready = 0;
+        for (i = 0; i < n; i++) {
+            u32 ent = *(u32 *)(void *)(ufds + i * 8);
+            u16 ev = *(u16 *)(void *)(ufds + i * 8 + 4);  /* fd 是
+                                   * 4B int——events 在 +4 不在 fd 高半
+                                   * (两次冒烟定谳:count=9 服务端全程
+                                   * 在答 1,ev=0 才是过滤真身) */
+            u16 rev = 0;
+            long r;
+
+            if ((int)ent < 0)
+                rev = 0x20;            /* POLLNVAL:负 fd 忽略态 */
+            else {
+                r = rt_fd_poll(p, (int)ent);
+                if (r == 1 && (ev & 1u))
+                    rev |= 1u;         /* POLLIN */
+                if (r >= 0 && (ev & 4u))
+                    rev |= 4u;         /* POLLOUT v0 恒可写 */
+                if (r < 0 && r != -9)
+                    rev = 0x20;
+                else if (r < 0)
+                    rev = 0x20;        /* 坏 fd 面=NVAL(POSIX 软面) */
+            }
+            *(u16 *)(void *)(ufds + i * 8 + 6) = rev;
+            if (rev)
+                ready++;
+        }
+        if (ready || (dl && (long long)(rt_ticks - dl) >= 0))
+            return ready;
+        rt_sleep_ticks(1);             /* 让位一拍再查(v0 节律) */
+    }
+}
+
 void rt_syscall_init(void)
 {
     rt_task_pool_init();              /* 站35:素槽 RT_FREE 清池 */
@@ -1946,6 +2016,7 @@ void rt_syscall_init(void)
     table[ES_NR_getegid]         = sys_uid0;
     table[ES_NR_brk]             = sys_brk;
     table[ES_NR_getrandom]       = sys_getrandom;
+    table[ES_NR_ppoll]           = sys_ppoll;
     /* 站41:CAPR 面 */
     table[ES_NR_cap_drop]        = sys_cap_drop;
     table[ES_NR_cap_get]         = sys_cap_get;

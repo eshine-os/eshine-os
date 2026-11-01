@@ -110,7 +110,7 @@ struct rt_task {
     u64 ctid;                     /* @744 */
     u64 tid;                      /* @752 */
     u32 sig_pending;              /* 站38:任务级待决位图(tgkill 定向)@760 */
-    u32 _pad2;                    /* @764 */
+    u32 wait_src;                 /* 站43:最近阻塞原语(归属列)@764 */
     u64 sig_val;                  /* 站38:定向信号载荷值@768 */
 };
 typedef struct rt_task rt_task_t;
@@ -258,6 +258,12 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define RT_FDOP_UNLINK  8u     /* 站39:摘名摘节点(页还池) */
 #define RT_FDOP_READDIR 9u     /* 站39:a=游标,data=[d_type][名],status=下一游标(0=末) */
 #define RT_FDOP_STAT   10u     /* 站40:data=路径,回执=status=(mode<<32)|size */
+#define RT_FDOP_POLL   11u     /* 站43:可读查询;回执 status=1 可读/0 无/负=err */
+
+/* 站43:阻塞对象归属(参考实现 GET_TASK_BLOCK_INFO 白描的最小站内形)。
+ * 语义=最近一次阻塞原语(醒后不清=ps 排障语义:"卡在哪")。 */
+enum { RT_WSRC_NONE = 0, RT_WSRC_RX, RT_WSRC_SEM, RT_WSRC_MUT,
+       RT_WSRC_FUTX, RT_WSRC_MSG, RT_WSRC_SLEEP };
 
 #define RT_FD_DATA      44u    /* 请求内联窗:OPEN 路径/WRITE 数据 */
 #define RT_FD_RDATA     64u    /* READ 回复数据窗(站33:status 走
@@ -400,7 +406,7 @@ enum {
     RT_U_TMODEMO, RT_U_SWTDEMO, RT_U_IRQDEMO, RT_U_LOWDEMO,
     RT_U_STKDEMO, RT_U_STACKCHECK, RT_U_OVERFLOW, RT_U_FPSTAT,
     RT_U_HB, RT_U_SLEEP, RT_U_IPCDEMO, RT_U_PULSEDEMO, RT_U_ABORTDEMO,
-    RT_U_LONGDEMO,
+    RT_U_LONGDEMO, RT_U_CALLTRACE,
     RT_U_FUPOKE,
 };
 
@@ -627,6 +633,7 @@ long rt_fd_write(struct rt_proc *p, int fd, const char *kbuf, u32 len);
 void rt_fd_fork(struct rt_proc *pp, struct rt_proc *cp);
 void rt_fd_close_all(struct rt_proc *p);
 /* 站40:busybox/POSIX 薄面(fd 层新四门) */
+long rt_fd_poll(struct rt_proc *p, int fd);  /* 站43:POLL 往返(1 可读/0 无/负错) */
 long rt_fd_getdents64(struct rt_proc *p, int fd, char *ubuf, u32 len); /* 每调一名 */
 long rt_fd_fstatat(struct rt_proc *p, const char *kpath, u32 *mode, u32 *size);
 long rt_fd_dup3(struct rt_proc *p, int oldfd, int newfd);
@@ -822,6 +829,7 @@ void rt_pend_disarm(rt_task_t *t);                  /* 成功出口缴械挂等
  * 冒充现场);陷阱面 ESR/ELR/FAR 架构有效才印。皆 noreturn。 */
 void rt_panic(const char *why, unsigned int slot) __attribute__((noreturn));
 void rt_panic_fault(const char *why) __attribute__((noreturn));
+void rt_calltrace(void);             /* 站43:FP 链回溯(panic 自挂+demo 面) */
 
 /* 站21C:栈限位导出(pool/task_stacks 私有 static,demo 经此取址)。
  * NULL=非池任务(idle/引导语境),demo 自守。 */

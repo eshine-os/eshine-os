@@ -152,6 +152,9 @@ static void srv_tty(void *arg)
         case RT_FDOP_STAT:            /* 站40:mode<<32|size(字符面) */
             r = ((long)0x2190u) << 32;
             break;
+        case RT_FDOP_POLL:            /* 站43:可读=串口 RX 环非空 */
+            r = rt_rx_pending() ? 1 : 0;
+            break;
         default:
             r = -22;
         }
@@ -446,6 +449,19 @@ static void srv_ramfs(void *arg)
             } else
                 r = ocb_release((int)req.ocb);
             break;
+        case RT_FDOP_POLL: {          /* 站43:可读=文件位置未到 EOF
+                                      * (目录柄=枚举未尽=恒可读) */
+            struct srv_ocb *o = ocb_get((int)req.ocb);
+            struct rf_node *nd;
+
+            if (!o || o->node >= rf_nnode) {
+                r = req.ocb >= RF_DIR_TAG ? 1 : -9;
+                break;
+            }
+            nd = &rf_nodes[o->node];
+            r = o->off < nd->size ? 1 : 0;
+            break;
+        }
         case RT_FDOP_DUP:
             if (!req.ocb || req.ocb >= RF_DIR_TAG) {
                 r = 0;                 /* 目录柄 DUP=零簿记(v0 记档) */
@@ -921,6 +937,22 @@ long rt_fd_dir(struct rt_proc *p, int index, char *kpath, u32 len)
     return r;                           /* 正=下一游标(status 面;名
                                           * 已落 kpath。每枚举一事一
                                           * 连接往返=v0 诚实成本记档) */
+}
+
+/* 站43:可读查询往返(POLL wire op 的客户端面;ppoll 每有效 fd
+ * 一次串行往返——轮询面 v0,事件回调=后弧)。返 1 可读/0 无/负错。 */
+long rt_fd_poll(struct rt_proc *p, int fd)
+{
+    struct rt_fdreq req;
+    struct rt_fd *f;
+
+    if (!fd_slot_ok(p, fd))
+        return -9;
+    f = &p->fds[fd];
+    fd_zero(&req, sizeof(req));
+    req.op = RT_FDOP_POLL;
+    req.ocb = f->ocb;
+    return rt_msg_send(f->coid, &req, sizeof(req), NULL, 0, SRV_TICKS);
 }
 
 int rt_fd_close(struct rt_proc *p, int fd)

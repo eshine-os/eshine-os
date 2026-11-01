@@ -579,6 +579,21 @@ sigsuspend 漏 BLOCK 态=站41"调用者驻车"反面教材当日重演/
 局部,[sp+1304] 读出字面串指针野值 far=ASCII 定谳;修=必入自有帧
 入口函数,musl __clone 同律——fork 子因整栈拷贝无此约束,两种
 child 两种纪律）**） →
+**站43 观测面+poll（[119-121]——参考实现审计裁剪记账 H/I 兑现日）：
+calltrace=x29 FP 链走查（16 帧保险丝+内核窗门[窗内帧才报，用户
+帧止步]+panic 钩子[abort 面自动打栈，EL1 取证从"打印一行"升"打
+一链"]）;ps blk 归属列=wait_src 域挂起原语归属（sem/mut/rx/futx/
+slep 各打点，站30 msg 等待经 ch->msgs 信号量显示 sem=机制复用
+的如实面;**futex pend_q 阻塞不经 sem=漏标显陈旧值，站43 自己的
+洞自己补**）;ppoll 号面 73（musl poll 走 ppoll）+RT_FDOP_POLL
+wire op——per-fd 串行往返骑站31 fd 三元组零新等待逻辑（超时=
+tick 轮询环，Linux pollfd 8B {int fd;short ev;short rev} 契约，
+events@+4/revents@+6）;tty/ramfs/pipe 三服务器各答 POLL 脸
+（pipe 读端=count!=0，写端 POLLOUT 恒真 v0 面）。**战雷三枚**:
+events@+4（首版 (u16)(ent>>16) 取 fd 高半=ev 恒 0，POLLIN 永不
+成立——服务器侧取证 count=9 答 1 全程，判据面指向）/pipesrv
+无 POLL case（默认 -22 落 POLLNVAL）/冒烟驱动晚挂=RX 死窗
+（vmconsole 必须紧跟 vmrun，verify [19] 同款 wait=on 形状）**）** →
 **站34 yocto 门（[123]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
@@ -588,7 +603,7 @@ child 两种纪律）**） →
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-123 步手动走查清单。
+126 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

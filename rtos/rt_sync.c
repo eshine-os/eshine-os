@@ -153,6 +153,7 @@ long rt_sem_take_to(rt_sem_t *s, u64 ticks)
             got = 1;
         } else if (ticks != 0) {
             rt_cur->state = RT_BLOCK;
+            rt_cur->wait_src = RT_WSRC_SEM;  /* 站43:归属列 */
             rt_cur->timed_out = 0;
             rt_cur->pend_deadline = deadline;
             rt_cur->pend_qh = &s->wq_head;
@@ -255,6 +256,7 @@ long rt_mutex_take_to(rt_mutex_t *m, u64 ticks)
                     rt_ready_push(o);
             }
             rt_cur->state = RT_BLOCK;
+            rt_cur->wait_src = RT_WSRC_MUT;  /* 站43:归属列 */
             rt_cur->timed_out = 0;
             rt_cur->pend_deadline = deadline;
             rt_cur->pend_qh = &m->wq_head;

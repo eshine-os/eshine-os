@@ -73,6 +73,8 @@ static long rt_futex_wait(struct rt_proc *p, u64 va, u32 expect, u64 ticks)
         rt_cur->timed_out = 0;
         rt_cur->sig_intr = 0;           /* 重挂恒自清(kill 只碰 BLOCK) */
         rt_cur->fut_woken = 0;
+        rt_cur->wait_src = RT_WSRC_FUTX; /* 站43:归属列(pend_q 型
+                                          * 阻塞不经 sem,漏标=陈旧值) */
         rt_cur->pend_deadline = deadline;
         rt_cur->pend_qh = &b->head;
         rt_cur->pend_qt = &b->tail;

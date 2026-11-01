@@ -66,6 +66,14 @@ static void srv_pipe(void *arg)
         if (ri.rcvid == 0)
             continue;               /* 脉冲面 v0 丢弃 */
         switch (req.op) {
+        case RT_FDOP_POLL: {        /* 站43:读端可读=环内有字节;
+                                     * 写端 v0 由 POLLOUT 恒真面答 */
+            u32 end = 0;
+            struct rt_pipe *pp = pipe_ocb(req.ocb, &end);
+
+            r = (!pp || end != 0) ? -9 : (long)(pp->count != 0 ? 1 : 0);
+            break;
+        }
         case RT_FDOP_READ: {
             u32 end, n = 0;
 
