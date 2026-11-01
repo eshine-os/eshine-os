@@ -49,6 +49,20 @@ static long sys_read(u64 *frame)
 {
     char *ub = (char *)FR(1);
     long c;
+
+    if ((long)FR(0) >= 3) {          /* 站40:真 fd 读(busybox 面专用
+                                      * fd>=3;EOF=0 让 cat/md5 收口) */
+        char kbuf[64];
+        long r = rt_fd_read(rt_cur->proc, (int)FR(0), kbuf, sizeof(kbuf));
+
+        if (r <= 0)
+            return r;
+        if (!access_ok(ub, (u32)r))
+            return -ES_EFAULT;
+        for (long i = 0; i < r; i++)
+            ub[i] = kbuf[i];
+        return r;
+    }
     for (;;) {
         c = rt_getc_nb();
         if (c >= 0)
@@ -71,6 +85,8 @@ static long sys_write(u64 *frame)
         return -ES_EFAULT;
     for (u64 i = 0; i < len; i++)
         kbuf[i] = ub[i];
+    if ((long)FR(0) >= 3)            /* 站40:真 fd 写(同 sys_read 路由律) */
+        return rt_fd_write(rt_cur->proc, (int)FR(0), kbuf, (u32)len);
     rt_puts_n(kbuf, (u32)len);
     return (long)len;
 }
@@ -163,10 +179,30 @@ static long sys_wait4(u64 *frame)
 
     if (pid <= 0)
         return -ES_EINVAL;
+    if (FR(2) & 1u) {                 /* 站40:WNOHANG(respawn 探询面) */
+        z = rt_proc_zombie_find((int)pid, &code);
+        if (!z) {
+            if (rt_proc_child_alive(rt_cur->proc, (int)pid) > 0)
+                return 0;             /* 活着:0=未收(POSIX 面) */
+            return -10;               /* -ECHILD */
+        }
+        rt_proc_reap(z);
+        if (ust) {
+            if (!access_ok(ust, 8))
+                return -ES_EFAULT;
+            *ust = (u64)(u32)code;
+        }
+        return pid;
+    }
     for (;;) {
         z = rt_proc_zombie_find((int)pid, &code);
         if (z)
             break;
+        /* 站40 定谳(七轮全息画像):阻塞路径从无 ECHILD 路——
+         * 已收/非子 pid 永挂(sync respawn 首撞;站 29 v0 子集
+         * 无人走此路)。POSIX 正身:非活非尸即 -ECHILD 即返。 */
+        if (rt_proc_child_alive(rt_cur->proc, (int)pid) <= 0)
+            return -10;
         /* 站17 纪律同 rt_block_rx:判-挂-摘同入 DAIF 屏蔽窗,
          * 窗内终判已 ZOMBIE 则不挂(零窗竞);窗后挂起已可见,
          * 子 exit 的广播唤醒走回流令牌兑付。 */
@@ -238,6 +274,10 @@ static long sys_exec_setup(u64 *frame)
     /* 帧改写(参考实现 EXEC_SETUP 形状,内核不读任何镜像字节):
      * v0 入参 x0=entry x1=sp x2=arg;x3-x5 不读(壳 wrapper 只
      * 3 参;impl 侧整帧卫生清零,残值不进新帧)。 */
+    if (rt_cur->proc)
+        rt_cur->proc->brk = rt_cur->proc->mmap_next;
+        /* 站40:堆种子=装像末(窗内游标;brk(0)=读,brk(a)=增量
+         * hint-mmap——musl mallocng 探测面,qemu-user 实测定谳) */
     return sys_exec_setup_impl(frame, FR(0), FR(1), FR(2), 0, 0, 0);
 }
 
@@ -740,6 +780,172 @@ static long sys_gettid(u64 *frame)
     return (long)rt_cur->tid;         /* 站35:leader=pid,线程=发号 */
 }
 
+/* ---- 站四十:busybox/服务收编薄面(qemu-user -strace 需求定谳) ---- */
+
+static long sys_openat(u64 *frame)
+{
+    char kpath[48];
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (copy_in_str(kpath, FR(1), sizeof(kpath)) < 0)
+        return -ES_EFAULT;             /* dirfd/flags v0 不读(AT_FDCWD) */
+    return rt_fd_open(rt_cur->proc, kpath);   /* 目录回退在 fd 层 */
+}
+
+static long sys_close(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_fd_close(rt_cur->proc, (int)FR(0));
+}
+
+static long sys_getdents64(u64 *frame)
+{
+    char *ub = (char *)FR(1);
+    u32 len = (u32)FR(2);
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (!len || !access_ok(ub, len))
+        return -ES_EFAULT;
+    return rt_fd_getdents64(rt_cur->proc, (int)FR(0), ub, len);
+}
+
+/* musl aarch64 struct stat 144B(inst/include/bits/stat.h 定谳):
+ * mode@16/size@48/blksize@56/blocks@72;零填+定点写(busybox
+ * ls 分类面只吃 mode;d_type 已真给,stat=深脸兜底)。 */
+static long sys_newfstatat(u64 *frame)
+{
+    char kpath[48];
+    char st[144];
+    u64 *up = (u64 *)FR(2);
+    u32 mode = 0, size = 0;
+    long r;
+    u32 i;
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (copy_in_str(kpath, FR(1), sizeof(kpath)) < 0)
+        return -ES_EFAULT;
+    if (!access_ok(up, sizeof(st)))
+        return -ES_EFAULT;
+    if ((r = rt_fd_fstatat(rt_cur->proc, kpath, &mode, &size)) < 0)
+        return r;
+    for (i = 0; i < sizeof(st); i++)
+        st[i] = 0;
+    *(u64 *)(void *)(st + 0) = 1;                  /* st_dev */
+    *(u64 *)(void *)(st + 8) = 2;                  /* st_ino */
+    *(u32 *)(void *)(st + 16) = mode;
+    *(u32 *)(void *)(st + 20) = 1;                 /* st_nlink */
+    *(u64 *)(void *)(st + 48) = size;
+    *(u64 *)(void *)(st + 56) = 4096;              /* st_blksize(long) */
+    *(u64 *)(void *)(st + 72) = (size + 511) / 512; /* st_blocks */
+    for (i = 0; i < sizeof(st); i++)
+        ((char *)up)[i] = st[i];
+    return 0;
+}
+
+static long sys_dup3(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_fd_dup3(rt_cur->proc, (int)FR(0), (int)FR(1));
+}
+
+static long sys_fcntl(u64 *frame)
+{
+    (void)frame;
+    return 0;                          /* v0:F_SETFD/F_GETFD 回 0(CLOEXEC 无 exec 面) */
+}
+
+static long sys_clock_gettime(u64 *frame)
+{
+    u64 *ts = (u64 *)FR(1);
+    u64 ns;
+
+    if (FR(0) > 1u)
+        return -ES_EINVAL;             /* 0=REALTIME 1=MONOTONIC */
+    if (!access_ok(ts, 16))
+        return -ES_EFAULT;
+    ns = FR(0) == 0 ? rt_time_real_ns() : rt_time_mono_ns();
+    ts[0] = ns / 1000000000ULL;
+    ts[1] = ns % 1000000000ULL;
+    return 0;
+}
+
+static long sys_clock_getres(u64 *frame)
+{
+    u64 *ts = (u64 *)FR(1);
+
+    if (FR(0) > 1u)
+        return -ES_EINVAL;
+    if (!access_ok(ts, 16))
+        return -ES_EFAULT;
+    ts[0] = 0;
+    ts[1] = 1;                          /* 1ns(计数器面) */
+    return 0;
+}
+
+static long sys_gettimeofday(u64 *frame)
+{
+    u64 *tv = (u64 *)FR(0);
+    u64 ns;
+
+    if (!tv)
+        return 0;
+    if (!access_ok(tv, 16))
+        return -ES_EFAULT;
+    ns = rt_time_real_ns();
+    tv[0] = ns / 1000000000ULL;
+    tv[1] = (ns % 1000000000ULL) / 1000ULL;   /* usec;tz 恒 NULL 面 */
+    return 0;
+}
+
+static long sys_brk(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    u64 addr = FR(0);
+
+    if (!p)
+        return -ES_EINVAL;
+    if (!p->brk)
+        return 0;                      /* 未 exec 语境(mallocng 探测自洽) */
+    if (!addr)
+        return (long)p->brk;
+    if (addr < 0x40200000UL || addr >= 0x40E00000UL)
+        return (long)p->brk;           /* 窗外=原值(Linux 契约:失败回当前) */
+    if (addr > p->brk) {
+        if (!rt_as_mmap(p, p->brk, addr - p->brk))
+            return (long)p->brk;       /* 增量 hint-mmap=窗内堆页 */
+    }
+    p->brk = addr;
+    return (long)p->brk;              /* 收缩=只挪游标不收页(v0 记档) */
+}
+
+static long sys_getrandom(u64 *frame)
+{
+    char *ub = (char *)FR(0);
+    u32 len = (u32)FR(1);
+    char kb[512];
+    u32 i;
+
+    if (len > sizeof(kb))
+        return -ES_EINVAL;             /* v0:每调 ≤512B */
+    if (len && !access_ok(ub, len))
+        return -ES_EFAULT;
+    rt_rng_fill(kb, len);
+    for (i = 0; i < len; i++)
+        ub[i] = kb[i];
+    return (long)len;
+}
+
+static long sys_uid0(u64 *frame)
+{
+    (void)frame;
+    return 0;                          /* uid 族/setuid/fcntl=0(root 世界) */
+}
+
 static long sys_hvc(u64 *frame)
 {
     long fn = (long)FR(0);          /* 首参 x0(壳 sys1 映射) */
@@ -1004,6 +1210,24 @@ void rt_syscall_init(void)
     /* 站35:线程面(真 Linux 号,musl pthread 直连) */
     table[ES_NR_gettid]          = sys_gettid;
     table[ES_NR_clone]           = sys_clone;
+    /* 站40:busybox/服务收编薄面(qemu-user -strace 定谳的需求面) */
+    table[ES_NR_dup3]            = sys_dup3;
+    table[ES_NR_fcntl]           = sys_fcntl;
+    table[ES_NR_openat]          = sys_openat;
+    table[ES_NR_close]           = sys_close;
+    table[ES_NR_getdents64]      = sys_getdents64;
+    table[ES_NR_newfstatat]      = sys_newfstatat;
+    table[ES_NR_setuid]          = sys_uid0;
+    table[ES_NR_setgid]          = sys_uid0;
+    table[ES_NR_clock_gettime]   = sys_clock_gettime;
+    table[ES_NR_clock_getres]    = sys_clock_getres;
+    table[ES_NR_gettimeofday]    = sys_gettimeofday;
+    table[ES_NR_getuid]          = sys_uid0;
+    table[ES_NR_geteuid]         = sys_uid0;
+    table[ES_NR_getgid]          = sys_uid0;
+    table[ES_NR_getegid]         = sys_uid0;
+    table[ES_NR_brk]             = sys_brk;
+    table[ES_NR_getrandom]       = sys_getrandom;
 }
 
 void rt_syscall_dispatch(u64 *frame)

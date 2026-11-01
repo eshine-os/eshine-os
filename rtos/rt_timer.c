@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "rtos.h"
+#include "timer.h"         /* 站40:cntvct/cntfrq 时间面 */
 
 /* 软定时器(站二十二B):站二十一超时扫描的自然延伸——绝对截止账本
  * 与核 0 单写者环同源,只是对象从"任务睡/挂等到期"扩到"任意回调
@@ -132,4 +133,29 @@ void rt_timer_tick(void)
             t->fn(t->arg);
         }
     }
+}
+
+/* ---- 站四十:时间面(clock_gettime/gettimeofday 的 ns 源) ----
+ * monotonic=cntvct/freq(站 21 时基直读,无陷阱);realtime=
+ * BOOT_EPOCH(2026-11-01 常量;RTC/drvfw=后弧)+mono。freq 一次
+ * 读存静态(常数面,CNTFRQ 不可变)。 */
+static u64 time_freq;
+
+static u64 time_hz(void)
+{
+    if (!time_freq)
+        time_freq = vtimer_freq();
+    return time_freq;
+}
+
+u64 rt_time_mono_ns(void)
+{
+    u64 hz = time_hz();
+
+    return hz ? vtimer_now() * 1000000000ULL / hz : 0;
+}
+
+u64 rt_time_real_ns(void)
+{
+    return RT_BOOT_EPOCH_NS + rt_time_mono_ns();
 }

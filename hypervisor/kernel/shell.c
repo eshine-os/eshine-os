@@ -93,11 +93,15 @@ static void cmd_help(void)
     console_puts("  mqdemo/pipedemo/longdemo -> mqueue 优先级/管道 EOF/长消息镜像 [92-94]\n");
     console_puts("  sigqdemo            -> sigqueue 携值/restorer/默认终止 [95]\n");
     console_puts("  wrdemo/lsdemo/fblkdemo -> ramfs 写时复制/枚举/块设备 [96-98]\n");
-    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [99]\n");
-    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [100]\n");
-    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [101]\n");
-    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [102]\n");
-    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[103]\n");
+    console_puts("  rngdemo/clockdemo   -> /dev/random 两脸+时钟真号   [99-100]\n");
+    console_puts("  procdemo/slogdemo   -> /proc 任务表+slogd 环     [101-102]\n");
+    console_puts("  run /bin/busybox echo/cat/ls/date/md5sum -> musl 精选集双世界 [103-106]\n");
+    console_puts("  initrespawn         -> inittab sysinit 落标+门拍 respawn [105]\n");
+    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [107]\n");
+    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [108]\n");
+    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [109]\n");
+    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [110]\n");
+    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[111]\n");
 }
 
 static void cmd_version(void)

@@ -57,7 +57,11 @@ static void contender_task(void *arg)
     rt_puts("mutex: contender locking\n");
     rt_mutex_take(&demo_mutex);
     rt_puts("mutex: contender locked\n");
-    rt_sleep_ticks(30);                      /* 300ms 持锁(ps 窗口) */
+    rt_sleep_ticks(80);                      /* 800ms 持锁(ps 窗口;
+                                             * 站40 加宽:verify 冲尾
+                                             * 沉降+ps 往返 ~300ms 推
+                                             * 至 300ms 窗缘,r19 起
+                                             * 三轮 [28] 假阴性定谳) */
     rt_puts("mutex: contender unlocking\n");
     rt_mutex_give(&demo_mutex);
     rt_puts("mutex: contender released\n");

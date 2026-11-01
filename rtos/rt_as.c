@@ -105,6 +105,16 @@ static u32 as_alloc_asid(void)
     return 0;
 }
 
+/* 站40 定谳:exit 从不还 ASID——站 29 注释谎称"已尽释",11 站无雷
+ * 只因电池从未超 15 次进程创建;respawn 每命令一拍=第一个高频
+ * 循环者,创建第 16 次 proc 即 EAGAIN 连环。还位在 exit(ZOMBIE 期
+ * 无人引用;exit 已 as_tlb_flush 全冲,复用无旧标签别名)。 */
+static void as_free_asid(u32 asid)
+{
+    if (asid && asid < 16)
+        asid_bitmap &= ~(1u << asid);
+}
+
 static u64 *as_l2_alloc(int pid)
 {
     u32 i;
@@ -519,6 +529,20 @@ void rt_proc_reap(struct rt_proc *p)
     p->used = 0;
 }
 
+/* 站40:wait4 WNOHANG 判活(1=活;0=非此子——zombie 侦收在前,
+ * 此面只答"还不值得等"与"等不到") */
+long rt_proc_child_alive(struct rt_proc *p, int pid)
+{
+    u32 i;
+
+    (void)p;
+    for (i = 0; i < RT_PROC_MAX; i++)
+        if (procs[i].used && procs[i].pid == pid &&
+            procs[i].state != RT_PROC_ZOMBIE)
+            return 1;
+    return 0;
+}
+
 /* 站三十二:活进程查(kill 面;ZOMBIE=ESRCH——死者不收信号) */
 struct rt_proc *rt_proc_lookup(int pid)
 {
@@ -540,6 +564,8 @@ void rt_proc_exit(struct rt_proc *p, int code)
 
     p->exit_code = code;
     p->state = RT_PROC_ZOMBIE;
+    as_free_asid(p->asid);
+    p->asid = 0;
     rt_shm_exit(p);
     for (bi = 0; bi < 8; bi++) {
         if (bi != AS_BLK_USER && bi != AS_BLK_MMAP)

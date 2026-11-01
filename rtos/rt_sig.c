@@ -211,7 +211,13 @@ long rt_sig_queueinfo(long pid_or_tid, u32 sig, u64 value)
     if (sig == 0 || sig >= RT_SIG_MAX)
         return -22;
     for (t = rt_ps_first(&idx); t; t = rt_ps_next(&idx))
-        if (t->tid && t->tid == (u64)pid_or_tid) {
+        if (t->state != RT_FREE && t->state != RT_DEAD &&
+            t->tid && t->tid == (u64)pid_or_tid) {
+            /* 站40 定谳([95] 两轮同点):rt_ps_first/next=裸池
+             * 遍历,死槽残 tid 抢路由——94 门长跑后死 tid=2/3/4
+             * 槽早于活子,任务级信号入死槽=handler 永不上场
+             * (子的 resumed 实为睡满超时,queued 回 0 是假绿)。
+             * 站 38 律同型:死槽残值不作路由判据。 */
             t->sig_pending |= 1u << sig;
             t->sig_val = value;
             sig_wake_task(t);

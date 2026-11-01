@@ -18,7 +18,7 @@ typedef unsigned char u8;
  * 统一任务帧(elr 自描述续跑点,见 vec.S)。 */
 
 #define RT_NPRIO     32u
-#define RT_POOL_MAX  16u   /* 站35:线程族入池,旧 8 顶满;+8 槽 bss */
+#define RT_POOL_MAX  20u   /* 站40 容量账:常驻 8+3 服务器=11+run/respawn 子+demo 峰 */
 #define RT_NCPU      2u               /* 站二十:vm0 双核(per-CPU 就绪队列) */
 #define RT_SLICE     4u               /* 同级轮转量子(tick 计) */
 #define RT_HZ        100u             /* vtimer tick 频率 */
@@ -253,7 +253,8 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define RT_FDOP_SEEK    6u     /* 站33 起;站39 rsv=whence(0SET/1CUR/2END) */
 #define RT_FDOP_CREATE  7u     /* 站39:建文件即开(ramfs 写时复制面) */
 #define RT_FDOP_UNLINK  8u     /* 站39:摘名摘节点(页还池) */
-#define RT_FDOP_READDIR 9u     /* 站39:a=索引,data=路径,status=下一索引(0=末) */
+#define RT_FDOP_READDIR 9u     /* 站39:a=游标,data=[d_type][名],status=下一游标(0=末) */
+#define RT_FDOP_STAT   10u     /* 站40:data=路径,回执=status=(mode<<32)|size */
 
 #define RT_FD_DATA      44u    /* 请求内联窗:OPEN 路径/WRITE 数据 */
 #define RT_FD_RDATA     64u    /* READ 回复数据窗(站33:status 走
@@ -307,6 +308,29 @@ struct rt_fdreq {
 #define ES_NR_gettid         178   /* 站35:每任务线程号 */
 #define ES_NR_clone          220   /* 站35:真 __NR_clone(musl pthread) */
 
+/* 站四十:busybox/服务收编薄面(qemu-user -strace 实测需求面,零
+ * 臆测)。全真 Linux asm-generic 号。uid 族=0(root 世界);brk=窗内
+ * 游标堆(mallocng 探测);getdents64=每调一名(POSIX 合法面);
+ * newfstatat=STAT wire(mode+size 出,ls 分类面)。 */
+#define ES_NR_dup3           24    /* fd 复制(DUP 面:ocb+conn 双引用) */
+#define ES_NR_fcntl          25    /* v0:F_SETFD/F_GETFD 回 0 */
+#define ES_NR_openat         56    /* fdopen 面+目录回退(服务器拥有名空间) */
+#define ES_NR_close          57    /* fdclose 面 */
+#define ES_NR_getdents64     61    /* fd 层:一次一名 dirent64 */
+#define ES_NR_newfstatat     79    /* STAT wire:mode<<32|size */
+#define ES_NR_setuid         105   /* root 语义:回 0 */
+#define ES_NR_setgid         106
+#define ES_NR_clock_gettime  113   /* REAL/MONO;real=BOOT_EPOCH+cnt */
+#define ES_NR_clock_getres   114
+#define ES_NR_gettimeofday   169
+#define ES_NR_getuid         174   /* uid 族全 0 */
+#define ES_NR_geteuid        175
+#define ES_NR_getgid         176
+#define ES_NR_getegid        177
+#define ES_NR_brk            214   /* proc 堆:游标 mmap 增量 */
+#define ES_NR_getrandom      278   /* 混出器直面(与 /dev/random 同源) */
+#define RT_BOOT_EPOCH_NS  1793491200000000000ULL /* 2026-11-01T00:00:00Z(drvfw/RTC=后弧) */
+
 /* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
  * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
 enum {
@@ -346,6 +370,7 @@ struct rt_fd {
     u32 used;
     int coid;
     u32 ocb;
+    u32 dircur;                    /* 站40:getdents64 每游标(READDIR 回执兑付) */
 };
 
 enum { RT_PROC_CREATE, RT_PROC_RUN, RT_PROC_ZOMBIE };
@@ -384,6 +409,8 @@ struct rt_proc {
                                   * 过其 epilogue,SP 不还原=错窗读
                                   * 局部,冒烟+反汇编双定谳) */
     struct rt_task *leader;
+    u64 brk;                      /* 站40:堆游标(0=未起;exec 后=mmap_next;
+                                  * brk(0)=读,brk(a)=窗内 hint-mmap 增量) */
 };
 typedef struct rt_proc rt_proc_t;
 
@@ -398,10 +425,10 @@ typedef struct rt_sem {
 } rt_sem_t;
 
 /* ---- 站三十:三段消息 IPC(rt_msg.c;参考实现 同步队列件 的站内收编) ---- */
-#define RT_CH_MAX        8u    /* 站39 容量账:boot 4 服务器+demo 期瞬时各 1 */
-#define RT_CONN_MAX      16u   /* 站39:stdio 3+fd 三元组/枚举瞬时+loader 往返 */
+#define RT_CH_MAX        16u   /* 站40 容量账:boot 7 服务器(4+3)+demo 瞬时余量 */
+#define RT_CONN_MAX      24u   /* 站40:壳 3+子 stdio 3×2+loader/枚举瞬时 */
 #define RT_MSGSLOT_MAX   8u
-#define RT_NAME_MAX      16u   /* 站39:boot 8 名+demo 期瞬时;8 表满=CREATE 挂不上名 */
+#define RT_NAME_MAX      32u   /* 站40 容量账:boot 15 名(8+busybox/inittab/beat/initmark/proc/random/slog)+demo 瞬时 */
 #define RT_MSG_BYTES     64u    /* 短消息面(参考实现 1024B 收编;长消息
                                  * 映射=跨址空间窗,v0 内核槽中继,VM_SET
                                  * 单拷窗=跨 VM 站后议) */
@@ -484,6 +511,13 @@ void rt_pipe_boot(void);                 /* 开机:服务器起立+挂名 */
 void rt_blk_boot(void);                  /* 开机:探针相(锚序原位) */
 void rt_blk_srv_boot(void);              /* 开机:IRQ 登记+服务器起立 */
 int  rt_blk_rw(u32 type, u64 sector, void *buf512, u32 ticks);
+/* 站40:服务收编三服务器(random/procfs/slog,rt_rng/rt_procfs/rt_slog.c) */
+void rt_rng_boot(void);                  /* 开机:第五服务器 /dev/random */
+void rt_rng_fill(char *buf, u32 len);    /* 混出器直面(fd READ 与 getrandom 同源) */
+void rt_procfs_boot(void);               /* 开机:第六服务器 /proc */
+void rt_slog_boot(void);                 /* 开机:第七服务器 /dev/slog */
+u64  rt_time_mono_ns(void);              /* cntvct/freq(rt_timer.c) */
+u64  rt_time_real_ns(void);              /* BOOT_EPOCH+mono(RTC=后弧) */
 /* fd 层站39 扩(rt_fsrv.c) */
 long rt_fd_create(struct rt_proc *p, const char *kpath);
 long rt_fd_unlink(struct rt_proc *p, const char *kpath);
@@ -515,6 +549,11 @@ long rt_fd_read(struct rt_proc *p, int fd, char *kbuf, u32 len);
 long rt_fd_write(struct rt_proc *p, int fd, const char *kbuf, u32 len);
 void rt_fd_fork(struct rt_proc *pp, struct rt_proc *cp);
 void rt_fd_close_all(struct rt_proc *p);
+/* 站40:busybox/POSIX 薄面(fd 层新四门) */
+long rt_fd_getdents64(struct rt_proc *p, int fd, char *ubuf, u32 len); /* 每调一名 */
+long rt_fd_fstatat(struct rt_proc *p, const char *kpath, u32 *mode, u32 *size);
+long rt_fd_dup3(struct rt_proc *p, int oldfd, int newfd);
+long rt_proc_child_alive(struct rt_proc *p, int pid);   /* WNOHANG 判活 */
 void rt_srv_boot(rt_task_t *shell);   /* 固定序列 spawn(boot 链面) */
 
 /* ---- 站三十二:signal+futex(rt_sig.c;参考实现 §10 站内收编) ----

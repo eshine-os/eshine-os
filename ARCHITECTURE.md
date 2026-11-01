@@ -326,7 +326,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（103 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（111 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -487,7 +487,43 @@ END 透传 wire rsv 槽,lseek 返新位=POSIX 面,站33 loader 判
 CH/CONN/NAME 表按 boot 4 服务器+demo 瞬时放宽（4 通道满
 表=sigq 后继整脸溺毙实测定谳,站31 ocb 池同课:先算账后
 放宽）** →
-**站34 yocto 门（[103]——meta-eshine 层入仓：git archive 提交树
+**站40 服务收编+busybox 八门（[99-106]——第五/六/七服务器：
+rngsrv=xorshift64* 混 cntvct/ticks 两脸同源（fd READ+getrandom
+278 内核面）/procsrv=/proc 任务表文本行+READDIR 第二消费者
+（站38 TASK_LIVE 状态谓据）/slogsrv=环 16×48B+warn 控制台
+策略；时间真号 clock_gettime 113/getres 114/gettimeofday 169
+（monotonic=cntvct/freq,realtime=BOOT_EPOCH 常量+mono,RTC=
+drvfw 后弧）；busybox=真 musl 精选集 264KB 双世界（同一字节
+vm0 我们内核/vm2 真内核,md5sum 同哈希铁证;defconfig 1.3MB
+驻内核像区 0x40200000 两区式硬界下塞不下=精选集 264KB 落
+码,GPL 仓外配方入仓）——qemu-user -strace 实测需求面定谳：
+openat 56/close 57/getdents64 61（每调一名=POSIX 合法面,fd
+私域 dircur 游标）/newfstatat 79（STAT wire:mode<<32|size,
+musl aarch64 stat 144B 零填+定点写）/dup3 24（DUP 双侧引用
+镜像）/fcntl 25/uid 族零值/brk 214（窗内游标堆,mallocng 探
+测）/目录前缀柄（名空间归服务器:直名未挂者回退路由 ramfs 元
+名,basename 枚举+首现去重+深径判 DIR）/read/write fd≥3 路
+由 fd 机器（fd 0=控制台面契约不动）;loader argc/argv 泛化
+（启动块变长,写入抽 noinline 辅函数——偏移寄存器勿长持跨
+EL0 缺页,11 站潜伏保存洞第一受害形态,build 敏感,调用边界
+=帧重载;内核疑点记档挂账）+页包含映射（RW 段 vaddr 非页
+对齐,Linux 同律）+栈预触（段预触同律）;init+inittab 形态=
+壳代处理器（sysinit/wait/once/respawn+wait4 WNOHANG 探询
+拍;真 PID1 init=后弧）;**ASID 还位=站 29 遗产缺口定谳**
+（exit 注释谎称"已尽释"实从未还,11 站无雷只因电池从未超
+15 次进程创建,respawn 每命令一拍=首个高频循环者,第 16
+次 proc 创建即 EAGAIN 连环）;容量账再进:POOL 16→20/CH
+8→16/CONN 16→24/NAME 16→32+栈 hint 回 1MB 位（窗口账:
+hint 顶游标则 musl 线程栈族挤爆窗尾=pt 第 3 线程 EAGAIN 实
+测定谳,容量是账第三课）;EL0 睡拍=futex 超时（hvc yield=宿
+主暂停面,inittab 等待环误用=VM 首轮即冻实测定谳）;loader
+门拍制（自主连拍=竞态放大器:beat 加载窗×任意门窗,mutex/PI
+遗留态共窗壳静默楔两轮 verify+孤立二分定谳;initrespawn 命令=
+确定性单拍 sync 等死即拍即收,自主连拍挂账后弧;旧案 loader
+单飞（respawn 子加载与 run 子 fork 重叠=ramfs 通道双发送者
+并发,seg copy 中途断实测定谳;内核侧并发发送者疑点带证挂
+账后弧取证）** →
+**站34 yocto 门（[111]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
 部署四件（eshine.elf/rtos.bin/guest2.bin/ramfs.cpio）；判据=
@@ -496,7 +532,7 @@ CH/CONN/NAME 表按 boot 4 服务器+demo 瞬时放宽（4 通道满
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-103 步手动走查清单。
+111 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

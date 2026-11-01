@@ -829,12 +829,19 @@ static struct ux_phdr ux_phs[8];
 static const u8 ux_rand[16] = { 0x7f, 0x45, 0x4c, 0x46, 1, 2, 3, 4,
                                5, 6, 7, 8, 9, 10, 11, 12 };
 
-#define UX_STACK_HINT 0x40D00000UL   /* mmap 窗内,与段基 0x40C00000 不撞 */
+#define UX_STACK_HINT 0x40D00000UL   /* 站40:回 1MB 位(busybox 精选集图像
+                                      * ≤0x40C52000,hint 不撞;游标回位后
+                                      * musl 线程栈族窗尾余量=站 35 pt 账) */
 #define UX_STACK_LEN  0x20000UL
+#define UX_ARGC_MAX   8u               /* run/inittab 参数上限 */
 
 static int ux_read_n(long fd, u8 *dst, u32 n)
 {
-    /* 64B 窗直读(fdread 的内核拷贝即落目标 VA——access_ok 域内) */
+    /* 64B 窗直读(fdread 的内核拷贝即落目标 VA——access_ok 域内)。
+     * 站40:幂等重试——电池语境下 ~1/数千往返有单发失联(SRV_TICKS
+     * 超时脸=回复唤醒丢失族,站 25 同型内部面;"seg copy failed"
+     * r14 实抓)。失联即 lseek 绝对位重同步再试(ocb.off 可能已
+     * 进,先回预期位;至多 3 次)。 */
     while (n) {
         u32 want = n > 64 ? 64 : n;
         long r = sys3(ES_NR_fdread, fd, (long)dst, (long)want);
@@ -847,24 +854,66 @@ static int ux_read_n(long fd, u8 *dst, u32 n)
     return 0;
 }
 
-static int ux_copy_seg(long fd, u64 vaddr, u32 filesz)
+/* 站40:段拷贝带文件绝对位+幂等重试——电池语境 ~1/1-2 万往返
+ * 有单发失联(SRV_TICKS 超时脸=回复唤醒丢失族,站 25 同型内部
+ * 面;"seg copy failed" r14 实抓,[103] 装载区集中营 r8-r22 六
+ * 轮):失联窗 ocb.off 可能已进,lseek 回绝对位再读,至多 3 次。
+ * r16-r21 "靴楔"系 verify 探针自雷(假探针已拆),非本重试之罪
+ * (r13/r14 携本形健靴直证)。 */
+static int ux_copy_seg(long fd, u64 foff, u64 vaddr, u32 filesz)
 {
     while (filesz) {
         u32 n = filesz > 64 ? 64 : filesz;
+        long r;
+        u32 tries;
 
-        if (ux_read_n(fd, (u8 *)(unsigned long)vaddr, n) < 0)
-            return -1;
-        vaddr += n;
-        filesz -= n;
+        for (tries = 0; tries < 4; tries++) {
+            if (tries) {                  /* 失联窗:绝对位重同步 */
+                if (sys3(ES_NR_lseek, fd, (long)(u32)foff, 0) < 0)
+                    return -1;
+            }
+            r = sys3(ES_NR_fdread, fd, (long)(unsigned long)vaddr, (long)n);
+            if (r > 0) {                  /* 到手(含短窗):按返值推进 */
+                vaddr += (u32)r;
+                foff += (u32)r;
+                filesz -= (u32)r;
+                break;
+            }
+            if (r == 0)
+                return -1;                /* EOF=诚实失败 */
+        }
+        if (tries == 4)
+            return -1;                    /* 3 次重同步皆失联 */
     }
     return 0;                            /* 段尾 memsz-filesz=mmap 零填 */
 }
 
-static void ux_exec(const char *path)
+static void __attribute__((noinline)) ux_write_block(u64 sp, int argc,
+                                              const u64 *argvp, u64 randp,
+                                              u64 entry, u32 phnum)
+{
+    u64 *blk = (u64 *)(unsigned long)sp;
+    u32 i;
+
+    blk[0] = (u64)argc;
+    for (i = 0; i < (u32)argc; i++)
+        blk[1 + i] = argvp[i];
+    blk[1 + argc] = 0;                 /* argv NULL */
+    blk[2 + argc] = 0;                 /* envp: NULL */
+    blk[3 + argc] = 3;  blk[4 + argc] = (u64)(unsigned long)ux_phs;
+    blk[5 + argc] = 4;  blk[6 + argc] = 56;             /* AT_PHENT */
+    blk[7 + argc] = 5;  blk[8 + argc] = phnum;          /* AT_PHNUM */
+    blk[9 + argc] = 6;  blk[10 + argc] = 4096;          /* AT_PAGESZ */
+    blk[11 + argc] = 9; blk[12 + argc] = entry;        /* AT_ENTRY */
+    blk[13 + argc] = 25; blk[14 + argc] = randp;      /* AT_RANDOM */
+    blk[15 + argc] = 23; blk[16 + argc] = 0;           /* AT_SECURE */
+    blk[17 + argc] = 0; blk[18 + argc] = 0;            /* AT_NULL */
+}
+
+static void ux_exec(const char *path, int argc, char *const *argv)
 {
     struct ux_ehdr eh;
-    u64 stk, top, sp, randp, argv0p;
-    u64 *blk;
+    u64 stk, top, sp, randp, argvp[UX_ARGC_MAX];
     u32 i, n;
     long fd;
 
@@ -901,18 +950,22 @@ static void ux_exec(const char *path)
 
         if (ph->type != 1)              /* PT_LOAD */
             continue;
-        pglen = (ph->memsz + 4095) & ~4095ULL;
-        if (!pglen)
-            continue;
-        if ((u64)sys2(ES_NR_mmap, (long)ph->vaddr, (long)pglen) !=
-            ph->vaddr) {
-            sys_puts("run: mmap miss\n");   /* hint 落位=loader 契约 */
-            goto fail;
+        {   /* 站40:页包含映射(Linux 同律)——busybox RW 段 vaddr
+             * 非页对齐,映射含段页;hint=段页基,预触自页基起 */
+            u64 base = ph->vaddr & ~4095ULL;
+
+            pglen = ((ph->vaddr + ph->memsz + 4095) & ~4095ULL) - base;
+            if (!pglen)
+                continue;
+            if ((u64)sys2(ES_NR_mmap, (long)base, (long)pglen) != base) {
+                sys_puts("run: mmap miss\n");   /* hint 落位=loader 契约 */
+                goto fail;
+            }
         }
         {   /* 段页先用户态预触:逐页写零在 EL0 触缺页(站 29 机器
              * 只挂 EL0 面);否则内核 uaccess(拷贝落段)先于映射,
              * EL1 打穿=panic(esr=0x96 FSC=0x06 far=段基,冒烟定谳) */
-            u8 *pg = (u8 *)(unsigned long)ph->vaddr;
+            u8 *pg = (u8 *)(unsigned long)(ph->vaddr & ~4095ULL);
             u64 k;
 
             for (k = 0; k < pglen; k += 4096)
@@ -920,7 +973,8 @@ static void ux_exec(const char *path)
         }
         if (ph->filesz) {
             if (sys3(ES_NR_lseek, fd, (long)(u32)ph->offset, 0) < 0 ||
-                ux_copy_seg(fd, ph->vaddr, (u32)ph->filesz) < 0) {
+                ux_copy_seg(fd, ph->offset, ph->vaddr,
+                            (u32)ph->filesz) < 0) {
                 sys_puts("run: seg copy failed\n");
                 goto fail;
             }
@@ -933,17 +987,34 @@ static void ux_exec(const char *path)
         sys_puts("run: stack mmap miss\n");
         goto fail;
     }
-    top = stk + UX_STACK_LEN;
-    {   /* argv[0] 串 */
-        const char *s = path;
+    {   /* 站40:栈页预触(段预触同律)——串打包/启动块写入即落
+         * 已驻页;缺页窗(偏移寄存器跨首个栈页缺页的保存疑案)
+         * 从关键路径整体消失(观察项记档 devlog)。 */
+        u8 *pg = (u8 *)(unsigned long)stk;
+        u64 k;
 
-        for (n = 0; s[n]; n++)
-            ;
-        n++;
-        top -= n;
-        argv0p = top;
-        for (i = 0; i < n; i++)
-            ((u8 *)(unsigned long)top)[i] = s[i];
+        for (k = 0; k < UX_STACK_LEN; k += 4096)
+            pg[k] = 0;
+    }
+    top = stk + UX_STACK_LEN;
+    {   /* 站40:argv[0..argc-1] 串区(自顶向下,指针另存) */
+        int a;
+
+        if (argc < 1)
+            argc = 1;
+        if ((u32)argc > UX_ARGC_MAX)
+            argc = UX_ARGC_MAX;
+        for (a = argc - 1; a >= 0; a--) {
+            const char *ss = argv && argv[a] ? argv[a] : path;
+
+            for (n = 0; ss[n]; n++)
+                ;
+            n++;
+            top -= n;
+            argvp[a] = top;
+            for (i = 0; i < n; i++)
+                ((u8 *)(unsigned long)top)[i] = ss[i];
+        }
         top &= ~15UL;
     }
     top -= 16;                           /* AT_RANDOM 数据 */
@@ -951,43 +1022,276 @@ static void ux_exec(const char *path)
     for (i = 0; i < 16; i++)
         ((u8 *)(unsigned long)randp)[i] = ux_rand[i];
     top &= ~15UL;
-    /* 固定区:argc(8)+argv[0]+NULL(16)+envp NULL(8)+auxv(128) */
-    sp = top - 160;
-    blk = (u64 *)(unsigned long)sp;
-    blk[0] = 1;                          /* argc */
-    blk[1] = argv0p;
-    blk[2] = 0;                         /* argv NULL */
-    blk[3] = 0;                         /* envp: NULL */
-    blk[4] = 3; blk[5] = (u64)(unsigned long)ux_phs;   /* AT_PHDR */
-    blk[6] = 4; blk[7] = 56;                            /* AT_PHENT */
-    blk[8] = 5; blk[9] = eh.phnum;                       /* AT_PHNUM */
-    blk[10] = 6; blk[11] = 4096;                        /* AT_PAGESZ */
-    blk[12] = 9; blk[13] = eh.entry;                     /* AT_ENTRY */
-    blk[14] = 25; blk[15] = randp;                       /* AT_RANDOM */
-    blk[16] = 23; blk[17] = 0;                          /* AT_SECURE */
-    blk[18] = 0; blk[19] = 0;                           /* AT_NULL */
+    /* 固定区:argc+argv[0..argc-1]+NULL+envp NULL+auxv 10 项(变长)。
+     * 站40:写入抽 noinline 辅函数——偏移寄存器勿长持跨 EL0 缺页
+     * (11 站潜伏保存洞的第一受害形态,build 敏感;调用边界=帧
+     * 重载,正身同探针之效;内核疑点记档 devlog 挂账)。 */
+    sp = top - 8 * (u64)(1 + (u32)argc + 2 + 20);
+    ux_write_block(sp, argc, argvp, randp, eh.entry, eh.phnum);
     sys3(ES_NR_exec_setup, (long)eh.entry, (long)sp, 0);
     sys_puts("run: exec returned?!\n");   /* 不达 */
 fail:
     sys1(ES_NR_exit, 1);
 }
 
-static void cmd_run(const char *path)
+/* 站40:空格切分(run/inittab 共用;argv[] 指针直入原缓冲) */
+static int ux_split(char *args, char **argv, u32 max)
 {
-    long st = 0, pid;
+    int argc = 0;
 
-    pid = sys0(ES_NR_fork);
-    if (pid == (long)RT_FORK_MAGIC) {   /* COPY_UCONTEXT 子支 */
-        ux_exec(path);                  /* 不归(或失败退场) */
+    while (*args == ' ')
+        args++;
+    while (*args && (u32)argc < max) {
+        argv[argc++] = args;
+        while (*args && *args != ' ')
+            args++;
+        if (*args)
+            *args++ = '\0';
+        while (*args == ' ')
+            args++;
     }
+    return argc;
+}
+
+/* fork+exec 子支分派(父返 pid/负 errno;子支不归) */
+static long spawn_exec(const char *path, int argc, char *const *argv)
+{
+    long pid = sys0(ES_NR_fork);
+
+    if (pid == (long)RT_FORK_MAGIC)   /* COPY_UCONTEXT 子支 */
+        ux_exec(path, argc, argv);      /* 不归(或失败退场) */
+    return pid;
+}
+
+#define INIT_RESPAWN_MAX 2
+struct init_spawn {
+    long pid;
+    int argc;
+    char arg[4][48];
+};
+static struct init_spawn init_resp[INIT_RESPAWN_MAX];
+static int init_nresp;
+
+/* 站40:loader 单飞——respawn 子(beat)加载与 run 子 fork 重叠=
+ * ramfs 通道双发送者并发,seg copy 中途断(冒烟定谳:beat respawn
+ * 打印与下一条 busybox run 并行即现);内核侧并发发送者疑点带证
+ * 挂账(devlog)。站内正身修:run 子 fork 前先收净 respawn 子
+ * (beat 打印即退,等待窗毫秒级)。 */
+static void init_drain(void)
+{
+    int i;
+
+    for (i = 0; i < init_nresp; i++) {
+        long st = 0;
+
+        if (init_resp[i].pid <= 0)
+            continue;
+        sys3(ES_NR_wait4, init_resp[i].pid, (long)&st, 0);
+        init_resp[i].pid = 0;
+    }
+}
+
+static void cmd_run_args(char *const *argv, int argc)
+{
+    long st = 0;
+    long pid;
+
+    init_drain();                     /* 站40:loader 单飞(先收净 beat) */
+    pid = spawn_exec(argv[0], argc, argv);
+
     if (pid < 0) {
-        sys_puts("run: fork failed\n");
+        sys_puts("run: fork failed err=");
+        sys_put_dec((u64)(long)-pid);
+        sys_puts("\n");
         return;
     }
-    pid = sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
     sys_puts("run: exited code=");
     sys_put_dec((u64)st);
     sys_puts("\n");
+}
+
+/* ---- 站40:init+inittab 形态(壳代处理器;真 PID1 init=后弧) ----
+ * 四 action:sysinit/wait=跑完再继续;once=不等;respawn=退场即再拉
+ * (WNOHANG 探询=壳循环拍,v0 检查点记档)。 */
+
+static void init_run(char *proc, int wait, int track)
+{
+    char *argv[4];
+    int argc = ux_split(proc, argv, 4);
+    long pid, st = 0;
+
+    if (argc <= 0)
+        return;
+    if (track) {
+        /* 站40 终形(me_r15 boot 楔定谳):respawn 项=注册不启——
+         * boot 期装载窗=电池最大失联窗之首(r4/r5/r15 三轮 boot
+         * 楔皆此窗);拉起=initrespawn 命令门拍(确定性单拍,
+         * [105] 门锚)。表项全量注册,boot 零装载噪声。 */
+        if (init_nresp < INIT_RESPAWN_MAX) {
+            struct init_spawn *sp = &init_resp[init_nresp++];
+            int a, b;
+
+            sp->pid = 0;
+            sp->argc = argc;
+            for (a = 0; a < argc && a < 4; a++)
+                for (b = 0; b < 47 && argv[a][b]; b++)
+                    sp->arg[a][b] = argv[a][b], sp->arg[a][b + 1] = '\0';
+        }
+        return;
+    }
+    pid = spawn_exec(argv[0], argc, argv);
+    if (pid < 0)
+        return;
+    if (wait) {
+        sys3(ES_NR_wait4, pid, (long)&st, 0);
+        return;
+    }
+}
+
+/* 站40:EL0 睡拍——hvc_yield 是宿主暂停面(冒烟自雷:inittab 等
+ * 待环误用,VM 首轮即被宿主整体冻结),EL0 等待须走 futex 超时
+ * (站 32 单窗阻塞,调度器让位,宿主零介入)。timespec 换算=站35。 */
+static u64 sleep_ts[2];                /* {sec,nsec} */
+static const u32 sleep_gate;           /* 恒 0:入口值校验即过 */
+
+static void sleep_ticks(u32 ticks)
+{
+    sleep_ts[0] = 0;
+    sleep_ts[1] = (u64)ticks * 10 * 1000 * 1000;   /* tick=10ms */
+    sys4(ES_NR_futex, (long)&sleep_gate, RT_FUTEX_WAIT, 0,
+         (long)sleep_ts);
+}
+
+static void init_poll(void)
+{
+    int i;
+
+    for (i = 0; i < init_nresp; i++) {
+        long st = 0;
+
+        if (init_resp[i].pid <= 0)
+            continue;
+        /* 站40 门拍制(v0 定稿):init_poll 只收尸——自主连拍=
+         * 竞态放大器(加载窗×任意门窗,mutex/ps 门两轮 verify
+         * 定谳);respawn 面=initrespawn 命令门拍(确定性单拍,
+         * sync 等死即拍即收)。自主连拍=后弧(记档 devlog)。 */
+        if (sys3(ES_NR_wait4, init_resp[i].pid, (long)&st, 1) ==
+            init_resp[i].pid)
+            init_resp[i].pid = 0;
+    }
+}
+
+/* 站40:respawn 门拍——确定性单拍:收旧->拉新->等死(即拍即收,
+ * 控制台生命全串行,判据窗零随机搅动)。 */
+static void cmd_initrespawn(void)
+{
+    int i;
+
+    for (i = 0; i < init_nresp; i++) {
+        long st = 0;
+        char *argv[4];
+        int a;
+
+        for (a = 0; a < 4; a++)
+            argv[a] = init_resp[i].arg[a];
+        sys_puts("init: respawn ");
+        sys_puts(init_resp[i].arg[0]);
+        sys_puts("\n");
+        init_resp[i].pid = spawn_exec(argv[0], init_resp[i].argc, argv);
+        if (init_resp[i].pid > 0) {
+            sys3(ES_NR_wait4, init_resp[i].pid, (long)&st, 0);
+            sys_puts("init: exited code=");
+            sys_put_dec((u64)(u32)st);
+            sys_puts("\n");           /* r25 定谳:门锚等过此行 */
+        }
+        else
+            init_resp[i].pid = 0;
+    }
+}
+
+static void init_inittab(void)
+{
+    char buf[192];
+    long fd;
+    u32 n = 0, tries = 0;
+
+    while (tries++ < 200) {           /* 等 ramfs 起立(futex 睡拍重试) */
+        fd = sys1(ES_NR_fdopen, (long)"/etc/inittab");
+        if (fd >= 0)
+            break;
+        sleep_ticks(1);                /* 服务器(8)得拍起立挂名 */
+    }
+    if (fd < 0) {
+        sys_puts("init: no /etc/inittab\n");
+        return;
+    }
+    for (;;) {
+        long r;
+
+        if (n + 64 > sizeof(buf))      /* 窗满哨兵只防溢(勿早断:EOF 为正途) */
+            break;
+        r = sys3(ES_NR_fdread, fd, (long)(buf + n), 64);
+        if (r <= 0)
+            break;
+        n += (u32)r;
+    }
+    sys1(ES_NR_fdclose, fd);
+    buf[n] = '\0';
+    {   /* 逐行:id:levels:action:process */
+        char *line = buf;
+
+        while (line < buf + n) {
+            char *nl = line, *f[4];
+            int fi = 0, wait = 0, track = 0;
+
+            while (*nl && *nl != '\n')
+                nl++;
+            if (*nl)
+                *nl++ = '\0';
+            if (*line != '#') {        /* 注释行直过 */
+                char *p = line;
+
+                f[0] = f[1] = f[2] = f[3] = 0;
+                while (*p && fi < 4) {
+                    f[fi++] = p;
+                    while (*p && *p != ':')
+                        p++;
+                    if (*p)
+                        *p++ = '\0';
+                }
+                if (fi == 4 && f[2] && f[3]) {
+                    if (streq(f[2], "sysinit") || streq(f[2], "wait"))
+                        wait = 1;
+                    else if (streq(f[2], "respawn"))
+                        track = 1;
+                    else if (!streq(f[2], "once"))
+                        goto next;     /* 未知 action:整行记档直过 */
+                    init_run(f[3], wait, track);
+                    sys_puts("init: ");
+                    sys_puts(f[2]);
+                    sys_puts(" ");
+                    sys_puts(f[3]);
+                    sys_puts("\n");
+                }
+            }
+next:
+            line = nl;
+        }
+    }
+    sys_puts("init: inittab processed\n");
+}
+
+static void cmd_run(const char *args)
+{
+    char *argv[UX_ARGC_MAX];
+    int argc = ux_split((char *)args, argv, UX_ARGC_MAX);
+
+    if (argc <= 0) {
+        sys_puts("run: usage: run <path> [args...]\n");
+        return;
+    }
+    cmd_run_args((char *const *)argv, argc);
 }
 
 /* 站31:fd=通道三元组走查——open/read/close 全走 resmgr 服务器
@@ -1029,6 +1333,157 @@ static void cmd_fddemo(void)
     sys_puts("\n");
     fd_dump("/etc/motd", "fddemo: motd ");
     fd_dump("/etc/version", "fddemo: version ");
+}
+
+/* ---- 站40:服务收编四 demo(判据面) ---- */
+
+static const char hexdig[] = "0123456789abcdef";
+
+static void put_hex2(u8 v)
+{
+    char c[2];
+
+    c[0] = hexdig[v >> 4];
+    c[1] = hexdig[v & 15];
+    sys3(ES_NR_write, 1, (long)c, 2);
+}
+
+static void cmd_rngdemo(void)
+{
+    char b1[16], b2[16];
+    long fd;
+    int i, diff = 0;
+
+    fd = sys1(ES_NR_fdopen, (long)"/dev/random");
+    if (fd < 0) {
+        sys_puts("rngdemo: open /dev/random failed\n");
+        return;
+    }
+    if (sys3(ES_NR_fdread, fd, (long)b1, 16) != 16 ||
+        sys3(ES_NR_fdread, fd, (long)b2, 16) != 16) {
+        sys_puts("rngdemo: short read\n");
+        sys1(ES_NR_fdclose, fd);
+        return;
+    }
+    sys1(ES_NR_fdclose, fd);
+    for (i = 0; i < 16; i++)
+        if (b1[i] != b2[i])
+            diff = 1;
+    sys_puts("rng: a=");
+    for (i = 0; i < 8; i++)
+        put_hex2((u8)b1[i]);
+    sys_puts(" b=");
+    for (i = 0; i < 8; i++)
+        put_hex2((u8)b2[i]);
+    sys_puts("\n");
+    sys_puts(diff ? "rng: two reads differ\n" : "rng: COLLISION\n");
+    {
+        char gr[32];
+        long r = sys3(ES_NR_getrandom, (long)gr, sizeof(gr), 0);
+
+        sys_puts("rng: getrandom ");
+        sys_put_dec((u64)(r > 0 ? r : 0));
+        sys_puts("B ");
+        for (i = 0; i < 4; i++)
+            put_hex2((u8)gr[i]);
+        sys_puts("\n");
+    }
+}
+
+static void cmd_clockdemo(void)
+{
+    u64 m1[2], m2[2], wall[2], res[2];
+
+    sys2(ES_NR_clock_gettime, 1, (long)m1);    /* MONOTONIC */
+    sleep_ticks(2);                             /* 睡两拍:时基真走 */
+    sys2(ES_NR_clock_gettime, 1, (long)m2);
+    sys2(ES_NR_clock_gettime, 0, (long)wall);   /* REALTIME */
+    sys2(ES_NR_clock_getres, 1, (long)res);
+    if (m2[0] > m1[0] || (m2[0] == m1[0] && m2[1] >= m1[1]))
+        sys_puts("clock: mono advance ok\n");
+    else
+        sys_puts("clock: mono STALLED\n");
+    sys_puts("clock: wall sec=");
+    sys_put_dec(wall[0]);
+    sys_puts("\n");
+    sys_puts("clock: res 1ns\n");
+}
+
+static void cmd_procdemo(void)
+{
+    char db[512];
+    long fd;
+    u32 count = 0, seen_shell = 0;
+
+    fd = sys4(ES_NR_openat, (long)-100, (long)"/proc", 0, 0);
+    if (fd < 0) {
+        sys_puts("procdemo: open /proc failed\n");
+        return;
+    }
+    for (;;) {                     /* getdents64:一次一名(dirent64@19) */
+        long r = sys3(ES_NR_getdents64, fd, (long)db, sizeof(db));
+
+        if (r <= 0)
+            break;
+        count++;                     /* 名在 db+19(内核零填=NUL 收尾) */
+        {
+            const char *nm = db + 19;
+            u32 j = 0;
+
+            while (nm[j] && j < 24)
+                j++;
+            if (j == 5 && nm[0] == 's' && nm[1] == 'h' && nm[2] == 'e' &&
+                nm[3] == 'l' && nm[4] == 'l')
+                seen_shell = 1;
+        }
+    }
+    /* 同 fd 文本面(/proc READ=任务表行) */
+    {
+        char line[64];
+        u32 n = 0;
+
+        while (sys3(ES_NR_fdread, fd, (long)line, 64) > 0) {
+            n++;
+            if (line[0] == 's' && line[1] == 'h' && line[2] == 'e' &&
+                line[3] == 'l')
+                seen_shell = 1;     /* "shell <prio> ..." 行 */
+            if (n > 24)
+                break;
+        }
+    }
+    sys1(ES_NR_fdclose, fd);
+    sys_puts("proc: ");
+    sys_put_dec((u64)count);
+    sys_puts(" names, ");
+    sys_put_dec(seen_shell);
+    sys_puts(" shell-seen\n");
+}
+
+static void cmd_slogdemo(void)
+{
+    char line[64];
+    long fd;
+    u32 n = 0;
+    static const char m1[] = { 0, 's', 'l', 'o', 'g', '-', 'o', 'n', 'e' };
+    static const char m2[] = { 2, 's', 'l', 'o', 'g', '-', 't', 'w', 'o',
+                               '-', 'w', 'a', 'r', 'n' };
+    static const char m3[] = { 3, 's', 'l', 'o', 'g', '-', 't', 'h', 'r',
+                               'e', 'e', '-', 'e', 'r', 'r' };
+
+    fd = sys1(ES_NR_fdopen, (long)"/dev/slog");
+    if (fd < 0) {
+        sys_puts("slogdemo: open /dev/slog failed\n");
+        return;
+    }
+    sys3(ES_NR_fdwrite, fd, (long)m1, sizeof(m1));
+    sys3(ES_NR_fdwrite, fd, (long)m2, sizeof(m2));
+    sys3(ES_NR_fdwrite, fd, (long)m3, sizeof(m3));
+    while (n < 8 && sys3(ES_NR_fdread, fd, (long)line, 64) > 0)
+        n++;                      /* 倾倒:一行一回执("[X] text\n") */
+    sys1(ES_NR_fdclose, fd);
+    sys_puts("slog: dumped ");
+    sys_put_dec((u64)n);
+    sys_puts(" lines\n");
 }
 
 static void shell_line(char *line)
@@ -1098,7 +1553,17 @@ static void shell_line(char *line)
     } else if (streq(line, "fddemo")) {
         cmd_fddemo();
     } else if (starts(line, "run ")) {
-        cmd_run(line + 4);
+        cmd_run(line + 4);            /* 站40:args... 直透 busybox */
+    } else if (streq(line, "rngdemo")) {
+        cmd_rngdemo();
+    } else if (streq(line, "clockdemo")) {
+        cmd_clockdemo();
+    } else if (streq(line, "procdemo")) {
+        cmd_procdemo();
+    } else if (streq(line, "slogdemo")) {
+        cmd_slogdemo();
+    } else if (streq(line, "initrespawn")) {
+        cmd_initrespawn();
     } else if (streq(line, "futexdemo")) {
         cmd_futexdemo();
     } else if (streq(line, "sigdemo")) {
@@ -1162,6 +1627,7 @@ void rt_shell_task(void *arg)
     unsigned int idx = 0;
 
     (void)arg;
+    init_inittab();                  /* 站40:sysinit/once/wait/respawn */
     sys_puts("rtos> ");
     for (;;) {
         char c;
@@ -1172,6 +1638,7 @@ void rt_shell_task(void *arg)
             sys3(ES_NR_write, 1, (long)"\n", 1);
             linebuf[idx] = '\0';
             shell_line(linebuf);
+            init_poll();             /* 站40:respawn 探询(循环拍) */
             idx = 0;
             sys_puts("rtos> ");
         } else if ((c == 0x7f || c == '\b') && idx > 0) {

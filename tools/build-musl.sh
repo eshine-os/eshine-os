@@ -56,3 +56,13 @@ ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
     -o tools/ramfs/bin/pt tools/ramfs-pt.c -lpthread -lc
 echo "== 产物: tools/ramfs/bin/pt =="
 aarch64-linux-gnu-readelf -lW tools/ramfs/bin/pt | grep -c LOAD
+
+echo "== 链接 initmark/beat(站40:inittab sysinit/respawn 活证件)=="
+for prog in initmark beat; do
+    ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
+        -isystem "$WORK/inst/include" \
+        -specs "$WORK/inst/lib/musl-gcc.specs" \
+        -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code \
+        -o "tools/ramfs/bin/$prog" "tools/ramfs-$prog.c" -lc
+done
+echo "== 产物: tools/ramfs/bin/{initmark,beat} =="

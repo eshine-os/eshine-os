@@ -48,9 +48,8 @@ long sys_clone_impl(u64 *frame, u32 flags, u64 stack, u64 ptid,
         return -22;                 /* AAPCS64:SP 16 对齐 */
     ct = rt_task_create_el0("thr", NULL, NULL, rt_cur->prio,
                             (void *)(unsigned long)stack);
-    if (!ct) {
+    if (!ct)
         return -11;                 /* 池满 */
-    }
     {   /* 帧整拷(fork 同款)+x0=0:子回 svc 后继指令零号返 */
         u64 *dst = (u64 *)(void *)ct->sp;
 

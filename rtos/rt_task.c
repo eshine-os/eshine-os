@@ -113,6 +113,21 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
                                       * (站16 帧复用教训同律:新域
                                       * 入槽清单) */
     t->sig_val = 0;
+    t->tid = 0;                     /* 站40 定谳([95] 十案):tid 域
+                                      * 站35 入槽时漏清单——复用槽残
+                                      * tid=亡 fork 子的 pid,活驻任
+                                      * 务(deepdiver)顶名截走
+                                      * sigqueueinfo 的 tid 定向
+                                      * (电池序才撞:孤立跑任务位
+                                      * 干净不现;站38 律第四现)。 */
+    t->el0 = 0;                     /* 站40 定谳(12 站潜伏):el0 域
+                                      * 站28 入槽时漏清单——boot 期
+                                      * initmark/beat 子(首批早期
+                                      * el0 亡者)残值 1 被 deepdiver
+                                      * 复用,rt_cur_stack_limit 判
+                                      * el0 返 NULL=受控深潜静默不
+                                      * 潜,水位门红([41] 定谳面)。
+                                      * 站38 律第三现:新域入槽清单。 */
     t->cpu = (cpu < RT_NCPU) ? cpu : rt_cpu_id();
                                    /* 站二十:建核即亲和(不迁移,YAGNI);
                                     * smpdemo/ipidemo/fpsmp 显式指定对核 */

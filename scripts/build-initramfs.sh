@@ -43,7 +43,19 @@ echo "== 组装 rootfs =="
 rm -rf "$ROOT"
 mkdir -p "$ROOT/bin" "$ROOT/dev" "$ROOT/proc" "$ROOT/sys" "$ROOT/tmp" \
          "$ROOT/mnt" "$ROOT/root" "$ROOT/etc"
-cp busybox "$ROOT/bin/busybox"
+# 站40:busybox 双世界右翼——优先用 vm0 同一 musl busybox 字节
+# (tools/ramfs/bin/busybox=build-busybox.sh 精选集产物,GPL 仓外);
+# 缺席则退 glibc 自建(站 15 原配方)。
+if [ -f "$REPO/tools/ramfs/bin/busybox" ]; then
+    cp "$REPO/tools/ramfs/bin/busybox" "$ROOT/bin/busybox"
+    echo "== busybox: vm0 同字节 musl 精选集(双世界判据面) =="
+else
+    cp busybox "$ROOT/bin/busybox"
+    echo "== busybox: 本地 glibc 构建(站 15 原配方) =="
+fi
+# 站40:/etc/motd 双世界共用(md5sum 同哈希判据的公共输入)
+mkdir -p "$ROOT/etc"
+cp "$REPO/tools/ramfs/etc/motd" "$ROOT/etc/motd"
 # 站33:双 musl 世界右翼——与 vm0 ramfs 同一 ELF 字节(tools/
 # ramfs/bin/hello,build-musl.sh 产物入仓);48KB vs 8MB 槽余量足
 cp "$REPO/tools/ramfs/bin/hello" "$ROOT/bin/hello"

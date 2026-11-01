@@ -14,3 +14,4 @@ __pycache__/
 rtos/ramfs.cpio
 # 站34:源归档=层内构建工件(git archive 生成,构建吃提交树)
 meta-eshine/recipes-eshine/eshine-rtos/files/eshine-os-*.tar.gz
+tools/ramfs/bin/busybox
