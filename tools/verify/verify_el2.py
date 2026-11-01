@@ -1723,7 +1723,7 @@ def main():
             for md_try in range(2):
                 p3 = len(buf)
                 s.sendall(b"run /bin/busybox md5sum /etc/motd\n")
-                buf = read_until(s, buf, b"  /etc/motd", time.time() + 300, start=p3)
+                buf = read_until(s, buf, b"  /etc/motd", time.time() + 600, start=p3)  # 第五连装载:累积减速,600s
                 m0 = _re.search(rb"([0-9a-f]{32})  /etc/motd", buf[p3:])
                 if m0 and m0.group(1) == b"f6f062e1b6748d300d9e6550b7e3ba53":
                     break
