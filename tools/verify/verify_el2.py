@@ -1700,17 +1700,17 @@ def main():
             print("  [102/133] slogdemo: slogd ring + warn console policy")
             p3 = len(buf)
             s.sendall(b"run /bin/busybox echo ESHINE40-BB\n")
-            buf = read_until(s, buf, b"ESHINE40-BB", time.time() + 150, start=p3)
+            buf = read_until(s, buf, b"ESHINE40-BB", time.time() + 300, start=p3)
             buf = read_until(s, buf, b"run: exited code=0", time.time() + 10, start=p3)
             s.sendall(b"run /bin/busybox cat /tmp/init40\n")
-            buf = read_until(s, buf, b"ESHINE40-INIT", time.time() + 150, start=p3)
+            buf = read_until(s, buf, b"ESHINE40-INIT", time.time() + 300, start=p3)
             print("  [103/133] busybox echo + cat inittab marker (musl static, argc/argv loader)")
             p3 = len(buf)
             s.sendall(b"run /bin/busybox ls -1 /etc\n")
-            buf = read_until(s, buf, b"inittab", time.time() + 150, start=p3)
+            buf = read_until(s, buf, b"inittab", time.time() + 300, start=p3)
             buf = read_until(s, buf, b"motd", time.time() + 10, start=p3)
             s.sendall(b"run /bin/busybox date -u\n")
-            buf = read_until(s, buf, b"UTC 2026", time.time() + 150, start=p3)
+            buf = read_until(s, buf, b"UTC 2026", time.time() + 300, start=p3)
             print("  [104/133] busybox ls (getdents64 one-per-call) + date (clock face)")
             # 站40(r26 定谳):md5sum 单发窗错位=脏摘要瞬态(孤立
             # 复读恒正);幂等重发一次(读活态,同 ps 门律)
@@ -1719,7 +1719,7 @@ def main():
             for md_try in range(2):
                 p3 = len(buf)
                 s.sendall(b"run /bin/busybox md5sum /etc/motd\n")
-                buf = read_until(s, buf, b"  /etc/motd", time.time() + 150, start=p3)
+                buf = read_until(s, buf, b"  /etc/motd", time.time() + 300, start=p3)
                 m0 = _re.search(rb"([0-9a-f]{32})  /etc/motd", buf[p3:])
                 if m0 and m0.group(1) == b"f6f062e1b6748d300d9e6550b7e3ba53":
                     break

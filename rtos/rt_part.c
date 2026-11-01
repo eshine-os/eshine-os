@@ -47,6 +47,7 @@ struct rt_mpart {
 };
 
 static struct rt_cpart cparts[RT_CPART_MAX];
+static u64 cpart_win_base;               /* 站48:滞后窗基(跳变免疫) */
 
 static void part_name(char *dst, const char *src, u32 n)
 {
@@ -67,6 +68,7 @@ void rt_cpart_init(void)
                                           * 新分区从此扣) */
     cparts[0].credit = (long)RT_CPART_WIN;
     part_name(cparts[0].name, "system", sizeof(cparts[0].name));
+    cpart_win_base = rt_ticks;
 }
 
 int rt_cpart_alloc(const char *name, u32 pct)
@@ -104,7 +106,13 @@ int rt_cpart_tick(rt_task_t *t)
 
     if (!t || !rt_task_in_pool(t))
         return 0;
-    if ((rt_ticks % RT_CPART_WIN) == 0) {   /* 窗界:全量重置 */
+    /* 窗界重置(站48 批验收定谳:改滞后基——`%WIN==0` 在宿主
+     * 饥饿下被 tick 跳变(coalesce)击穿,system 分区假超标
+     * 全驻车,壳/装载子连环停摆;滞后基任何迟到边界都补,
+     * 跳变免疫)。 */
+    if (rt_ticks - cpart_win_base >= RT_CPART_WIN) {
+        cpart_win_base += RT_CPART_WIN *
+            ((rt_ticks - cpart_win_base) / RT_CPART_WIN);
         for (i = 0; i < RT_CPART_MAX; i++)
             if (cparts[i].used)
                 cparts[i].credit =
