@@ -86,7 +86,7 @@ static void cmd_help(void)
     console_puts("  abortdemo           -> 发送超时+UNBLOCK 脉冲    [84]\n");
     console_puts("  fddemo              -> fd=通道三元组四脸走服务器 [85]\n");
     console_puts("  futexdemo           -> WAIT/WAKE 四脸+真阻塞   [86]\n");
-    console_puts("  sigdemo             -> 跨进程 kill+EINTR+帧手术 [87]\n");
+    console_puts("  sigdemo             -> kill 打断重启(ERESTARTSYS)[87]\n");
     console_puts("  run /bin/hello      -> musl 双世界左翼(用户态 loader) [88]\n");
     console_puts("  run /bin/pt         -> pthread 4 线程 join(clone/TLS/CLEARTID)[89]\n");
     console_puts("  shmdemo/msgseg      -> 共享段+固定窗+fork 共享/单拷窗 [90-91]\n");

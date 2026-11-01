@@ -1551,9 +1551,9 @@ def main():
             s.sendall(b"sigdemo\n")
             buf = read_until(s, buf, b"sigdemo: child waiting", time.time() + 15, start=p3)
             buf = read_until(s, buf, b"sig: handler ran sig=10", time.time() + 20, start=p3)
-            buf = read_until(s, buf, b"sig: futex -> -EINTR ok", time.time() + 10, start=p3)
+            buf = read_until(s, buf, b"sig: futex restarted -> -EAGAIN ok", time.time() + 10, start=p3)
             buf = read_until(s, buf, b"sigdemo: reaped code=7 ok", time.time() + 15, start=p3)
-            print("  [87/126] sigdemo: cross-proc kill -> EINTR; handler in own user ctx + sigreturn")
+            print("  [87/126] sigdemo: cross-proc kill -> ERESTARTSYS restart (elr-4 rewind, x0 kept); handler + sigreturn")
 
             # ---- 站33:双 musl 世界左翼——vm0 eshine-rtos 全链:
             #      fork->用户态 loader(fd=通道三元组读 ramfs)->hint-mmap

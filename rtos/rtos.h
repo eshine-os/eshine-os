@@ -191,6 +191,8 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define ES_NR_demo        514
 #define ES_NR_MAX         600
 #define ES_ENOSYS         38
+#define ES_ERESTARTSYS    (-512)   /* 站44:可重启语义(内部值,
+                                    * 不越 ABI——分发器帧手术消化) */
 #define ES_EINVAL         22
 
 /* 站二十九:进程+地址空间号面(标准号优先——站 27 偏差 #24 续行;

@@ -401,18 +401,24 @@ static void cmd_futexdemo(void)
 
 /* handler:在子进程自身用户上下文执行(投递帧手术),末尾显式
  * rt_sigreturn——svc 不归:内核整帧回拷,eret 直落回打断点。 */
+static u32 sig_word;   /* 站44:文件域上提(handler 要戳;子承
+                          * .user 页拷同 VA,COPY_UCONTEXT 律) */
+
 static void sig_handler(long sig)
 {
     sys_puts("sig: handler ran sig=");
     sys_put_dec((u64)sig);
     sys_puts("\n");
+    sig_word = 1;   /* 站44:重启判据装置——handler 内戳字,重启再入
+                     * 入口值校验 *w!=expect -> -EAGAIN;一判决两事:
+                     * elr 没回拨=执行 svc 后指令错窗垃圾,x0 没保
+                     * 入参=拿 -512 当 uaddr 野访 panic */
     sys0(ES_NR_rt_sigreturn);
 }
 
 static void cmd_sigdemo(void)
 {
     long pid, r, st = 0;
-    static u32 sig_word;
     /* 站35 契约垫背:x3=timespec 指针(旧 400=ticks 字面在新契约下
      * 被当指针解,access_ok 拒->-EFAULT,-EINTR 脸必破)。10s/1s
      * 父 kill 十倍余;fork 前置值,子承 .user 页拷同 VA。 */
@@ -427,7 +433,9 @@ static void cmd_sigdemo(void)
                                          * 写 pid==0 子落穿父路径,
                                          * 魔数当 pid 永挂,冒烟定谳) */
         /* 子:handler 已继承(eager 拷贝同 VA,地址语义红利);
-         * 挂 futex 静候父信号——跨进程打断=EINTR 判据面 */
+         * 挂 futex 静候父信号——站44 判据面:打断不返 EINTR,
+         * handler 戳字+重启再入 -> 入口值校验 -EAGAIN(10s ts
+         * 仅兜底:重启破时旧脸 r=-4 落 FAIL 行,不悬死) */
         r = sys4(ES_NR_futex, (long)&sig_word, RT_FUTEX_WAIT, 0, (long)&sig_ts);
         /* 取证:数值面先于三元(r 似被搅,字面非本函数任一支) */
         if (r < 0) {
@@ -439,8 +447,8 @@ static void cmd_sigdemo(void)
             sys_put_dec((u64)r);
             sys_puts("\n");
         }
-        sys_puts(r == -4 ? "sig: futex -> -EINTR ok\n"
-                         : "sig: futex FAIL\n");
+        sys_puts(r == -11 ? "sig: futex restarted -> -EAGAIN ok\n"
+                          : "sig: futex FAIL\n");
         sys1(ES_NR_exit, 7);
     }
     sys_puts("sigdemo: child waiting\n");

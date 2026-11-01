@@ -594,6 +594,17 @@ events@+4（首版 (u16)(ent>>16) 取 fd 高半=ev 恒 0，POLLIN 永不
 成立——服务器侧取证 count=9 答 1 全程，判据面指向）/pipesrv
 无 POLL case（默认 -22 落 POLLNVAL）/冒烟驱动晚挂=RX 死窗
 （vmconsole 必须紧跟 vmrun，verify [19] 同款 wait=on 形状）**）** →
+**站44 ERESTARTSYS（[87] 原位改针——站42 裁剪记账 E 兑现日）：信号
+打断可重启——futex WAIT 的 sig_intr 改返 -512（内部分发器消化不越
+ABI），dispatch 单点帧手术：elr 回拨 4 重取 svc+x0 槽不写保入参；
+随后的出口投递整帧存 sig_saved（含回拨 elr+原 x0），handler 归还
+即同参再入，无 handler 默认动作终局回拨无害。-EINTR 只存 POSIX
+特例 sigsuspend（恒返，sigdemo2 判据不动）；sem/msg 打断被 take
+环吸收重挂（站32 既有契约）非生产者。判据=sigdemo 迁移：handler
+内戳字 → 重启再入入口值校验 -EAGAIN——一判决两事（elr 没回拨=
+执行 svc 后指令错窗垃圾；x0 没保入参=拿 -512 当 uaddr 野访）；
+重启破则旧脸 -4 落 FAIL 行门红自抓。ERESTARTNOHAND/restart_block
+记档非目标（无消费者不落码）** →
 **站34 yocto 门（[123]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到

@@ -4,13 +4,15 @@
 
 /* 站三十二:signal+futex——musl 的两张内核脸(参考实现 §10 站内收编,
  * 机制参考零拷贝)。两原语互为判据:真实"等待->唤醒"对由跨进程
- * 信号打断 futex 等待完成(EINTR 契约)——同站的架构理由。
+ * 信号打断 futex 等待→ERESTARTSYS 可重启(站44 契约,旧 -EINTR 面
+ * 已迁移 sigdemo 判据;POSIX 特例 sigsuspend 恒 -EINTR 不动)。
  *
  * futex(16 桶静态表,key={proc,va} 随等待者;无 shm=is_shared 恒
  * 私):WAIT=入口值校验(*uaddr!=expect 即 -EAGAIN,Linux 契约)
  * +站 21 单窗形态阻塞(窗内终判+五字段登记+摘 rdy 一气呵成)
  * +醒后四路分诊:timed_out→-ETIMEDOUT / fut_woken→0 / sig_intr
- * →-EINTR / 值动→0(futex 协议:改字方须 WAKE,值动即释放);
+ * →ERESTARTSYS(站44) / 值动→0(futex 协议:改字方须 WAKE,
+ * 值动即释放);
  * 未定(伪醒)回环重挂。WAKE=桶内 key 匹配摘链+置 fut_woken+
  * push(DAIF 窗内,rt_handoff 律)——**不读用户字,纯队列操作**
  * (demo 的扑克任务据此代演同址空间第二执行流)。
@@ -95,7 +97,11 @@ static long rt_futex_wait(struct rt_proc *p, u64 va, u32 expect, u64 ticks)
         }
         if (rt_cur->sig_intr) {
             fx_disarm();
-            return -4;                  /* -EINTR:信号打断 */
+            return ES_ERESTARTSYS;      /* 站44:可重启语义——打断不
+                                         * 返错,分发器回拨 elr 重执行
+                                         * (handler 归还=sigreturn
+                                         * 恢复回拨帧;无 handler=
+                                         * 默认动作终局,回拨无害) */
         }
         /* 伪醒:回环重检值 */
     }

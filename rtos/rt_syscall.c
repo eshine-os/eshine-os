@@ -2058,8 +2058,19 @@ void rt_syscall_init(void)
 void rt_syscall_dispatch(u64 *frame)
 {
     u64 nr = FR(8);
+    long r = (nr < ES_NR_MAX) ? (long)table[nr](frame)
+                              : -(long)ES_ENOSYS;
 
-    FR(0) = (nr < ES_NR_MAX) ? (u64)table[nr](frame) : (u64)-ES_ENOSYS;
+    if (r == ES_ERESTARTSYS) {
+        /* 站44:可重启语义帧手术——elr 回拨 4 重取 svc(ELR 本指
+         * svc 下一指令);x0 槽不写保入参=重执行同参再入。随后的
+         * 出口投递整帧存 sig_saved(含回拨 elr+原 x0),handler
+         * 归还即重执行;无 handler=默认动作终局,回拨无害。
+         * 帧手术完整性清单:动 elr 一处免写 x0 一处,帧外态不动。 */
+        frame[0] -= 4;
+    } else {
+        FR(0) = (u64)r;
+    }
     {   /* 站32:syscall 出口=投递点(参考实现 SWITCH_OUT 的站内形态;
          * 返回值已在 x0 槽,帧手术先整帧存后改写)。站38:无 handler
          * 的默认动作=终局——投递返 128+sig 即以退出码走 sys_exit
