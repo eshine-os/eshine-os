@@ -451,6 +451,110 @@ static void cmd_sigdemo(void)
                      : "sigdemo: reap FAIL\n");
 }
 
+/* ---- 站36:shm+xspace 客户端——共享段四面+固定窗+fork 共享律。
+ * shmdemo:fork 共享判别器(子写同 VA,父读回=eager 拷会把子
+ * 写私有化,父读 0=FAIL);msgsegdemo:VM_SET 单拷脸(1KB 载荷
+ * 走共享窗=一拷,脉冲 8B 只带段引用,父 attach 后原地零拷读)。 */
+static void cmd_shmdemo(void)
+{
+    long seg, va, pid, r;
+    int st = 0;
+    volatile u64 *w;
+
+    seg = sys1(ES_NR_shm_create, 0x2000);
+    if (seg <= 0) {
+        sys_puts("shmdemo: create FAIL\n");
+        return;
+    }
+    va = sys2(ES_NR_shm_attach, seg, 0);
+    if (va != (long)RT_XSPACE_BASE) {
+        sys_puts("shmdemo: attach FAIL\n");
+        return;
+    }
+    sys_puts("shmdemo: va=0x41000000\n");
+    w = (volatile u64 *)(unsigned long)va;
+    w[0] = 0xABCDEF01UL;                    /* 父标记 */
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {       /* 子:继承 VMA 同 VA 写 */
+        w[1] = 0x12345678UL;
+        sys1(ES_NR_exit, 0);
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts(w[0] == 0xABCDEF01UL && w[1] == 0x12345678UL
+             ? "shmdemo: fork shared ok, p2=305419896\n"
+             : "shmdemo: share FAIL\n");
+    r = sys1(ES_NR_shm_detach, seg);
+    if (r == 0)
+        r = sys1(ES_NR_shm_destroy, seg);
+    sys_puts(r == 0 ? "shmdemo: destroyed ok\n"
+                    : "shmdemo: teardown FAIL\n");
+}
+
+static void cmd_msgsegdemo(void)
+{
+    long chid, coid, pid, rcv, seg, va, r;
+    int st = 0, i, ok = 1;
+    volatile u64 *w;
+    struct rt_recvinfo info;
+
+    chid = sys1(ES_NR_ch_create, 0);
+    if (chid <= 0) {
+        sys_puts("msgseg: ch_create FAIL\n");
+        return;
+    }
+    r = sys2(ES_NR_name_attach, (long)"/shm/msg", (long)chid);
+    if (r < 0) {
+        sys_puts("msgseg: name_attach FAIL\n");
+        return;
+    }
+    coid = sys1(ES_NR_name_open, (long)"/shm/msg");
+    if (coid <= 0) {
+        sys_puts("msgseg: name_open FAIL\n");
+        return;
+    }
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {       /* 子:自建段+写 1KB+
+                                             * 继承 coid 发 8B 脉冲
+                                             * 只带段引用(单拷窗) */
+        seg = sys1(ES_NR_shm_create, 0x400);
+        if (seg <= 0)
+            sys1(ES_NR_exit, 1);
+        va = sys2(ES_NR_shm_attach, seg, 0);
+        if (va != (long)(RT_XSPACE_BASE + (u64)(seg - 1) * RT_XSPACE_SPAN))
+            sys1(ES_NR_exit, 2);
+        w = (volatile u64 *)(unsigned long)va;
+        for (i = 0; i < 256; i++)
+            w[i] = 0x5AA50000UL + (u64)i;
+        sys3(ES_NR_msg_pulse, coid, 0x36, seg);
+        sys1(ES_NR_exit, 0);
+    }
+    rcv = sys6(ES_NR_msg_recv, (long)chid, 0, 0, 100, (long)&info, 0);
+    if (rcv != 0 || info.rcvid != 0 || info.code != 0x36) {
+        sys_puts("msgseg: recv FAIL\n");
+        return;
+    }
+    seg = (long)info.value;
+    va = sys2(ES_NR_shm_attach, seg, 0);    /* 按引用挂:跨进程同 VA */
+    w = (volatile u64 *)(unsigned long)va;
+    for (i = 0; i < 256; i++)
+        if (w[i] != 0x5AA50000UL + (u64)i)
+            ok = 0;
+    sys_puts(ok ? "msgseg: 1024B via window, wire=8B ok\n"
+                : "msgseg: pattern FAIL\n");
+    /* wait4 先于 detach/destroy:子退场走 fd-close 消息往返
+     * (慢于父验证路),未死即 destroy=refs 仍 1->-EBUSY 竞面
+     * (首轮冒烟实抓)。 */
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    r = sys1(ES_NR_shm_detach, seg);
+    if (r == 0)
+        r = sys1(ES_NR_shm_destroy, seg);
+    sys_puts(r == 0 ? "msgseg: destroyed ok\n"
+                    : "msgseg: teardown FAIL\n");
+    sys1(ES_NR_conn_detach, coid);
+    sys2(ES_NR_name_detach, (long)"/shm/msg", (long)chid);
+    sys1(ES_NR_ch_destroy, chid);
+}
+
 /* ---- 站33:用户态 loader(参考实现 "loader 在用户态"机制;内核零镜像
  * 字节红线保全)——`run <path>`:fork->子全用户态装 ELF(fd=通道
  * 三元组读 ramfs)hint-mmap 段+拷->栈块(argc/argv/envp/auxv)
@@ -753,6 +857,10 @@ static void shell_line(char *line)
         cmd_futexdemo();
     } else if (streq(line, "sigdemo")) {
         cmd_sigdemo();
+    } else if (streq(line, "shmdemo")) {
+        cmd_shmdemo();
+    } else if (streq(line, "msgseg")) {
+        cmd_msgsegdemo();
     } else if (starts(line, "spawn ")) {
         sys3(ES_NR_demo, RT_U_SPAWN, (long)(line + 6), 0);
     } else if (starts(line, "sleep")) {
@@ -779,7 +887,7 @@ static void shell_line(char *line)
     } else if (line[0]) {
         sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
                  " | forkdemo | mmapdemo | exedemo | ipcdemo | pulsedemo | abortdemo | fddemo"
-                 " | futexdemo | sigdemo | run <p>"
+                 " | futexdemo | sigdemo | shmdemo | msgseg | run <p>"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");

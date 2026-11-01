@@ -217,6 +217,19 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define ES_NR_fdread      552   /* fd 读(READ 走三段消息;0=EOF) */
 #define ES_NR_fdwrite     553   /* fd 写(WRITE 数据内联≤44B/次) */
 
+/* 站三十六:shm+xspace——内核登记共享段(参考实现 xspace 全局窗/
+ * VM_SET 单拷窗的站内形状;shmid 传引用=单拷,载荷走共享窗)。
+ * v0 固定 VA:xspace 块 8 @0x41000000,段 i 映
+ * XSPACE_BASE+(i-1)*SPAN=同段任何进程同 VA。 */
+#define ES_NR_shm_create  560   /* len 字节->段号(页池取页清零) */
+#define ES_NR_shm_attach  561   /* (seg,va=0 固定窗)->实际 VA */
+#define ES_NR_shm_detach   562   /* 摘挂(refs--) */
+#define ES_NR_shm_destroy  563   /* 段销毁(refs!=0 拒;页还池) */
+#define RT_SHM_MAX         8     /* 段表容量 */
+#define RT_SHM_SEG_PAGES   16    /* 每段最大页(64KB 跨度) */
+#define RT_XSPACE_BASE     0x41000000UL
+#define RT_XSPACE_SPAN     (RT_SHM_SEG_PAGES * 4096UL)
+
 /* 站三十二:signal+futex 号面——真 Linux arm64(asm-generic)原号,
  * 站 33 musl 直连。v0 偏差(spec §2 记档,站 33 对齐):futex 四参
  * (uaddr,op,val,ticks——Linux 第四参 timespec 指针)/sigaction
@@ -288,8 +301,8 @@ enum { RT_PROC_CREATE, RT_PROC_RUN, RT_PROC_ZOMBIE };
 
 struct rt_vma {
     u64 start, end;               /* [start, end) */
-    u32 pool;                     /* 0=ID 恒等(镜像/栈),1=页池 */
-    u32 rsv;
+    u32 pool;        /* 0=ID 恒等(镜像/栈),1=页池,2=SHM 共享段 */
+    u32 shm_id;      /* 站36:pool=2 时的段号(rsv 槽转正) */
 };
 
 struct rt_proc {
@@ -300,7 +313,7 @@ struct rt_proc {
     int exit_code;
     u32 asid;
     u64 *l0, *l1;
-    u64 *l2[8];                   /* l1 槽 1..7 页表(按需) */
+    u64 *l2[9];                   /* l1 槽 1..8 页表(按需;8=xspace) */
     struct rt_vma vma[RT_AS_VMA_MAX];
     u32 nvma;
     u64 mmap_next;                /* ANON VA 游标(mmap 窗) */
@@ -484,6 +497,21 @@ long sys_exec_setup_impl(u64 *frame, u64 entry, u64 sp,
 void rt_proc_boot_shell(rt_task_t *shell);  /* 进程 1:镜像/栈申报+预映 */
 u64  rt_as_mmap(struct rt_proc *p, u64 hint, u64 len);  /* 站33:hint 落位,0=满/败 */
 int  rt_as_munmap(struct rt_proc *p, u64 start, u64 len);
+/* 站36:shm 段注册表(rt_shm.c)——共享段三面+两钩(fork 继承
+ * 同物理零拷贝=隐式 attach refs++;退场逐 SHM VMA 卸引用) */
+long rt_shm_create(u32 len_bytes);          /* ->段号 或负 errno */
+long rt_shm_attach(struct rt_proc *p, long seg, u64 va);  /* ->实际 VA */
+long rt_shm_detach(struct rt_proc *p, long seg);
+long rt_shm_destroy(long seg);
+int  rt_shm_pfault(struct rt_proc *p, u64 va, u32 shm_id); /* 健全面 */
+void rt_shm_fork(struct rt_proc *child);     /* fork:继承 SHM VMA 挂同物理 */
+void rt_shm_exit(struct rt_proc *p);         /* 退场:逐 SHM VMA refs-- */
+/* 站36:rt_shm.c 消费的 as 暴露面(段页取/还/映/清+SHM VMA 申报) */
+u64  rt_as_page_alloc(void);
+void rt_as_page_free(u64 pa);
+int  rt_as_map_user(struct rt_proc *p, u64 va, u64 pa);
+int  rt_as_declare_shm(struct rt_proc *p, u64 start, u64 end, u32 shm_id);
+void rt_as_shm_clear(struct rt_proc *p, u64 start, u64 end);
 struct rt_proc *rt_proc_zombie_find(int pid, int *exit_code);
 void rt_proc_reap(struct rt_proc *p);          /* ZOMBIE 槽全回收 */
 rt_task_t *rt_ps_first(unsigned int *idx);

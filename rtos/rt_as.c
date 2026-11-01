@@ -30,12 +30,15 @@
 #define AS_BLK_POOL_HI   5UL
 #define AS_BLK_MMAP      6UL
 #define AS_BLK_DTB       7UL
+#define AS_BLK_XSPACE    8UL          /* 站36:固定共享窗 0x41000000/2MB */
+#define AS_BLK_COUNT     9UL
 #define AS_POOL_BASE     0x40400000UL
 #define AS_POOL_PAGES    2048UL
 #define AS_MMAP_BASE     0x40C00000UL
 #define AS_MMAP_END      0x40E00000UL
 
-#define AS_L2_SLOTS      16UL
+/* 站36:8 proc×(user+mmap+xspace)=24 槽上限(此前 16=8×2) */
+#define AS_L2_SLOTS      24UL
 /* RT_AS_VMA_MAX:站 35 起唯一定义驻 rtos.h(32=musl pthread 栈
  * mmap+TLS 图量)。本文件的本地 6UL 从站 29 挂到站 34=存量
  * 编译警告的真身:静默压住 rtos.h 的扩容,pt 第 4 线程栈
@@ -61,6 +64,7 @@
 #define AS_TABLE_DESC(pa) ((pa) | 0x3UL)
 
 /* freestanding 无 libc:本地原语(字节循环,对齐不管——量小) */
+static void as_tlb_flush(void);             /* 站36:shm_clear 先用 */
 static void as_zero(void *dst, u64 n)
 {
     u8 *d = dst;
@@ -126,7 +130,7 @@ static void as_l2_free(struct rt_proc *p)
             l2_owner[i] = 0;
         }
     }
-    for (bi = 0; bi < 8; bi++)
+    for (bi = 0; bi < AS_BLK_COUNT; bi++)
         p->l2[bi] = NULL;
 }
 
@@ -163,14 +167,15 @@ static void as_pool_free_if_owned(u64 desc)
     }
 }
 
-/* 映一页:VA→PA。许可块=1(.user)/6(mmap);页池/DTB/内核块非
- * per-process 表管辖(页池=恒驻 EL1 块,内核直接写,不经此路)。 */
+/* 映一页:VA→PA。许可块=1(.user)/6(mmap)/8(xspace 共享窗,
+ * 站36);页池/DTB/内核块非 per-process 表管辖(页池=恒驻
+ * EL1 块,内核直接写,不经此路)。 */
 static int as_map_page(struct rt_proc *p, u64 va, u64 pa)
 {
     u32 bi = (u32)((va >> 21) & 511);
     u32 pi = (u32)((va >> 12) & 511);
 
-    if (bi != AS_BLK_USER && bi != AS_BLK_MMAP)
+    if (bi != AS_BLK_USER && bi != AS_BLK_MMAP && bi != AS_BLK_XSPACE)
         return -1;
     if (!p->l2[bi]) {
         p->l2[bi] = as_l2_alloc(p->pid);
@@ -180,6 +185,50 @@ static int as_map_page(struct rt_proc *p, u64 va, u64 pa)
     }
     p->l2[bi][pi] = AS_PAGE_DESC(pa);
     return 0;
+}
+
+/* ---- 站36 暴露面:rt_shm.c 消费(段页取/还/映/清+SHM VMA 申报) ----
+ * 页归属铁律:段页自页池取出后归段注册表所有,唯一还池入口=
+ * rt_as_page_free(由 rt_shm_destroy 调);fork/munmap/退场三路
+ * 页回收皆不触块 8(munmap 拒 SHM VMA;退场页回收只走块 1/6)。 */
+u64 rt_as_page_alloc(void)
+{
+    return as_pool_alloc();
+}
+
+void rt_as_page_free(u64 pa)
+{
+    as_pool_free_if_owned(pa & ~0xFFFUL);
+}
+
+int rt_as_map_user(struct rt_proc *p, u64 va, u64 pa)
+{
+    return as_map_page(p, va, pa);
+}
+
+int rt_as_declare_shm(struct rt_proc *p, u64 start, u64 end, u32 shm_id)
+{
+    if (p->nvma >= RT_AS_VMA_MAX || start >= end)
+        return -1;
+    p->vma[p->nvma].start = start;
+    p->vma[p->nvma].end = end;
+    p->vma[p->nvma].pool = 2;
+    p->vma[p->nvma].shm_id = shm_id;
+    p->nvma++;
+    return 0;
+}
+
+/* SHM 段页清映(不还池!)+整段 TLB 冲(段页属主=段注册表) */
+void rt_as_shm_clear(struct rt_proc *p, u64 start, u64 end)
+{
+    u32 bi = (u32)((start >> 21) & 511);
+    u32 pi, pi_end = (u32)((end >> 12) & 511);
+
+    if (!p->l2[bi])
+        return;
+    for (pi = (u32)((start >> 12) & 511); pi < pi_end; pi++)
+        p->l2[bi][pi] = 0;
+    as_tlb_flush();
 }
 
 static void as_tlb_flush(void)
@@ -291,6 +340,8 @@ int rt_pfault(u64 va, u64 esr)
     va &= ~(AS_PAGE - 1);
     if (!v->pool)
         return as_map_page(p, va, va);      /* identity:VA 即后备 */
+    if (v->pool == 2)                       /* 站36:SHM 按段页索引补映 */
+        return rt_shm_pfault(p, va, v->shm_id);
     {
         u64 pg = as_pool_alloc();
 
@@ -321,16 +372,28 @@ void rt_proc_boot_shell(rt_task_t *shell)
 
 /* fork 的 AS 侧:eager 全拷——父块 1/6 已映页逐页拷入页池,子 VMA
  * 全 POOL 型(拷贝驻页池=物理隔离;父 l2 空洞留给子将来零填)。
- * 拷贝语境=父 mm(父页经其表可读;页池块恒驻 EL1 可写)。 */
+ * 拷贝语境=父 mm(父页经其表可读;页池块恒驻 EL1 可写)。
+ * 站36:SHM VMA(pool=2)子表申报继承+同物理直挂零拷贝(共享=
+ * 隔离的对立面,两立分型;段页永不入下方拷贝环——块 8 不在
+ * 块 1/6 走查内)。 */
 int rt_proc_fork_as(struct rt_proc *parent, struct rt_proc *child)
 {
     u32 i, bi, pi;
 
     child->mmap_next = parent->mmap_next;
-    for (i = 0; i < parent->nvma; i++)
+    for (i = 0; i < parent->nvma; i++) {
+        if (parent->vma[i].pool == 2) {
+            if (rt_as_declare_shm(child, parent->vma[i].start,
+                                  parent->vma[i].end,
+                                  parent->vma[i].shm_id) < 0)
+                return -1;
+            continue;
+        }
         if (as_declare_pool(child, parent->vma[i].start,
                             parent->vma[i].end) < 0)
             return -1;
+    }
+    rt_shm_fork(child);                     /* 挂同物理+refs++ */
     for (bi = 0; bi < 8; bi++) {
         if (bi != AS_BLK_USER && bi != AS_BLK_MMAP)
             continue;
@@ -362,6 +425,11 @@ int rt_as_munmap(struct rt_proc *p, u64 start, u64 len)
     u64 end = start + len;
 
     for (i = 0; i < p->nvma; i++) {
+        if (p->vma[i].pool == 2)            /* 站36:SHM VMA 不走 munmap
+                                             * (段页归段所有,还池唯
+                                             * destroy 一口;路由
+                                             * shm_detach) */
+            continue;
         if (p->vma[i].start == start && p->vma[i].end == end) {
             for (bi = 0; bi < 8; bi++) {
                 if (bi != AS_BLK_USER && bi != AS_BLK_MMAP)
@@ -463,13 +531,16 @@ struct rt_proc *rt_proc_lookup(int pid)
     return NULL;
 }
 
-/* 退场:自有页池页回收+L2 清归池;TLB 全冲(销毁面 v0 从简) */
+/* 退场:自有页池页回收+L2 清归池;TLB 全冲(销毁面 v0 从简)。
+ * 站36:SHM 引用先卸(逐 VMA refs--;块 8 段页不进下方回收=
+ * 归属铁律;L2 槽由 as_l2_free 归池,陈 PTE 随再分配清零)。 */
 void rt_proc_exit(struct rt_proc *p, int code)
 {
     u32 bi, pi;
 
     p->exit_code = code;
     p->state = RT_PROC_ZOMBIE;
+    rt_shm_exit(p);
     for (bi = 0; bi < 8; bi++) {
         if (bi != AS_BLK_USER && bi != AS_BLK_MMAP)
             continue;

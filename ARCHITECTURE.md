@@ -326,7 +326,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（94 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（96 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -449,7 +449,17 @@ PTHREAD_MUTEX_INITIALIZER=futex WAIT/WAKE 真线程对；join=用户态
 detach_state futex+CHILD_CLEARTID 内核面（线程退出 *ctid=0+
 futex wake）；TPIDR_EL0 随任务切换存还（vec.S 簿记，站32
 SP_EL0 同款 272B 帧外清点纪律）；counter=10=互斥串行化自证）** →
-**站34 yocto 门（[94]——meta-eshine 层入仓：git archive 提交树
+**站36 共享段两门（[90-91]——内核登记 shm 段（页自页池+refs
+计数，create 取页/destroy 还页一口）+xspace 固定窗（块 8
+@0x41000000，段 i 固定映同 VA=参考实现全局唯一窗的站内形状）+
+VMA 第三型 pool=2 + fork 律（SHM VMA 子表同物理直挂零拷贝=
+共享与站 29 eager 隔离两立；段页永不入 fork/munmap/退场三条
+页回收路）；[90] shmdemo fork 共享判别器（子写同 VA 父读回，
+eager 拷会私有化子写=读不到判负）、[91] msgseg 单拷窗
+（1KB 载荷走共享窗一拷，8B 脉冲只带段引用，父按引用 attach
+原地零拷读=站 30 差距⑤⑥ 的 v0 兑现；VM_SET 真身=免页表
+遍历的单拷+延迟访问，页池恒驻+同物理直挂天然成立）** →
+**站34 yocto 门（[96]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
 部署四件（eshine.elf/rtos.bin/guest2.bin/ramfs.cpio）；判据=
@@ -458,7 +468,7 @@ SP_EL0 同款 272B 帧外清点纪律）；counter=10=互斥串行化自证）**
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-94 步手动走查清单。
+96 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

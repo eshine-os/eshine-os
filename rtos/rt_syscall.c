@@ -363,6 +363,33 @@ static long sys_fdopen(u64 *frame)
     return rt_fd_open(p, kpath);
 }
 
+/* ---- 站36:shm 段四面(值参数,无 uaccess;共享窗落位=固定 VA) */
+static long sys_shm_create(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_shm_create((u32)FR(0));
+}
+
+static long sys_shm_attach(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_shm_attach(rt_cur->proc, (long)FR(0), FR(1));
+}
+
+static long sys_shm_detach(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_shm_detach(rt_cur->proc, (long)FR(0));
+}
+
+static long sys_shm_destroy(u64 *frame)
+{
+    return rt_shm_destroy((long)FR(0));
+}
+
 static long sys_fdclose(u64 *frame)
 {
     if (!rt_cur->proc)
@@ -817,6 +844,10 @@ void rt_syscall_init(void)
     table[ES_NR_fdclose]     = sys_fdclose;
     table[ES_NR_fdread]      = sys_fdread;
     table[ES_NR_fdwrite]     = sys_fdwrite;
+    table[ES_NR_shm_create]  = sys_shm_create;
+    table[ES_NR_shm_attach]  = sys_shm_attach;
+    table[ES_NR_shm_detach]  = sys_shm_detach;
+    table[ES_NR_shm_destroy] = sys_shm_destroy;
     /* 站32:signal+futex 面(真 Linux 号,musl 直连) */
     table[ES_NR_futex]        = sys_futex;
     table[ES_NR_kill]         = sys_kill;
