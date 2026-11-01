@@ -543,9 +543,23 @@ static long sys_kill(u64 *frame)
 
 static long sys_sigaction(u64 *frame)
 {
+    /* 站38:4 参全脸(musl SA_RESTORER:handler+restorer 同装;
+     * 站32 旧 2 参面=restorer 0=handler 末尾显式 rt_sigreturn) */
     if (!rt_cur->proc)
         return -ES_EINVAL;
-    return rt_sig_action(rt_cur->proc, (u32)FR(0), FR(1));
+    return rt_sig_action(rt_cur->proc, (u32)FR(0), FR(1), FR(2));
+}
+
+static long sys_sigqueueinfo(u64 *frame)
+{
+    return rt_sig_queueinfo((long)FR(0), (u32)FR(1), FR(2));
+}
+
+static long sys_sigtimedwait(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_sig_timedwait((u32)FR(0), FR(1));
 }
 
 static long sys_rt_sigreturn(u64 *frame)
@@ -928,6 +942,8 @@ void rt_syscall_init(void)
     table[ES_NR_kill]         = sys_kill;
     table[ES_NR_rt_sigaction] = sys_sigaction;
     table[ES_NR_rt_sigreturn] = sys_rt_sigreturn;
+    table[ES_NR_rt_sigtimedwait] = sys_sigtimedwait;
+    table[ES_NR_rt_sigqueueinfo] = sys_sigqueueinfo;
     /* 站33:musl 薄面(exit_group 与 exit 同路=帧判据共面) */
     table[ES_NR_writev]          = sys_writev;
     table[ES_NR_ioctl]           = sys_ioctl;
@@ -945,9 +961,19 @@ void rt_syscall_dispatch(u64 *frame)
     u64 nr = FR(8);
 
     FR(0) = (nr < ES_NR_MAX) ? (u64)table[nr](frame) : (u64)-ES_ENOSYS;
-    rt_sig_deliver(frame);   /* 站32:syscall 出口=投递点(参考实现
-                              * SWITCH_OUT 的站内形态;返回值已在
-                              * x0 槽,帧手术先整帧存后改写) */
+    {   /* 站32:syscall 出口=投递点(参考实现 SWITCH_OUT 的站内形态;
+         * 返回值已在 x0 槽,帧手术先整帧存后改写)。站38:无 handler
+         * 的默认动作=终局——投递返 128+sig 即以退出码走 sys_exit
+         * 同链(fd 清+线程群扫+进程退+收尸唤醒),帧永不再 eret。 */
+        int term = rt_sig_deliver(frame);
+
+        if (term) {
+            frame[2] = (u64)(long)term;  /* x0 槽=退出码(sys_exit
+                                          * 读 FR(0);帧不再 eret) */
+            sys_exit(frame);
+            __builtin_unreachable();
+        }
+    }
 }
 
 /* EL0 非 SVC 异常的 v0 诚实终态面(29+ per-process 缺页接管后退役):

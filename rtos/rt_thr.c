@@ -63,6 +63,8 @@ long sys_clone_impl(u64 *frame, u32 flags, u64 stack, u64 ptid,
     ct->ttbr = rt_proc_ttbr(p);
     ct->tpidr_el0 = (flags & RT_CLONE_SETTLS) ? tls : 0;
     ct->ctid = (flags & RT_CLONE_CHILD_CLEARTID) ? ctid : 0;
+    ct->sig_pending = 0;             /* 站38:任务级信号面,新槽必清 */
+    ct->sig_val = 0;
     tid = ++thr_tid_ctr + 0x100;
     ct->tid = tid;
     return (long)tid;

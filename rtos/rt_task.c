@@ -109,6 +109,10 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
     t->wq_next = NULL;            /* 站十七:同步队列链,复用槽必清 */
     t->wake_tick = 0;
     t->slice_left = RT_SLICE;
+    t->sig_pending = 0;             /* 站38:任务级信号面,复用槽必清
+                                      * (站16 帧复用教训同律:新域
+                                      * 入槽清单) */
+    t->sig_val = 0;
     t->cpu = (cpu < RT_NCPU) ? cpu : rt_cpu_id();
                                    /* 站二十:建核即亲和(不迁移,YAGNI);
                                     * smpdemo/ipidemo/fpsmp 显式指定对核 */
@@ -222,6 +226,12 @@ void rt_block_rx(void)
     rt_sched();
 }
 
+/* 站38 定谳:entry!=NULL 是站16 帧自铸时代的活判据,站29 起的
+ * fork/clone 子恒 entry==NULL(帧改写形)——四条走查(唤醒全/睡醒/
+ * 超时到账/栈哨兵)一直把它们排除在外。首个自然睡的 fork 子
+ * (sigqdemo)睡死定谳。活判据=状态面(站35 RT_FREE 同族)。 */
+#define TASK_LIVE(t) ((t)->state != RT_FREE && (t)->state != RT_DEAD)
+
 void rt_task_wake_all(u32 mask)
 {
     unsigned int i;
@@ -229,7 +239,7 @@ void rt_task_wake_all(u32 mask)
     for (i = 0; i < RT_POOL_MAX; i++) {
         rt_task_t *t = &pool[i];
 
-        if (t->entry && t->state == RT_BLOCK && (t->wait_mask & mask)) {
+        if (TASK_LIVE(t) && t->state == RT_BLOCK && (t->wait_mask & mask)) {
             t->wait_mask = 0;
             rt_ready_push(t);
         }
@@ -243,7 +253,7 @@ void rt_task_wake_sleepers(void)
     for (i = 0; i < RT_POOL_MAX; i++) {
         rt_task_t *t = &pool[i];
 
-        if (t->entry && t->state == RT_SLEEP &&
+        if (TASK_LIVE(t) && t->state == RT_SLEEP &&
             ((long long)rt_ticks - (long long)t->wake_tick) >= 0)
             rt_ready_push(t);
         /* 站21A:超时挂等到账。哨兵门 pend_deadline!=0——wait_mask
@@ -251,7 +261,7 @@ void rt_task_wake_sleepers(void)
          * (评审核:假醒热自旋/rdy 双份入队);有符号惯用法同上
          * (u64 直减下溢=永不超时)。摘链+owner PI 重算同在
          * rt_timeout_unpend(ISR 语境自带互斥,demo 全核 0 亲和)。 */
-        if (t->entry && t->state == RT_BLOCK && t->pend_deadline &&
+        if (TASK_LIVE(t) && t->state == RT_BLOCK && t->pend_deadline &&
             (long long)rt_ticks - (long long)t->pend_deadline >= 0) {
             rt_timeout_unpend(t);
             t->pend_deadline = 0;
@@ -261,7 +271,7 @@ void rt_task_wake_sleepers(void)
         /* 站21C:栈哨兵——只查已创建槽(评审核 blocker:未创建槽
          * magic 是 bss 垃圾,首 tick 必假 panic)。坏即 panic 指名
          * (扫描面:无寄存器行,ESR 此刻是残值)。 */
-        if (t->entry &&
+        if (TASK_LIVE(t) &&
             *(volatile u64 *)&task_stacks[i][STK_MAGIC_OFF] != RT_STACK_MAGIC)
             rt_panic("stack overflow", i);
     }

@@ -91,11 +91,12 @@ static void cmd_help(void)
     console_puts("  run /bin/pt         -> pthread 4 线程 join(clone/TLS/CLEARTID)[89]\n");
     console_puts("  shmdemo/msgseg      -> 共享段+固定窗+fork 共享/单拷窗 [90-91]\n");
     console_puts("  mqdemo/pipedemo/longdemo -> mqueue 优先级/管道 EOF/长消息镜像 [92-94]\n");
-    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [95]\n");
-    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [96]\n");
-    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [97]\n");
-    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [98]\n");
-    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[99]\n");
+    console_puts("  sigqdemo            -> sigqueue 携值/restorer/默认终止 [95]\n");
+    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [96]\n");
+    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [97]\n");
+    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [98]\n");
+    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [99]\n");
+    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[100]\n");
 }
 
 static void cmd_version(void)

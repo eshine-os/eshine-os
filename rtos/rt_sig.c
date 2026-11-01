@@ -152,67 +152,141 @@ long rt_futex(struct rt_proc *p, u64 uaddr, u32 op, u32 val, u64 ticks)
 
 /* ---- signal 面 ---- */
 
-int rt_sig_action(struct rt_proc *p, u32 sig, u64 handler)
+int rt_sig_action(struct rt_proc *p, u32 sig, u64 handler, u64 restorer)
 {
     if (!p || sig == 0 || sig >= RT_SIG_MAX)
         return -22;
     p->sig_hand[sig] = handler;
+    p->sig_rest[sig] = restorer;      /* 站38:SA_RESTORER 面(0=显式
+                                       * rt_sigreturn 旧契约,两立) */
     return 0;
+}
+
+static void sig_wake_task(rt_task_t *t)
+{
+    u64 d;
+
+    if (!t || t->state != RT_BLOCK)
+        return;
+    d = rt_daif_save();
+    if (t->pend_qh) {               /* pend 型:摘链+置打断位 */
+        rt_timeout_unpend(t);
+        t->pend_deadline = 0;
+        t->sig_intr = 1;
+        rt_ready_push(t);
+    } else if (t->wait_mask) {      /* wait_mask 型(壳 RX 面) */
+        t->wait_mask = 0;
+        rt_ready_push(t);
+    }
+    /* SLEEP 型不搅:醒后 syscall 出口投递;非 futex 的 pend 型
+     * (sem/msg 等待者)由其 take 环吸收重挂,投递延至自然醒
+     * (spec §4 边界)。 */
+    rt_daif_load(d);
+    if (t->prio < rt_cur->prio)
+        rt_sched();
 }
 
 int rt_sig_kill(int pid, u32 sig)
 {
     struct rt_proc *p = rt_proc_lookup(pid);
-    rt_task_t *t;
-    u64 d;
 
     if (sig == 0 || sig >= RT_SIG_MAX)
         return -22;
     if (!p)
         return -3;                      /* -ESRCH:死者不收信号 */
     p->sig_pending |= 1u << sig;
-    t = p->leader;
-    if (t && t->state == RT_BLOCK) {
-        d = rt_daif_save();
-        if (t->pend_qh) {               /* pend 型:摘链+置打断位 */
-            rt_timeout_unpend(t);
-            t->pend_deadline = 0;
-            t->sig_intr = 1;
-            rt_ready_push(t);
-        } else if (t->wait_mask) {      /* wait_mask 型(壳 RX 面) */
-            t->wait_mask = 0;
-            rt_ready_push(t);
-        }
-        /* SLEEP 型不搅:醒后 syscall 出口投递;非 futex 的 pend 型
-         * (sem/msg 等待者)由其 take 环吸收重挂,投递延至自然醒
-         * (spec §4 边界)。 */
-        rt_daif_load(d);
-        if (t->prio < rt_cur->prio)
-            rt_sched();
-    }
+    p->sig_val[sig] = 0;                /* 站38:kill 面=零值 */
+    sig_wake_task(p->leader);
     return 0;
+}
+
+/* 站38:kill+值+tid 定向(真号 138)。先按 tid 解析(任务级
+ * 待决位图),不中再按 pid(进程面,leader 收)。返回 0/-ESRCH。 */
+long rt_sig_queueinfo(long pid_or_tid, u32 sig, u64 value)
+{
+    struct rt_proc *p;
+    rt_task_t *t;
+    unsigned int idx;
+
+    if (sig == 0 || sig >= RT_SIG_MAX)
+        return -22;
+    for (t = rt_ps_first(&idx); t; t = rt_ps_next(&idx))
+        if (t->tid && t->tid == (u64)pid_or_tid) {
+            t->sig_pending |= 1u << sig;
+            t->sig_val = value;
+            sig_wake_task(t);
+            return 0;
+        }
+    p = rt_proc_lookup((int)pid_or_tid);
+    if (!p)
+        return -3;
+    p->sig_pending |= 1u << sig;
+    p->sig_val[sig] = value;
+    sig_wake_task(p->leader);
+    return 0;
+}
+
+/* 站38:sigtimedwait v0 轮询面(阻塞全弧=后弧):当前任务的
+ * 任务级/进程级待决命中即耗并返号;未决=-(11) EAGAIN
+ * (ticks v0 不消费:POSIX 语义=0 立返,阻塞后弧记档)。 */
+long rt_sig_timedwait(u32 sig, u64 ticks)
+{
+    struct rt_proc *p = rt_cur->proc;
+
+    (void)ticks;
+    if (sig == 0 || sig >= RT_SIG_MAX)
+        return -22;
+    if (!p)
+        return -22;
+    if (rt_cur->sig_pending & (1u << sig)) {
+        rt_cur->sig_pending &= ~(1u << sig);
+        rt_cur->sig_val = 0;
+        return (long)sig;
+    }
+    if ((p->sig_pending & ~p->sig_blocked) & (1u << sig)) {
+        p->sig_pending &= ~(1u << sig);
+        p->sig_val[sig] = 0;
+        return (long)sig;
+    }
+    return -11;
 }
 
 /* 投递(syscall 出口,dispatch 尾调):最低位号一次一个,余者
  * 挂起留下轮(每出口清一笔,不丢)。帧手术:整帧存 sig_saved+
  * elr=handler/x0=sig;SP_EL0 不动(handler 与被打断者共用户栈);
  * x1-x30 未定义(裸 ABI 面,musl 到位后走 siginfo/restorer 契约)。 */
-void rt_sig_deliver(u64 *frame)
+int rt_sig_deliver(u64 *frame)
 {
     struct rt_proc *p = rt_cur->proc;
     u32 pend, sig;
+    u64 val, rest;
+    int taskface = 0;
 
     if (!p || p->sig_active)
-        return;                         /* 在役:挂起(不丢) */
+        return 0;                       /* 在役:挂起(不丢) */
     pend = p->sig_pending & ~p->sig_blocked;
+    /* 站38:任务级待决先于进程面(tgkill 定向优先) */
+    if (rt_cur->sig_pending & ~p->sig_blocked) {
+        pend = rt_cur->sig_pending & ~p->sig_blocked;
+        taskface = 1;
+    }
     if (!pend)
-        return;
+        return 0;
     sig = 1;
     while (sig < RT_SIG_MAX && !(pend & (1u << sig)))
         sig++;
-    p->sig_pending &= ~(1u << sig);
+    if (taskface) {
+        rt_cur->sig_pending &= ~(1u << sig);
+        val = rt_cur->sig_val;
+    } else {
+        p->sig_pending &= ~(1u << sig);
+        val = p->sig_val[sig];
+    }
     if (!p->sig_hand[sig])
-        return;                         /* 默认动作=忽略(v0,记档) */
+        return (int)(128 + sig);        /* 站38:默认动作=终局
+                                         * (POSIX 面;返退出码由
+                                         * dispatcher 走 exit 链;
+                                         * SIGCHLD 类忽略面=后弧) */
     {
         u32 i;
 
@@ -226,7 +300,15 @@ void rt_sig_deliver(u64 *frame)
     p->sig_saved_usp = rt_cur->usp;
     frame[0] = p->sig_hand[sig];        /* elr=handler */
     frame[2] = sig;                     /* x0 槽@16=sig 号 */
+    frame[4] = val;                    /* 站38:x1 槽@32=sigval */
+    rest = p->sig_rest[sig];
+    if (rest)
+        frame[33] = rest;              /* 站38:x30 槽@264=SA_RESTORER:
+                                        * handler ret 落点(其内自调
+                                        * rt_sigreturn;0=旧契约=handler
+                                        * 末尾显式 rt_sigreturn,两立) */
     p->sig_active = 1;
+    return 0;
 }
 
 /* sigreturn:整帧回拷;分发器 FR(0) 返回值回写在调用后——
@@ -254,8 +336,12 @@ void rt_sig_fork(struct rt_proc *pp, struct rt_proc *cp)
 {
     u32 i;
 
-    for (i = 0; i < RT_SIG_MAX; i++)
+    for (i = 0; i < RT_SIG_MAX; i++) {
         cp->sig_hand[i] = pp->sig_hand[i];
+        cp->sig_rest[i] = pp->sig_rest[i];  /* 站38:restorer 随
+                                             * handler 面(fork 继承
+                                             * =action 全组,Linux 律) */
+    }
     cp->sig_blocked = pp->sig_blocked;
     cp->sig_pending = 0;
     cp->sig_active = 0;

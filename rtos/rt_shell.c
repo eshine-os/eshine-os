@@ -555,6 +555,54 @@ static void cmd_msgsegdemo(void)
     sys1(ES_NR_ch_destroy, chid);
 }
 
+/* ---- 站38:signal 完整面客户端——sigqueue 携值+SA_RESTORER
+ * 回栈+默认动作终止(POSIX 面)。 */
+static void sigq_restorer(void)
+{
+    sys0(ES_NR_rt_sigreturn);       /* restorer 契约:handler ret
+                                     * 落此(投递改写 x30),自调
+                                     * sigreturn;旧契约(handler 末尾
+                                     * 显式调)两立。 */
+}
+
+static void sigq_handler(long sig, long val)
+{
+    sys_puts("sigq: handler sig=");
+    sys_put_dec((u64)sig);
+    sys_puts(" val=");
+    sys_put_dec((u64)val);
+    sys_puts("\n");
+}
+
+static void cmd_sigqdemo(void)
+{
+    long pid, r, st = 0;
+
+    sys4(ES_NR_rt_sigaction, 10, (long)sigq_handler,
+         (long)sigq_restorer, 0);
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {   /* 子:睡中收信(handler+值)
+                                         * ->restorer->sigreturn->续跑;
+                                         * 再睡中收无 handler 的 12
+                                         * ->默认终止 128+12=140 */
+        sys3(ES_NR_demo, RT_U_SLEEP, 2, 0);
+        sys_puts("sigq: resumed\n");
+        sys3(ES_NR_demo, RT_U_SLEEP, 2, 0);
+        sys1(ES_NR_exit, 99);           /* 到不了(默认动作先终局) */
+    }
+    sys3(ES_NR_demo, RT_U_SLEEP, 1, 0);  /* 让子先进睡窗 */
+    r = sys3(ES_NR_rt_sigqueueinfo, pid, 10, 0xBEEF);
+    sys_puts(r == 0 ? "sigq: queued val=48879\n" : "sigq: queue FAIL\n");
+    sys3(ES_NR_demo, RT_U_SLEEP, 2, 0);
+    r = sys2(ES_NR_kill, pid, 12);       /* 无 handler=默认终止脸 */
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts(st == 140 ? "sigq: default terminate 140 ok\n"
+                       : "sigq: terminate FAIL\n");
+    r = sys2(ES_NR_rt_sigtimedwait, 10, 0);  /* 空轮询脸(v0 阻塞后弧) */
+    sys_puts(r == -11 ? "sigq: empty poll -11 ok\n"
+                      : "sigq: poll FAIL\n");
+}
+
 /* ---- 站37:posix_queue 弧客户端——mqueue 优先级/pipe 字节流
  * /长消息+MsgRead 镜像。 */
 static void cmd_mqdemo(void)
@@ -964,6 +1012,8 @@ static void shell_line(char *line)
         cmd_pipedemo();
     } else if (streq(line, "longdemo")) {
         cmd_longdemo();
+    } else if (streq(line, "sigqdemo")) {
+        cmd_sigqdemo();
     } else if (starts(line, "spawn ")) {
         sys3(ES_NR_demo, RT_U_SPAWN, (long)(line + 6), 0);
     } else if (starts(line, "sleep")) {
@@ -990,7 +1040,7 @@ static void shell_line(char *line)
     } else if (line[0]) {
         sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
                  " | forkdemo | mmapdemo | exedemo | ipcdemo | pulsedemo | abortdemo | fddemo"
-                 " | futexdemo | sigdemo | shmdemo | msgseg | mqdemo | pipedemo | longdemo | run <p>"
+                 " | futexdemo | sigdemo | sigqdemo | shmdemo | msgseg | mqdemo | pipedemo | longdemo | run <p>"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");

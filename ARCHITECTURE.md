@@ -326,7 +326,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（99 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（100 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -468,7 +468,14 @@ WRITE 漏带 ocb 的潜雷被本站定谳——tty/ramfs 不读 ocb 故
 无感，按端分发的 pipe 即爆）/长消息 1024B（len>64 自动走
 长槽池，归还三口=所有 used=0 位）+MsgRead 镜像（接收者
 收后按偏移两段再读所持=延迟访问）** →
-**站34 yocto 门（[99]——meta-eshine 层入仓：git archive 提交树
+**站38 信号完整门（[95]——rt_sigaction 4 参全脸(SA_RESTORER:
+投递改写 x30=restorer,handler ret 落其内自调 rt_sigreturn,与旧
+显式契约两立)+rt_sigqueueinfo(138,pid/tid 双定向:tid 先解析=
+任务级待决位图先于进程面,x1=sigval)+默认动作=终局(无 handler
+信号以 128+sig 走 exit 链,POSIX 面)+sigtimedwait(137)轮询面。
+附带定谳:唤醒走查 t->entry 谓词=站 29 帧改写子盲区(首个自然
+睡 fork 子睡死实抓),四走查活判据改状态面(TASK_LIVE)** →
+**站34 yocto 门（[100]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
 部署四件（eshine.elf/rtos.bin/guest2.bin/ramfs.cpio）；判据=
@@ -477,7 +484,7 @@ WRITE 漏带 ocb 的潜雷被本站定谳——tty/ramfs 不读 ocb 故
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-99 步手动走查清单。
+100 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

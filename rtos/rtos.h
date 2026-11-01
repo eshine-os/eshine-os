@@ -106,6 +106,9 @@ struct rt_task {
     u64 tpidr_el0;                /* @736 */
     u64 ctid;                     /* @744 */
     u64 tid;                      /* @752 */
+    u32 sig_pending;              /* 站38:任务级待决位图(tgkill 定向)@760 */
+    u32 _pad2;                    /* @764 */
+    u64 sig_val;                  /* 站38:定向信号载荷值@768 */
 };
 typedef struct rt_task rt_task_t;
 _Static_assert(__builtin_offsetof(rt_task_t, usp) == 672, "RT_TASK_USP=672");
@@ -115,6 +118,10 @@ _Static_assert(__builtin_offsetof(rt_task_t, ttbr) == 696, "RT_TASK_TTBR=696");
 _Static_assert(__builtin_offsetof(rt_task_t, tpidr_el0) == 736, "RT_TASK_TPIDR=736");
 _Static_assert(__builtin_offsetof(rt_task_t, ctid) == 744, "RT_TASK_CTID=744");
 _Static_assert(__builtin_offsetof(rt_task_t, tid) == 752, "RT_TASK_TID=752");
+_Static_assert(__builtin_offsetof(rt_task_t, sig_pending) == 760,
+               "RT_TASK_SIGPEND=760");
+_Static_assert(__builtin_offsetof(rt_task_t, sig_val) == 768,
+               "RT_TASK_SIGVAL=768");
 
 
 /* asm 契约断言:vec.S 的 .equ RT_TASK_Q/FPCR/FPSR 必须与此一致
@@ -289,6 +296,8 @@ struct rt_fdreq {
 #define ES_NR_exit_group    94
 #define ES_NR_set_tid_address 96
 #define ES_NR_rt_sigprocmask 135
+#define ES_NR_rt_sigtimedwait 137  /* 站38:v0 轮询面(阻塞全弧后弧) */
+#define ES_NR_rt_sigqueueinfo 138  /* 站38:kill+值+tid 定向 */
 #define ES_NR_gettid         178   /* 站35:每任务线程号 */
 #define ES_NR_clone          220   /* 站35:真 __NR_clone(musl pthread) */
 
@@ -356,7 +365,9 @@ struct rt_proc {
     struct rt_fd fds[RT_FD_MAX];  /* 站31:fdtable(=通道三元组) */
     /* 站三十二:signal 面(v0 位图态,每进程单任务;参考实现每任务
      * pending 的站内尺度)。sig_hand[0] 不用(号 0 非法)。 */
-    u64 sig_hand[RT_SIG_MAX];   /* handler 用户地址(0=默认=忽略) */
+    u64 sig_hand[RT_SIG_MAX];   /* handler 用户地址(0=默认=终止,站38) */
+    u64 sig_rest[RT_SIG_MAX];   /* 站38:SA_RESTORER 面(handler ret 落点) */
+    u64 sig_val[RT_SIG_MAX];   /* 站38:kill 携值(x1=sigval,per-sig 单值) */
     u32 sig_pending;
     u32 sig_blocked;
     u32 sig_active;             /* handler 在役:嵌套投递拒,留下轮 */
@@ -499,9 +510,12 @@ void rt_srv_boot(rt_task_t *shell);   /* 固定序列 spawn(boot 链面) */
  * 恢复。跨进程信号打断 futex 等待=两原语互为判据(spec §0)。 */
 long rt_futex(struct rt_proc *p, u64 uaddr, u32 op, u32 val, u64 ticks);
 long rt_futex_wake_key(struct rt_proc *p, u64 va, u32 n);
-int  rt_sig_action(struct rt_proc *p, u32 sig, u64 handler);
+int  rt_sig_action(struct rt_proc *p, u32 sig, u64 handler, u64 restorer);
 int  rt_sig_kill(int pid, u32 sig);
-void rt_sig_deliver(u64 *frame);       /* syscall 出口(disp 尾) */
+long rt_sig_queueinfo(long pid_or_tid, u32 sig, u64 value);  /* 站38 */
+long rt_sig_timedwait(u32 sig, u64 ticks);   /* 站38:v0 轮询面 */
+int  rt_sig_deliver(u64 *frame);       /* syscall 出口(disp 尾);
+                                         * 返 1=默认动作终局(dispatcher 走 exit) */
 long rt_sig_return(u64 *frame);        /* sig_saved 回拷+x0 同值回写 */
 void rt_sig_fork(struct rt_proc *pp, struct rt_proc *cp);
 struct rt_proc *rt_proc_lookup(int pid);  /* 活进程查(死=ESRCH 面) */
