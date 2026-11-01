@@ -47,3 +47,12 @@ ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
     -o tools/ramfs/bin/hello tools/ramfs-hello.c -lc
 aarch64-linux-gnu-readelf -lW tools/ramfs/bin/hello | head -12
 echo "== 产物: tools/ramfs/bin/hello =="
+
+echo "== 链接 pt(站35 pthread demo,同窗口脚本)=="
+${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
+    -isystem "$WORK/inst/include" \
+    -specs "$WORK/inst/lib/musl-gcc.specs" \
+    -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments \
+    -o tools/ramfs/bin/pt tools/ramfs-pt.c -lpthread -lc
+echo "== 产物: tools/ramfs/bin/pt =="
+aarch64-linux-gnu-readelf -lW tools/ramfs/bin/pt | grep -c LOAD

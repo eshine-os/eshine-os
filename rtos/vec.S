@@ -106,6 +106,11 @@ guest_park:
     ldr     x2, [x1, x9, lsl #3]   /* x2 = 旧任务(本核 cur) */
     mov     x3, sp
     str     x3, [x2]               /* 旧->sp = 帧顶(sp 偏移 0 契约) */
+    /* 站35:TPIDR_EL0 随任务走(用户 TLS 契约,musl 主线程自写、
+     * pthread 线程=clone SETTLS 初值;EL1 可读写 EL0 寄存器)。
+     * 存还配对同帧手术纪律:@736 亦在 272B 帧外,不清点即失明。 */
+    mrs     x3, tpidr_el0
+    str     x3, [x2, #736]
     ldr     x1, =rt_fp_owner_arr
     ldr     x10, [x1, x9, lsl #3]  /* x10 = 本核 fp_owner(每核各持
                                       * 各的 FP 硬件,站二十) */
@@ -127,6 +132,8 @@ guest_park:
     str     x0, [x1, x9, lsl #3]   /* rt_cur = 新(本核槽) */
     ldr     x3, [x0]
     mov     sp, x3                 /* sp = 新帧顶 */
+    ldr     x3, [x0, #736]
+    msr     tpidr_el0, x3
     /* 站29:地址空间切换点(参考实现 switch_mm 的调度器内联形)。任务
      * ttbr(asid<<48|L0;@696 契约)每切换必装:ASID 标签保 TLB 存活,
      * 免逐切换冲刷;0=内核 PGD(EL0 永不上内核表——.user/mmap 槽
@@ -292,6 +299,13 @@ guest_sync:
 .endm
 
 .macro RT_EL0_RET
+    /* 站35 定谳续:本尾巴自 SVC 开中断语境(vec.S 站28 daifclr)
+     * 抵达,弹栈机(elr/spsr 装库+级联+usp)全程裸奔——tick 落
+     * 窗即嵌合帧(同 rt_switch_to 定谳,panic 三数 esr=0x96000006
+     * elr=尾巴PC far=0x2a0 与无声楔两脸同根)。掩码与 eret 不冲:
+     * eret 携帧 psr(用户 EL0t 开中断态)自动回开,fault 路本即
+     * 硬件掩,重复掩为幂等 no-op。 */
+    msr     daifset, #0xf
     ldp     x0, x1, [sp], #16      /* elr/psr(硬件现值覆写回帧语义) */
     msr     elr_el1, x0
     msr     spsr_el1, x1
@@ -372,11 +386,26 @@ rt_frame_init_el0:                 /* x0=task x1=kstack_top x2=ustack_top
  * DAIF。x0(新任务指针)被 RT_PUSH_GPRS 存进 x0 槽,从 [sp+16] 回捞。 */
 .global rt_switch_to
 rt_switch_to:
+    /* 站35 定谳(三数咬合):本函数经 rt_sched/rt_task_exit 在 SVC
+     * 开中断语境(vec.S:342 站28 契约)被调——psr 伪造+簿记+弹栈
+     * (.Lpop)全程裸奔。tick 落窗 = 嵌套 IRQ 存嵌合帧(.Lpop 顶
+     * msr spsr_el1 已装新任务 EL0 态):不切换路径 eret 把执行流
+     * 以 EL0 送回尾巴 PC(x0=刚弹出的新任务 x0;clone 子 x0=0)→
+     * ldr [x0,#672]@EL0 → far=0x2a0 panic 脸;切换路径帧半消费
+     * (sp=弹栈中途位)→ 弹垃圾→eret 野址→RUN 标记永失 = 无声
+     * 楔(pt36 尸检帧像定谳)。站28 前 7 站无雷只因无同优先级 RR
+     * 竞争者令 tick 真切走 mid-tail 任务——pt 4 线程首个命中。
+     * 帧恢复机器必须不可重入(IRQ 尾巴本即硬件掩)。push 段可被
+     * 抢占无害(帧完整+psr=EL1h 非嵌合,续跑即续推);掩码落在
+     * push 之后、psr 伪造之前——x1 捕获在 push 后取帧槽无损。
+     * 站28 契约不破:泊位 pstate 由 C 侧显式写帧,与此掩无涉;
+     * .Lcoop_ret 续跑 eret 携 psr(掩前捕获)自动回开中断态。 */
     RT_PUSH_GPRS
     mrs     x1, daif
     and     x1, x1, #0x3c0          /* 保 DAIF 位 */
     mov     x3, #5
     orr     x1, x1, x3              /* M=0101 EL1h */
+    msr     daifset, #0xf           /* 簿记+.Lpop 原子窗(见上定谳) */
     adr     x2, .Lcoop_ret
     stp     x2, x1, [sp, #-16]!     /* 帧顶 = 本任务续跑帧(elr 自描述) */
     ldr     x0, [sp, #16]           /* 回捞入参:新任务指针 */

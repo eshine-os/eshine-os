@@ -11,6 +11,16 @@ volatile u64 rt_ticks;
 
 static rt_task_t pool[RT_POOL_MAX];
 
+/* 站35:素槽显式化——bss 零态与 RT_READY 同貌,槽判升维后须
+ * 开机一遍清池置 RT_FREE(rt_syscall_init 首调,先于一切建池)。 */
+void rt_task_pool_init(void)
+{
+    unsigned int i;
+
+    for (i = 0; i < RT_POOL_MAX; i++)
+        pool[i].state = RT_FREE;
+}
+
 /* 站28:tp[] 完整性守卫要判合法池域,池基出口
  * (只读访问,写仍限本文件) */
 rt_task_t *rt_pool_base(void)
@@ -41,7 +51,12 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
     rt_task_t *t = NULL;
 
     for (i = 0; i < RT_POOL_MAX; i++) {
-        if (pool[i].entry == NULL || pool[i].state == RT_DEAD) {
+        /* 站35:槽复用判=FREE/DEAD 态判。旧判 entry==NULL 把活的
+         * fork/clone 子(帧改写形状 entry 恒空)当空槽整 struct
+         * 复用——pt leader 被后到 clone 覆写,无声蒸发(gdb 池像
+         * 定谳:"thr"落 leader 槽 tid=0x101)。素槽由开机清池显式
+         * 置 RT_FREE(bss 零态与 RT_READY 同貌,不可再当判据)。 */
+        if (pool[i].state == RT_FREE || pool[i].state == RT_DEAD) {
             t = &pool[i];
             slot = i;              /* 栈下标=池槽位,与名字长度无关
                                      * (站 16 潜伏 bug:名字循环曾复用
@@ -56,9 +71,11 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
     }
     if (!t)
         return NULL;                /* 池满:调用方自报(门禁不触发) */
+    for (i = 0; i < sizeof(t->name); i++)
+        t->name[i] = 0;               /* 站35:整域清零(旧值残留致
+                                        * ps 出 "thr\0d" 类嵌合名) */
     for (i = 0; i < sizeof(t->name) - 1 && name[i]; i++)
         t->name[i] = name[i];
-    t->name[i] = '\0';
     /* 站21C:哨兵+水位先行,entry 发布殿后(同函数序贯=同核扫描
      * (ISR I=1)见 entry 即见完好 magic——半开槽不可见);水位
      * 填充先于 frame_init(frame_init 会写顶部帧,恰是首个非 0xA5) */

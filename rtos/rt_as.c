@@ -36,7 +36,11 @@
 #define AS_MMAP_END      0x40E00000UL
 
 #define AS_L2_SLOTS      16UL
-#define RT_AS_VMA_MAX       6UL
+/* RT_AS_VMA_MAX:站 35 起唯一定义驻 rtos.h(32=musl pthread 栈
+ * mmap+TLS 图量)。本文件的本地 6UL 从站 29 挂到站 34=存量
+ * 编译警告的真身:静默压住 rtos.h 的扩容,pt 第 4 线程栈
+ * mmap 在继承 2+loader 2+stdio 1+线 1=6 槽满后即败
+ * (mmap-fail+EAGAIN 同脸,内核探针自证定谳)。*/
 
 /* 描述符(站 28 mm0 同款编码;页级描述符低两位 0b11) */
 #define AS_ATTRIDX_NORM 0UL
@@ -312,6 +316,7 @@ void rt_proc_boot_shell(rt_task_t *shell)
             rt_panic("proc: shell map fail", 0);
     shell->proc = p;
     shell->ttbr = rt_proc_ttbr(p);
+    shell->tid = (u64)p->pid;         /* 站35:leader tid=pid */
 }
 
 /* fork 的 AS 侧:eager 全拷——父块 1/6 已映页逐页拷入页池,子 VMA

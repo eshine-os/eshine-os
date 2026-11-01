@@ -117,9 +117,16 @@ static long sys_exit(u64 *frame)
     struct rt_proc *p = rt_cur->proc;
 
     if (p) {
+        if (p->leader != rt_cur) {
+            /* 站35:线程退场=纯任务死(proc/wait4 不动);CLEARTID
+             * 兑现(*ctid=0+futex 唤醒)=musl join/thread_list 锁面 */
+            rt_thr_exit();
+            __builtin_unreachable();
+        }
         /* 站31:逐 fd CLOSE(服务器 ocb 引用减+断连)——死亡关流;
          * rt_cur=死者本人,阻塞往返合法(仅此处调,ISR 无涉) */
         rt_fd_close_all(p);
+        rt_thr_group_kill(p);             /* 站35:线程群清扫(孤儿不悬空) */
         rt_proc_exit(p, (int)code);       /* 页池回收+L2 清+TLB 冲 */
         rt_task_wake_all(RT_PROC_BIT);    /* 父 wait4 的收尸唤醒 */
     }
@@ -221,6 +228,7 @@ static long sys_fork(u64 *frame)
     ct->usp = rt_cur->usp;
     ct->proc = cp;
     ct->ttbr = rt_proc_ttbr(cp);
+    ct->tid = (u64)cp->pid;           /* 站35:leader tid=pid */
     cp->leader = ct;
     return (long)cp->pid;
 }
@@ -405,13 +413,36 @@ static long sys_fdwrite(u64 *frame)
 static long sys_futex(u64 *frame)
 {
     u64 uaddr = FR(0);
-    u32 op = (u32)FR(1);
+    u32 op = (u32)FR(1) & ~RT_FUTEX_PRIVATE_FLAG;
+    u64 tmo = FR(3);
+    u64 ticks = RT_WAIT_FOREVER;
 
+    /* 站35 契约(musl 实测):op 恒带 PRIVATE(128)掩掉=同 proc
+     * 提示;WAIT 的 x3:NULL=无限等(旧"0=禁等探针"撞 musl join
+     * 假 EINVAL 速回),指针=timespec{sec,nsec} 相对时长折 ticks
+     * (sec*RT_HZ+nsec/(1e9/RT_HZ);折 0=立即到点 -ETIMEDOUT);
+     * WAIT_BITSET(9)是 CLOCK_REALTIME 绝对面——无墙钟,v0 相对
+     * 降格(spec §4 记档,demo 不依赖绝对语义)。WAKE 不读字免校。 */
     if (!rt_cur->proc)
         return -ES_EINVAL;
-    if (op == RT_FUTEX_WAIT && !access_ok((const void *)uaddr, 4))
-        return -ES_EFAULT;             /* WAKE 不读用户字,免校 */
-    return rt_futex(rt_cur->proc, uaddr, op, (u32)FR(2), FR(3));
+    if (op == RT_FUTEX_WAIT_BITSET)
+        op = RT_FUTEX_WAIT;
+    if (op == RT_FUTEX_WAIT) {
+        if (!access_ok((const void *)uaddr, 4))
+            return -ES_EFAULT;
+        if (tmo) {
+            u64 sec, nsec;
+
+            if (!access_ok((const void *)tmo, 16))
+                return -ES_EFAULT;
+            sec = *(const u64 *)tmo;
+            nsec = *(const u64 *)(tmo + 8);
+            ticks = sec * RT_HZ + nsec / (1000000000ULL / RT_HZ);
+            if (!ticks)
+                return -110;          /* 零时长=立即到点 */
+        }
+    }
+    return rt_futex(rt_cur->proc, uaddr, op, (u32)FR(2), ticks);
 }
 
 static long sys_kill(u64 *frame)
@@ -474,10 +505,10 @@ static long sys_ioctl(u64 *frame)
 
 static long sys_set_tid_address(u64 *frame)
 {
-    /* musl __init_tp 写线程号位;tid 清除地址 v0 存档不落
-     * (threads=站 33+ 弧),回 pid 即安其心。 */
-    (void)frame;
-    return (long)rt_pid_of(rt_cur);
+    /* 站35:每任务 tid+clear_tid 地址(Linux 同位:线程退出时
+     * 内核写 0+futex 唤醒;leader tid=pid 在 proc 建立时落)。 */
+    rt_cur->ctid = FR(0);
+    return (long)rt_cur->tid;
 }
 
 static long sys_rt_sigprocmask(u64 *frame)
@@ -527,6 +558,36 @@ static long sys_lseek(u64 *frame)
     return rt_fd_seek(rt_cur->proc, (int)FR(0), (u32)FR(1));
 }
 
+/* 站三十五:线程面(musl pthread 的克隆契约,体在 rt_thr.c)。 */
+static long sys_clone(u64 *frame)
+{
+    u32 flags = (u32)FR(0);
+    u64 stack = FR(1), ptid = FR(2), tls = FR(3), ctid = FR(4);
+    long tid;
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if ((flags & RT_CLONE_PARENT_SETTID) && ptid &&
+        !access_ok((void *)ptid, 8))
+        return -ES_EFAULT;             /* 父语境写,先校 */
+    if ((flags & RT_CLONE_CHILD_CLEARTID) && ctid &&
+        !access_ok((void *)ctid, 8))
+        return -ES_EFAULT;             /* 线程退出时本人语境写 */
+    if ((flags & RT_CLONE_SETTLS) && tls &&
+        tls < 0x40200000UL)
+        return -ES_EINVAL;             /* tp 须落用户窗(粗判) */
+    tid = sys_clone_impl(frame, flags, stack, ptid, tls, ctid);
+    if (tid >= 0 && (flags & RT_CLONE_PARENT_SETTID) && ptid)
+        *(u64 *)ptid = (u64)tid;
+    return tid;
+}
+
+static long sys_gettid(u64 *frame)
+{
+    (void)frame;
+    return (long)rt_cur->tid;         /* 站35:leader=pid,线程=发号 */
+}
+
 static long sys_hvc(u64 *frame)
 {
     long fn = (long)FR(0);          /* 首参 x0(壳 sys1 映射) */
@@ -570,7 +631,7 @@ static void k_ps(void)
     rt_task_t *t = rt_ps_first(&idx);
     rt_puts("ps: task table (prio 0 high)\n");
     while (t) {
-        if (t->entry && t->state != RT_DEAD) {
+        if (t->state != RT_FREE && t->state != RT_DEAD) {
             rt_puts("  ");
             rt_puts(t->name);
             rt_puts(" prio ");
@@ -595,7 +656,8 @@ static void k_stackcheck(void)
     rt_task_t *t = rt_ps_first(&idx);
 
     while (t) {
-        if (t->entry && t->state != RT_DEAD && idx < RT_POOL_MAX) {
+        if (t->state != RT_FREE && t->state != RT_DEAD &&
+            idx < RT_POOL_MAX) {
             rt_puts("stk: ");
             rt_puts(t->name);
             rt_puts_u64(" margin ", rt_cur_stack_margin(idx), "\n");
@@ -723,6 +785,7 @@ static rt_sysfn_t table[ES_NR_MAX];
 
 void rt_syscall_init(void)
 {
+    rt_task_pool_init();              /* 站35:素槽 RT_FREE 清池 */
     for (u32 i = 0; i < ES_NR_MAX; i++)
         table[i] = sys_ni;
     table[ES_NR_read]    = sys_read;
@@ -766,6 +829,9 @@ void rt_syscall_init(void)
     table[ES_NR_set_tid_address] = sys_set_tid_address;
     table[ES_NR_rt_sigprocmask]  = sys_rt_sigprocmask;
     table[ES_NR_lseek]           = sys_lseek;
+    /* 站35:线程面(真 Linux 号,musl pthread 直连) */
+    table[ES_NR_gettid]          = sys_gettid;
+    table[ES_NR_clone]           = sys_clone;
 }
 
 void rt_syscall_dispatch(u64 *frame)

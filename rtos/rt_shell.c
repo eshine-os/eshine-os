@@ -352,6 +352,7 @@ static void cmd_abortdemo(void)
 /* ---- 站32:signal+futex 客户端 ---- */
 
 static u32 fx_word = 1;     /* futex 键字(.user 数据,fork 时随页拷) */
+static struct { long sec, nsec; } fx_ts;   /* 站35 契约:timespec 面 */
 
 static void cmd_futexdemo(void)
 {
@@ -359,7 +360,8 @@ static void cmd_futexdemo(void)
     long r;
     u64 t0, t1;
 
-    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAIT, 2, 10);
+    /* 站35:mismatch 面(NULL=无限等,值错入口即 -EAGAIN 不涉窗) */
+    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAIT, 2, 0);
     sys_puts(r == -11 ? "futexdemo: mismatch -> -EAGAIN ok\n"
                       : "futexdemo: mismatch FAIL\n");
     r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAKE, 1, 0);
@@ -370,7 +372,7 @@ static void cmd_futexdemo(void)
     sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
     t0 = si.tick;
     sys3(ES_NR_demo, RT_U_FUPOKE, (long)&fx_word, 30);
-    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAIT, 1, 200);
+    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAIT, 1, 0); /* NULL=无限 */
     sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
     t1 = si.tick;
     if (r == 0) {
@@ -380,10 +382,12 @@ static void cmd_futexdemo(void)
     } else {
         sys_puts("futexdemo: poke pair FAIL\n");
     }
-    /* 超时真阻塞:无人唤醒,60 拍到点 */
+    /* 超时真阻塞:无人唤醒,600ms(timespec)到点=60 拍 */
+    fx_ts.sec = 0;
+    fx_ts.nsec = 600000000L;
     sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
     t0 = si.tick;
-    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAIT, 1, 60);
+    r = sys4(ES_NR_futex, (long)&fx_word, RT_FUTEX_WAIT, 1, (long)&fx_ts);
     sys2(ES_NR_sysinfo, (long)&si, (long)sizeof(si));
     t1 = si.tick;
     if (r == -110) {
@@ -409,8 +413,14 @@ static void cmd_sigdemo(void)
 {
     long pid, r, st = 0;
     static u32 sig_word;
+    /* 站35 契约垫背:x3=timespec 指针(旧 400=ticks 字面在新契约下
+     * 被当指针解,access_ok 拒->-EFAULT,-EINTR 脸必破)。10s/1s
+     * 父 kill 十倍余;fork 前置值,子承 .user 页拷同 VA。 */
+    static struct { long sec, nsec; } sig_ts;
 
     sys2(ES_NR_rt_sigaction, 10, (long)sig_handler);
+    sig_ts.sec = 10;
+    sig_ts.nsec = 0;
     pid = sys0(ES_NR_fork);
     if (pid == (long)RT_FORK_MAGIC) {   /* COPY_UCONTEXT 子支(站 29
                                          * 契约:子返魔数非 0——首版
@@ -418,7 +428,7 @@ static void cmd_sigdemo(void)
                                          * 魔数当 pid 永挂,冒烟定谳) */
         /* 子:handler 已继承(eager 拷贝同 VA,地址语义红利);
          * 挂 futex 静候父信号——跨进程打断=EINTR 判据面 */
-        r = sys4(ES_NR_futex, (long)&sig_word, RT_FUTEX_WAIT, 0, 400);
+        r = sys4(ES_NR_futex, (long)&sig_word, RT_FUTEX_WAIT, 0, (long)&sig_ts);
         /* 取证:数值面先于三元(r 似被搅,字面非本函数任一支) */
         if (r < 0) {
             sys_puts("sig: futex r=-");

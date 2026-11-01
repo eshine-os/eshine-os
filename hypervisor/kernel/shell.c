@@ -88,11 +88,12 @@ static void cmd_help(void)
     console_puts("  futexdemo           -> WAIT/WAKE 四脸+真阻塞   [86]\n");
     console_puts("  sigdemo             -> 跨进程 kill+EINTR+帧手术 [87]\n");
     console_puts("  run /bin/hello      -> musl 双世界左翼(用户态 loader) [88]\n");
-    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [89]\n");
-    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [90]\n");
-    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [91]\n");
-    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [92]\n");
-    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[93]\n");
+    console_puts("  run /bin/pt         -> pthread 4 线程 join(clone/TLS/CLEARTID)[89]\n");
+    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [90]\n");
+    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [91]\n");
+    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [92]\n");
+    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [93]\n");
+    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[94]\n");
 }
 
 static void cmd_version(void)

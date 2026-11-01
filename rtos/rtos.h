@@ -18,7 +18,7 @@ typedef unsigned char u8;
  * 统一任务帧(elr 自描述续跑点,见 vec.S)。 */
 
 #define RT_NPRIO     32u
-#define RT_POOL_MAX  8u
+#define RT_POOL_MAX  16u   /* 站35:线程族入池,旧 8 顶满;+8 槽 bss */
 #define RT_NCPU      2u               /* 站二十:vm0 双核(per-CPU 就绪队列) */
 #define RT_SLICE     4u               /* 同级轮转量子(tick 计) */
 #define RT_HZ        100u             /* vtimer tick 频率 */
@@ -33,6 +33,11 @@ typedef unsigned char u8;
 #define RT_SLEEP  2u
 #define RT_BLOCK  3u
 #define RT_DEAD   4u
+#define RT_FREE   5u   /* 站35:素槽态(开机清池后显式标记;bss 零态
+                        * =RT_READY 与"已建未跑的帧改写子"同貌,旧槽
+                        * 判 entry==NULL 把活 fork/clone 子当空槽整
+                        * struct 复用=pt leader 被 clone 蒸发,gdb 池
+                        * 像定谳) */
 
 struct rt_task {
     /* asm 契约(vec.S):sp 必须在偏移 0;统一帧顶指针(elr 槽) */
@@ -93,12 +98,23 @@ struct rt_task {
     u64 fut_va;                  /* @720 */
     u32 fut_woken;
     u32 sig_intr;
+    /* 站三十五:线程面(尾加纪律,asm 断言不涉;偏移钉死供簿记
+     * .literal 用)。tpidr=TPIDR_EL0 每任务存档(CLONE_SETTLS 初值,
+     * vec.S 簿记切换点存还);ctid=CLEARTID 地址(set_tid_address 同位,
+     * 线程退出内核写 0+futex 唤醒=musl join/thread_list 锁的兑付面);
+     * tid=每任务线程号(0=未分,leader=pid)。 */
+    u64 tpidr_el0;                /* @736 */
+    u64 ctid;                     /* @744 */
+    u64 tid;                      /* @752 */
 };
 typedef struct rt_task rt_task_t;
 _Static_assert(__builtin_offsetof(rt_task_t, usp) == 672, "RT_TASK_USP=672");
 _Static_assert(__builtin_offsetof(rt_task_t, ksp) == 680, "RT_TASK_KSP=680");
 _Static_assert(__builtin_offsetof(rt_task_t, el0) == 688, "RT_TASK_EL0=688");
 _Static_assert(__builtin_offsetof(rt_task_t, ttbr) == 696, "RT_TASK_TTBR=696");
+_Static_assert(__builtin_offsetof(rt_task_t, tpidr_el0) == 736, "RT_TASK_TPIDR=736");
+_Static_assert(__builtin_offsetof(rt_task_t, ctid) == 744, "RT_TASK_CTID=744");
+_Static_assert(__builtin_offsetof(rt_task_t, tid) == 752, "RT_TASK_TID=752");
 
 
 /* asm 契约断言:vec.S 的 .equ RT_TASK_Q/FPCR/FPSR 必须与此一致
@@ -211,6 +227,8 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define ES_NR_rt_sigreturn 139   /* __NR_rt_sigreturn:恢复帧 */
 #define RT_SIG_MAX          32u  /* 信号号域:1..31(pending 位图宽) */
 #define RT_FUTEX_WAIT       0
+#define RT_FUTEX_PRIVATE_FLAG 128u /* 站35:musl 恒带,掩掉=同 proc 提示 */
+#define RT_FUTEX_WAIT_BITSET  9u   /* 站35:musl 定时面用;无墙钟,v0 绝对降格相对 */
 #define RT_FUTEX_WAKE       1
 
 /* 站三十三:musl 薄面号(全真 Linux asm-generic;musl 启动期实测
@@ -223,6 +241,8 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define ES_NR_exit_group    94
 #define ES_NR_set_tid_address 96
 #define ES_NR_rt_sigprocmask 135
+#define ES_NR_gettid         178   /* 站35:每任务线程号 */
+#define ES_NR_clone          220   /* 站35:真 __NR_clone(musl pthread) */
 
 /* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
  * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
@@ -243,6 +263,7 @@ struct rt_sysinfo {
     u32 el0;
     u32 rsv;
 };
+void rt_task_pool_init(void);   /* 站35:素槽 RT_FREE 清池 */
 void rt_task_wake_all(u32 mask);         /* 扫池:命中等待位的 BLOCK->READY */
 void rt_task_wake_sleepers(void);       /* 扫池:到期的 SLEEP->READY */
 rt_task_t *rt_pool_base(void);            /* 站28:tp 守卫用池域判据 */
@@ -251,7 +272,7 @@ rt_task_t *rt_pool_base(void);            /* 站28:tp 守卫用池域判据 */
  * 进程对象(参考实现 task_group 的站内尺度):pid/ASID/自持 L0-L1-L2/
  * VMA 申报/父子关系。高低半区几何与页池驻 rt_as.c(实现面)。 */
 #define RT_PROC_MAX 4u
-#define RT_AS_VMA_MAX 6u
+#define RT_AS_VMA_MAX 32u  /* 站35:musl pthread 每线程栈 mmap+TLS 地图(旧 6 被 fork 继承 2+loader 段 2+stdio 恰满) */
 
 /* 站三十一:fd 表(=通道三元组,参考实现 fdtable 站内收编)——
  * 路由面=连接实体(->服务器通道),状态面=ocb(服务器侧每打开
@@ -423,6 +444,32 @@ long rt_sig_return(u64 *frame);        /* sig_saved 回拷+x0 同值回写 */
 void rt_sig_fork(struct rt_proc *pp, struct rt_proc *cp);
 struct rt_proc *rt_proc_lookup(int pid);  /* 活进程查(死=ESRCH 面) */
 void rt_futex_poke(struct rt_proc *p, u64 va, u64 delay);  /* 扑克(sys_demo 面) */
+void rt_fp_trap_cur(void);   /* 站33:FP 陷阱体(EL0/EL1 共用) */
+
+/* ---- 站三十五:线程(rt_thr.c;musl aarch64 clone 契约) ----
+ * 子=帧整拷+x0=0+SP=传入栈(musl 父把 func/arg 压上);线程退场
+ * =纯任务死(leader 退场才动 proc);PARENT_SETTID=父语境写
+ * *ptid;CHILD_CLEARTID=线程退出 *ctid=0+futex 唤醒(musl 的
+ * thread_list 锁释放面);SETTLS=新任务 tpidr 初值(簿记存还)。 */
+#define RT_CLONE_VM            0x100u
+#define RT_CLONE_FS            0x200u
+#define RT_CLONE_FILES         0x400u
+#define RT_CLONE_SIGHAND       0x800u
+#define RT_CLONE_THREAD        0x10000u
+#define RT_CLONE_SYSVSEM       0x40000u
+#define RT_CLONE_SETTLS        0x80000u
+#define RT_CLONE_PARENT_SETTID 0x100000u
+#define RT_CLONE_CHILD_CLEARTID 0x200000u
+#define RT_CLONE_DETACHED      0x400000u
+#define RT_CLONE_NEEDS  (RT_CLONE_VM | RT_CLONE_THREAD)
+#define RT_CLONE_ALLOW (RT_CLONE_NEEDS | RT_CLONE_FS | RT_CLONE_FILES | \
+                        RT_CLONE_SIGHAND | RT_CLONE_SYSVSEM | RT_CLONE_SETTLS | \
+                        RT_CLONE_PARENT_SETTID | RT_CLONE_CHILD_CLEARTID | \
+                        RT_CLONE_DETACHED)
+long sys_clone_impl(u64 *frame, u32 flags, u64 stack, u64 ptid,
+                    u64 tls, u64 ctid);
+void rt_thr_exit(void);              /* 线程退场:noreturn 纯任务死 */
+void rt_thr_group_kill(struct rt_proc *p);  /* leader 退场清扫线程群 */
 void rt_fp_trap_cur(void);   /* 站33:FP 陷阱体(EL0/EL1 共用) */
 struct rt_proc *rt_proc_of(rt_task_t *t);  /* 任务->进程(NULL=内核) */
 int  rt_proc_create(rt_task_t *leader, struct rt_proc **out); /* CREATE 挂起态 */
