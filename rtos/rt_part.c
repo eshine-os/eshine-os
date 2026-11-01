@@ -68,7 +68,12 @@ void rt_cpart_init(void)
                                           * 新分区从此扣) */
     cparts[0].credit = (long)RT_CPART_WIN;
     part_name(cparts[0].name, "system", sizeof(cparts[0].name));
-    cpart_win_base = rt_ticks;
+    /* 网格对齐(必):节流 wake_tick 用 %WIN 网格((ticks/WIN+1)*WIN),
+     * win_base 若取任意 tick 值则重置面与醒点错位数 tick——被节流
+     * 者在醒点逢未重置的 credit 即再节流,每窗净丢 (WIN-错位) tick,
+     * 系统分区全体长任务 ~5x 减速(r5-r11 六连败冒烟不显根因定谳:
+     * 冒烟安静窗+宽窗全吸收,电池逐面炸)。对齐后两网格同拍。 */
+    cpart_win_base = (rt_ticks / RT_CPART_WIN) * RT_CPART_WIN;
 }
 
 int rt_cpart_alloc(const char *name, u32 pct)
