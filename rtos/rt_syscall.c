@@ -390,6 +390,52 @@ static long sys_shm_destroy(u64 *frame)
     return rt_shm_destroy((long)FR(0));
 }
 
+/* ---- 站39:FS 深面(建/摘/枚举/whence) ---- */
+static long sys_fdcreate(u64 *frame)
+{
+    char kpath[48];
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
+        return -ES_EFAULT;
+    return rt_fd_create(rt_cur->proc, kpath);
+}
+
+static long sys_fdunlink(u64 *frame)
+{
+    char kpath[48];
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
+        return -ES_EFAULT;
+    return rt_fd_unlink(rt_cur->proc, kpath);
+}
+
+static long sys_fddir(u64 *frame)
+{
+    char kpath[48];
+    long r;
+    u32 z;
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (!access_ok((void *)FR(2), (u32)FR(3)))
+        return -ES_EFAULT;
+    for (z = 0; z < sizeof(kpath); z++)
+        kpath[z] = 0;
+    r = rt_fd_dir(rt_cur->proc, (int)FR(0), kpath, sizeof(kpath));
+    {
+        u32 i;
+        char *ub = (char *)FR(2);       /* kpath 整窗出(调用者截串) */
+
+        for (i = 0; i < sizeof(kpath); i++)
+            ub[i] = kpath[i];
+    }
+    return r;
+}
+
 /* ---- 站37:posix_queue 弧(mqueue/pipe/MsgRead 镜像) ---- */
 static long sys_mq_open(u64 *frame)
 {
@@ -654,13 +700,14 @@ static long sys_rt_sigprocmask(u64 *frame)
 
 static long sys_lseek(u64 *frame)
 {
-    /* loader 段定位:v0 只认 SEEK_SET(whence!=0 -> EINVAL,
-     * 文件面 ESPIPE 语义归并);offset 截 32 位(ramfs 域内)。 */
+    /* 站39:whence 三档全脸(SET/CUR/END 透传,服务器 rsv 槽承载;
+     * 站33 loader 的 SEEK_SET 面不变);offset 截 32 位(ramfs/裸盘
+     * 域内)。 */
     if (!rt_cur->proc)
         return -ES_EINVAL;
-    if ((u32)FR(2) != 0 || FR(1) > 0xFFFFFFFFULL)
+    if (FR(1) > 0xFFFFFFFFULL)
         return -ES_EINVAL;
-    return rt_fd_seek(rt_cur->proc, (int)FR(0), (u32)FR(1));
+    return rt_fd_seek_whence(rt_cur->proc, (int)FR(0), FR(1), (u32)FR(2));
 }
 
 /* 站三十五:线程面(musl pthread 的克隆契约,体在 rt_thr.c)。 */
@@ -937,6 +984,9 @@ void rt_syscall_init(void)
     table[ES_NR_mq_unlink]   = sys_mq_unlink;
     table[ES_NR_msg_read]    = sys_msg_read;
     table[ES_NR_pipe]        = sys_pipe;
+    table[ES_NR_fdcreate]    = sys_fdcreate;
+    table[ES_NR_fdunlink]    = sys_fdunlink;
+    table[ES_NR_fddir]       = sys_fddir;
     /* 站32:signal+futex 面(真 Linux 号,musl 直连) */
     table[ES_NR_futex]        = sys_futex;
     table[ES_NR_kill]         = sys_kill;

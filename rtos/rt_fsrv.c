@@ -168,7 +168,9 @@ extern const char rt_ramfs_end[];
 struct rf_node {
     char path[48];                      /* 挂名形(含前导 '/') */
     u32 off;                            /* 数据偏移(自归档基) */
-    u32 size;
+    u32 size;                           /* 当前长(cow 追加随之长) */
+    u32 cow;                            /* 站39:写时复制页 PA(0=rodata
+                                         * 后备);死节点=path[0]==0 */
 };
 
 static struct rf_node rf_nodes[RF_NODE_MAX];
@@ -243,6 +245,7 @@ static void rf_parse(void)
         n->path[namesize] = '\0';
         n->off = dataoff;
         n->size = filesize;
+        n->cow = 0;
         pos = rf_align4(dataoff + filesize);
     }
 }
@@ -254,6 +257,8 @@ static int rf_find(const char *path)
     for (i = 0; i < rf_nnode; i++) {
         const char *b = rf_nodes[i].path;
 
+        if (!b[0])
+            continue;                   /* 站39:死节点(已 unlink) */
         for (j = 0; j < RT_FD_DATA; j++) {
             if (path[j] != b[j])
                 break;
@@ -279,6 +284,8 @@ static void srv_ramfs(void *arg)
     rf_parse();
     for (i = 0; i < rf_nnode; i++)
         rt_msg_name_attach(rf_nodes[i].path, chid);
+    /* 站39:目录枚举元名(OPEN 之返 ocb=0=目录柄;READDIR 专用) */
+    rt_msg_name_attach("/dev/ramfs", chid);
     for (;;) {
         if (rt_msg_recv(chid, &req, sizeof(req), RT_WAIT_FOREVER, &ri) != 0)
             continue;
@@ -289,12 +296,21 @@ static void srv_ramfs(void *arg)
         case RT_FDOP_OPEN: {
             int idx = rf_find(req.data);
 
-            r = idx < 0 ? -2 : (long)ocb_alloc((u32)idx);
-            break;
+            if (idx >= 0) {
+                r = (long)ocb_alloc((u32)idx);
+                break;
+            }
+            r = (req.data[0] == '/' && req.data[1] == 'd' &&
+                 req.data[2] == 'e' && req.data[3] == 'v' &&
+                 req.data[4] == '/' && req.data[5] == 'r' &&
+                 req.data[6] == 'a' && req.data[7] == 'm' &&
+                 req.data[8] == 'f' && req.data[9] == 's' &&
+                 !req.data[10]) ? 0 : -2;
+            break;                       /* ocb 0=目录柄(READDIR 面) */
         }
         case RT_FDOP_READ: {
             struct srv_ocb *o = ocb_get((int)req.ocb);
-            const struct rf_node *nd;
+            struct rf_node *nd;
             const char *src;
             u32 n;
 
@@ -308,30 +324,157 @@ static void srv_ramfs(void *arg)
                 n = 0;                  /* EOF:status=0 面即此 */
             else if (n > nd->size - o->off)
                 n = nd->size - o->off;
-            src = rt_ramfs_start + nd->off + o->off;
+            src = nd->cow ? (const char *)(unsigned long)nd->cow + o->off
+                          : rt_ramfs_start + nd->off + o->off;
             o->off += n;                /* 文件位置在 ocb 推进(resmgr 本义) */
             rt_msg_reply(chid, ri.rcvid, src, n, (long)n);
             continue;                   /* READ 走 rbuf 面:自答自续 */
         }
+        case RT_FDOP_WRITE: {         /* 站39:写时复制到页池页(≤4KB) */
+            struct srv_ocb *o = ocb_get((int)req.ocb);
+            struct rf_node *nd;
+            u32 n = req.a > RT_FD_DATA ? RT_FD_DATA : req.a;
+            u32 i2;
+
+            if (!o || o->node >= rf_nnode) {
+                r = -9;
+                break;
+            }
+            nd = &rf_nodes[o->node];
+            if (o->off + n > 4096u) {
+                r = -12;               /* 4KB/文件 v0 上限(一页) */
+                break;
+            }
+            if (!nd->cow) {            /* 首写:内容拷入页池页 */
+                u64 pg = rt_as_page_alloc();
+
+                if (!pg) {
+                    r = -12;
+                    break;
+                }
+                nd->cow = (u32)pg;
+                for (i2 = 0; i2 < nd->size && i2 < 4096u; i2++)
+                    ((char *)(unsigned long)pg)[i2] =
+                        rt_ramfs_start[nd->off + i2];
+                for (; i2 < 4096u; i2++)
+                    ((char *)(unsigned long)pg)[i2] = 0;
+            }
+            for (i2 = 0; i2 < n; i2++)
+                ((char *)(unsigned long)nd->cow)[o->off + i2] =
+                    req.data[i2];
+            o->off += n;
+            if (o->off > nd->size)
+                nd->size = o->off;     /* 追加:长随位置长 */
+            r = (long)n;
+            break;
+        }
         case RT_FDOP_CLOSE:
-            r = ocb_release((int)req.ocb);
+            if (!req.ocb)
+                r = 0;                 /* 目录柄(0)关=无簿记 */
+            else
+                r = ocb_release((int)req.ocb);
             break;
         case RT_FDOP_DUP:
+            if (!req.ocb) {
+                r = 0;
+                break;
+            }
             r = ocb_ref((int)req.ocb);
             break;
-        case RT_FDOP_SEEK: {          /* 站33:SEEK_SET 绝对位 */
+        case RT_FDOP_SEEK: {          /* 站39:rsv=whence(0SET/1CUR/2END) */
             struct srv_ocb *o = ocb_get((int)req.ocb);
 
             if (!o) {
                 r = -9;
                 break;
             }
-            o->off = req.a;
+            if (req.rsv == 1u)
+                o->off += req.a;
+            else if (req.rsv == 2u)
+                o->off = rf_nodes[o->node].size + req.a;
+            else
+                o->off = req.a;        /* 站33 契约:默认 SET */
+            if (o->off > rf_nodes[o->node].size)
+                o->off = rf_nodes[o->node].size;   /* 越尾夹回(END 后读=EOF) */
+            r = (long)o->off;
+            break;
+        }
+        case RT_FDOP_CREATE: {        /* 站39:建即开(新空文件+挂名) */
+            int idx = rf_find(req.data);
+
+            if (idx >= 0) {
+                r = -17;               /* -EEXIST */
+                break;
+            }
+            if (rf_nnode >= RF_NODE_MAX) {
+                r = -12;
+                break;
+            }
+            idx = (int)rf_nnode++;
+            {
+                struct rf_node *nd = &rf_nodes[idx];
+                u32 k;
+
+                for (k = 0; k + 1 < RT_FD_DATA && req.data[k]; k++)
+                    nd->path[k] = req.data[k];
+                nd->path[k] = '\0';
+                nd->off = 0;
+                nd->size = 0;
+                nd->cow = 0;
+            }
+            rt_msg_name_attach(rf_nodes[idx].path, chid);
+            r = (long)ocb_alloc((u32)idx);
+            break;
+        }
+        case RT_FDOP_UNLINK: {        /* 站39:死节点标记(免索引挪移
+                                      * 撕开在册 ocb;页还池) */
+            int idx = rf_find(req.data);
+
+            if (idx < 0) {
+                r = -2;
+                break;
+            }
+            if (rf_nodes[idx].cow)
+                rt_as_page_free(rf_nodes[idx].cow);
+            rf_nodes[idx].cow = 0;
+            rf_nodes[idx].path[0] = '\0';
+            rf_nodes[idx].size = 0;
+            rt_msg_name_detach(req.data);
             r = 0;
             break;
         }
+        case RT_FDOP_READDIR: {       /* 站39:a=游标,活节点序;
+                                      * data=路径,status=下一游标(0=末)。
+                                      * 初版教训(定谳):matched 分支内
+                                      * continue 只续 for 环——live 永不
+                                      * 增+命中后连环 reply+终末 reply
+                                      * 最后到覆写 status,客户端恒收
+                                      * 0(LSDBG r=0 实抓)。单答形:一次
+                                      * 走查,恰好一次回执。 */
+            u32 cur = req.a, live = 0, k = 0;
+            int answered = 0;
+
+            for (i = 0; i < rf_nnode && !answered; i++) {
+                if (!rf_nodes[i].path[0])
+                    continue;
+                if (live == cur) {
+                    for (k = 0; k + 1 < RT_FD_RDATA &&
+                                rf_nodes[i].path[k]; k++)
+                        req.data[k] = rf_nodes[i].path[k];
+                    req.data[k] = '\0';
+                    answered = 1;
+                } else {
+                    live++;
+                }
+            }
+            if (answered)
+                rt_msg_reply(chid, ri.rcvid, req.data, k, (long)(live + 1));
+            else
+                rt_msg_reply(chid, ri.rcvid, NULL, 0, 0);
+            continue;                  /* 已答自续:不落公共回执 */
+        }
         default:
-            r = -22;                   /* WRITE/未知:文件面无此操作 */
+            r = -22;
         }
         rt_msg_reply(chid, ri.rcvid, NULL, 0, r);
     }
@@ -457,7 +600,7 @@ long rt_fd_write(struct rt_proc *p, int fd, const char *kbuf, u32 len)
 }
 
 /* 站33:SEEK_SET 绝对位(loader 段定位;whence 其余面=调用侧拒) */
-long rt_fd_seek(struct rt_proc *p, int fd, u32 off)
+static long fd_seek_impl(struct rt_proc *p, int fd, u64 off, u32 whence)
 {
     struct rt_fdreq req;
     long r;
@@ -466,11 +609,110 @@ long rt_fd_seek(struct rt_proc *p, int fd, u32 off)
         return -9;
     fd_zero(&req, sizeof(req));
     req.op = RT_FDOP_SEEK;
-    req.a = off;
+    req.a = (u32)off;
+    req.rsv = whence;                   /* 站39:whence 走 rsv 槽 */
     req.ocb = p->fds[fd].ocb;
     r = rt_msg_send(p->fds[fd].coid, &req, sizeof(req), NULL, 0,
                     SRV_TICKS);
-    return r < 0 ? r : 0;
+    return r < 0 ? r : r;
+}
+
+long rt_fd_seek(struct rt_proc *p, int fd, u32 off)
+{
+    return fd_seek_impl(p, fd, off, 0u);      /* 站33 契约面:默认 SET */
+}
+
+int rt_fd_seek_whence(struct rt_proc *p, int fd, u64 off, u32 whence)
+{
+    return (int)fd_seek_impl(p, fd, off, whence);  /* 服务器返新位/负 errno */
+}
+
+/* 站39:建即开(create 与 open 同径:回执即 ocb,fd 登记同式) */
+long rt_fd_create(struct rt_proc *p, const char *kpath)
+{
+    struct rt_fdreq req;
+    int coid, fd, r;
+    u32 i;
+
+    if (!p)
+        return -22;
+    /* 新文件尚无挂名:CREATE 走 ramfs 元名路由(服务器建名即挂名,
+     * 后续 open 按名寻径);fd 三元组的 coid 亦驻此连接(生命周期
+     * 同 open 面:close 时 CLOSE 消息+conn_detach)。 */
+    coid = rt_msg_name_open("/dev/ramfs");
+    if (coid < 0)
+        return coid;
+    fd_zero(&req, sizeof(req));
+    req.op = RT_FDOP_CREATE;
+    for (i = 0; i + 1 < RT_FD_DATA && kpath[i]; i++)
+        req.data[i] = kpath[i];
+    req.data[i] = '\0';
+    r = (int)rt_msg_send(coid, &req, sizeof(req), NULL, 0, SRV_TICKS);
+    if (r < 0) {
+        rt_msg_conn_detach(coid);
+        return r;
+    }
+    for (fd = 0; fd < (int)RT_FD_MAX; fd++)
+        if (!p->fds[fd].used)
+            break;
+    if (fd == (int)RT_FD_MAX) {
+        req.op = RT_FDOP_CLOSE;
+        req.ocb = (u32)r;
+        rt_msg_send(coid, &req, sizeof(req), NULL, 0, CLOSE_TICKS);
+        rt_msg_conn_detach(coid);
+        return -12;
+    }
+    p->fds[fd].used = 1;
+    p->fds[fd].coid = coid;
+    p->fds[fd].ocb = (u32)r;
+    return fd;
+}
+
+long rt_fd_unlink(struct rt_proc *p, const char *kpath)
+{
+    struct rt_fdreq req;
+    int coid, r;
+    u32 i;
+
+    if (!p)
+        return -22;
+    coid = rt_msg_name_open(kpath);
+    if (coid < 0)
+        return coid;                   /* -ENOENT:无人挂此名 */
+    fd_zero(&req, sizeof(req));
+    req.op = RT_FDOP_UNLINK;
+    for (i = 0; i + 1 < RT_FD_DATA && kpath[i]; i++)
+        req.data[i] = kpath[i];
+    req.data[i] = '\0';
+    r = (int)rt_msg_send(coid, &req, sizeof(req), NULL, 0, CLOSE_TICKS);
+    rt_msg_conn_detach(coid);          /* 摘名后此连接即弃 */
+    return r;
+}
+
+/* 目录枚举:游标进,路径出,返下一游标(0=末) */
+long rt_fd_dir(struct rt_proc *p, int index, char *kpath, u32 len)
+{
+    struct rt_fdreq req;
+    struct rt_recvinfo ri;
+    long r;
+    int coid;
+
+    if (!p || !kpath || !len)
+        return -22;
+    coid = rt_msg_name_open("/dev/ramfs");
+    if (coid < 0)
+        return coid;
+    fd_zero(&req, sizeof(req));
+    req.op = RT_FDOP_READDIR;
+    req.a = (u32)index;
+    r = rt_msg_send(coid, &req, sizeof(req), kpath, len, SRV_TICKS);
+    rt_msg_conn_detach(coid);
+    if (r <= 0)
+        return r;                       /* 0=枚举终;负=errno */
+    (void)ri;
+    return r;                           /* 正=下一游标(status 面;路径
+                                          * 已落 kpath。每枚举一事一
+                                          * 连接往返=v0 诚实成本记档) */
 }
 
 int rt_fd_close(struct rt_proc *p, int fd)
@@ -543,4 +785,6 @@ void rt_srv_boot(rt_task_t *shell)
         rt_puts("srv: pm spawn failed\n");
     rt_pipe_boot();                  /* 站37:pipesrv(stdio 绑定后起,
                                       * 与 tty/ramfs 无交互序) */
+    rt_blk_srv_boot();               /* 站39:blksrv(IRQ 登记+第四服
+                                      * 务器;探针相已在 boot 序前段) */
 }

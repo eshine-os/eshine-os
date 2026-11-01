@@ -159,6 +159,42 @@ static inline void virtio_blk_do(u32 type)
     virtio_done = 0;
 }
 
+/* 站39:参数化面(sector+缓冲自择;buf512 须驻本客静态区=IPA 真
+ * 值;服务器自备 512B 扇区缓冲经此换装)。WFI 等法同上:单核客
+ * 上等待期无他跑者(客户端阻塞在回执 sem),tick IRQ 兜醒。 */
+static inline u32 virtio_blk_do2(u32 type, u64 sector, void *buf512)
+{
+    u16 idx = g_avail->idx & VRING_MASK;
+
+    g_hdr.type = type;
+    g_hdr.rsvd = 0;
+    g_hdr.sector = sector;
+    g_stat = 0xff;
+
+    g_desc[0].addr = (u64)(unsigned long)&g_hdr;
+    g_desc[0].len = sizeof(g_hdr);
+    g_desc[0].flags = VIRTQ_F_NEXT;
+    g_desc[0].next = 1;
+    g_desc[1].addr = (u64)(unsigned long)buf512;
+    g_desc[1].len = 512;
+    g_desc[1].flags = VIRTQ_F_NEXT;
+    g_desc[1].next = 2;
+    g_desc[2].addr = (u64)(unsigned long)&g_stat;
+    g_desc[2].len = 1;
+    g_desc[2].flags = 0;
+    g_desc[2].next = 0;
+
+    g_avail->ring[idx] = 0;
+    g_avail->idx++;
+
+    vr_write(VR_QUEUE_NOTIFY, 0);
+
+    while (!virtio_done)
+        __asm__ volatile("wfi" ::: "memory");
+    virtio_done = 0;
+    return (u32)g_stat;                /* 0=成 1=越界/拒(设备级) */
+}
+
 static inline void virtio_isr(void)          /* IRQ 上下文(vSPI 35) */
 {
     if (vr_read(VR_INT_STATUS) & 1u) {

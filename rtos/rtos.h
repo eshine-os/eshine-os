@@ -228,6 +228,9 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
  * VM_SET 单拷窗的站内形状;shmid 传引用=单拷,载荷走共享窗)。
  * v0 固定 VA:xspace 块 8 @0x41000000,段 i 映
  * XSPACE_BASE+(i-1)*SPAN=同段任何进程同 VA。 */
+#define ES_NR_fdcreate    554   /* 站39:路径->fd(建文件) */
+#define ES_NR_fdunlink    555   /* 站39:路径摘除 */
+#define ES_NR_fddir       556   /* 站39:目录枚举(索引->路径) */
 #define ES_NR_shm_create  560   /* len 字节->段号(页池取页清零) */
 #define ES_NR_shm_attach  561   /* (seg,va=0 固定窗)->实际 VA */
 #define ES_NR_shm_detach   562   /* 摘挂(refs--) */
@@ -247,7 +250,10 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define RT_FDOP_WRITE   3u
 #define RT_FDOP_CLOSE   4u
 #define RT_FDOP_DUP     5u
-#define RT_FDOP_SEEK    6u     /* 站33:loader 段定位(SEEK_SET 面) */
+#define RT_FDOP_SEEK    6u     /* 站33 起;站39 rsv=whence(0SET/1CUR/2END) */
+#define RT_FDOP_CREATE  7u     /* 站39:建文件即开(ramfs 写时复制面) */
+#define RT_FDOP_UNLINK  8u     /* 站39:摘名摘节点(页还池) */
+#define RT_FDOP_READDIR 9u     /* 站39:a=索引,data=路径,status=下一索引(0=末) */
 
 #define RT_FD_DATA      44u    /* 请求内联窗:OPEN 路径/WRITE 数据 */
 #define RT_FD_RDATA     64u    /* READ 回复数据窗(站33:status 走
@@ -392,10 +398,10 @@ typedef struct rt_sem {
 } rt_sem_t;
 
 /* ---- 站三十:三段消息 IPC(rt_msg.c;参考实现 同步队列件 的站内收编) ---- */
-#define RT_CH_MAX        4u
-#define RT_CONN_MAX      8u
+#define RT_CH_MAX        8u    /* 站39 容量账:boot 4 服务器+demo 期瞬时各 1 */
+#define RT_CONN_MAX      16u   /* 站39:stdio 3+fd 三元组/枚举瞬时+loader 往返 */
 #define RT_MSGSLOT_MAX   8u
-#define RT_NAME_MAX      8u
+#define RT_NAME_MAX      16u   /* 站39:boot 8 名+demo 期瞬时;8 表满=CREATE 挂不上名 */
 #define RT_MSG_BYTES     64u    /* 短消息面(参考实现 1024B 收编;长消息
                                  * 映射=跨址空间窗,v0 内核槽中继,VM_SET
                                  * 单拷窗=跨 VM 站后议) */
@@ -474,6 +480,15 @@ long rt_mq_unlink(const char *path);
 /* 站37:pipe(rt_pipe.c)——pipesrv(站 31 resmgr 形) */
 long rt_pipe_create(struct rt_proc *p);  /* ->0(两 fd 出参 FR 面) */
 void rt_pipe_boot(void);                 /* 开机:服务器起立+挂名 */
+/* 站39:blkdev(rt_blk.c)——第四个 resmgr 服务器+参数化 virtio 面 */
+void rt_blk_boot(void);                  /* 开机:探针相(锚序原位) */
+void rt_blk_srv_boot(void);              /* 开机:IRQ 登记+服务器起立 */
+int  rt_blk_rw(u32 type, u64 sector, void *buf512, u32 ticks);
+/* fd 层站39 扩(rt_fsrv.c) */
+long rt_fd_create(struct rt_proc *p, const char *kpath);
+long rt_fd_unlink(struct rt_proc *p, const char *kpath);
+long rt_fd_dir(struct rt_proc *p, int index, char *kpath, u32 len);
+int  rt_fd_seek_whence(struct rt_proc *p, int fd, u64 off, u32 whence);
 long rt_msg_reply(int chid, u64 rcvid, const void *rbuf, u32 rlen,
                   long status);
 long rt_msg_pulse(int coid, s64 code, u64 value);

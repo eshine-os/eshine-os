@@ -326,7 +326,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（100 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（103 步：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -475,7 +475,19 @@ WRITE 漏带 ocb 的潜雷被本站定谳——tty/ramfs 不读 ocb 故
 信号以 128+sig 走 exit 链,POSIX 面)+sigtimedwait(137)轮询面。
 附带定谳:唤醒走查 t->entry 谓词=站 29 帧改写子盲区(首个自然
 睡 fork 子睡死实抓),四走查活判据改状态面(TASK_LIVE)** →
-**站34 yocto 门（[100]——meta-eshine 层入仓：git archive 提交树
+**站39 FS 深面三门（[96-98]——ramfs 写时复制（首写拷入页池
+页 ≤4KB,追加随位长；读优先 cow 面——rodata 零改动红线保
+全）/CREATE 建即开挂名/UNLINK 死节点标记（免索引挪移撕开
+在册 ocb;页还池）/READDIR 活节点序枚举（/dev/ramfs 元名
++单答形:一次走查恰一次回执）/SEEK whence 三档（SET/CUR/
+END 透传 wire rsv 槽,lseek 返新位=POSIX 面,站33 loader 判
+据同步改只拒负）/blkdev=第四 resmgr 服务器（真 virtio-blk
+裸盘:宿主 EMULATED 静态盘后端（站9-10 机器）,写=读改写整
+扇回写,WFI 等完成由 tick 兜醒;免 QEMU -drive）/容量账:
+CH/CONN/NAME 表按 boot 4 服务器+demo 瞬时放宽（4 通道满
+表=sigq 后继整脸溺毙实测定谳,站31 ocb 池同课:先算账后
+放宽）** →
+**站34 yocto 门（[103]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
 部署四件（eshine.elf/rtos.bin/guest2.bin/ramfs.cpio）；判据=
@@ -484,7 +496,7 @@ WRITE 漏带 ocb 的潜雷被本站定谳——tty/ramfs 不读 ocb 故
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-100 步手动走查清单。
+103 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

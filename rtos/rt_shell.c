@@ -574,6 +574,106 @@ static void sigq_handler(long sig, long val)
     sys_puts("\n");
 }
 
+/* ---- 站39:FS 深面客户端——ramfs 写时复制/枚举/块设备裸面 ---- */
+static void cmd_wrdemo(void)
+{
+    long fd, n, r;
+    char buf[64];
+
+    fd = sys1(ES_NR_fdcreate, (long)"/tmp/w39");
+    if (fd < 0) {
+        sys_puts("wrdemo: create FAIL\n");
+        return;
+    }
+    r = sys3(ES_NR_fdwrite, fd, (long)"ESHINE39", 9);
+    sys_puts(r == 9 ? "wrdemo: wrote 9 ok\n" : "wrdemo: write FAIL\n");
+    r = sys3(ES_NR_fdwrite, fd, (long)"-APPEND", 7);  /* 追加:长随位长 */
+    sys_puts(r == 7 ? "wrdemo: append 7 ok\n" : "wrdemo: append FAIL\n");
+    r = sys3(ES_NR_lseek, fd, 0, 0);                /* SEEK_SET 回卷 */
+    n = sys3(ES_NR_fdread, fd, (long)buf, 64);
+    buf[16] = '\0';
+    sys_puts(n == 16 ? "wrdemo: read 'ESHINE39-APPEND' ok\n"
+                     : "wrdemo: read FAIL\n");
+    r = sys3(ES_NR_lseek, fd, 0, 2);                /* SEEK_END */
+    n = sys3(ES_NR_fdread, fd, (long)buf, 64);
+    sys_puts(n == 0 ? "wrdemo: eof after END ok\n" : "wrdemo: eof FAIL\n");
+    sys1(ES_NR_fdclose, fd);
+    r = sys1(ES_NR_fdunlink, (long)"/tmp/w39");
+    if (r == 0)
+        r = sys1(ES_NR_fdopen, (long)"/tmp/w39");
+    sys_puts(r == -2 ? "wrdemo: unlinked, reopen ENOENT ok\n"
+                     : "wrdemo: unlink FAIL\n");
+}
+
+static void cmd_lsdemo(void)
+{
+    char name[48];
+    long cur = 0, r;
+    int n = 0, got_motd = 0;
+
+    for (;;) {
+        {
+            u32 i;
+
+            for (i = 0; i < sizeof(name); i++)
+                name[i] = 0;
+        }
+        r = sys4(ES_NR_fddir, cur, 0, (long)name, 48);
+        if (r <= 0) {
+            sys_puts("LSDBG: r=");
+            sys_put_dec((u64)(long)r);
+            sys_puts(" first=");
+            sys_put_dec((u64)name[0]);
+            sys_puts("\n");
+            break;                       /* 0=终;负=errno */
+        }
+        cur = r;
+        n++;
+        if (name[0] == '/' && name[1] == 'e' && name[2] == 't' &&
+            name[3] == 'c' && name[4] == '/' && name[5] == 'm')
+            got_motd = 1;
+    }
+    if (n >= 4 && got_motd) {
+        sys_puts("lsdemo: entries ok, /etc/motd in list\n");
+    } else {
+        sys_puts("lsdemo: FAIL n=");
+        sys_put_dec((u64)n);
+        sys_puts(" first=");
+        sys_puts(name);
+        sys_puts("\n");
+    }
+}
+
+static void cmd_fblkdemo(void)
+{
+    long fd, n, r;
+    char buf[64];
+
+    fd = sys1(ES_NR_fdopen, (long)"/dev/blk");
+    if (fd < 0) {
+        sys_puts("fblkdemo: open FAIL\n");
+        return;
+    }
+    r = sys3(ES_NR_fdwrite, fd, (long)"BLK39-SECTOR0", 13);
+    if (r != 13) {
+        sys_puts("fblkdemo: write FAIL\n");
+        return;
+    }
+    r = sys3(ES_NR_lseek, fd, 0, 0);
+    n = sys3(ES_NR_fdread, fd, (long)buf, 13);
+    buf[13] = '\0';
+    if (n != 13 || buf[0] != 'B' || buf[12] != '0') {
+        sys_puts("fblkdemo: readback FAIL n=");
+        sys_put_dec((u64)(long)n);
+        sys_puts(" b0=");
+        sys_put_dec((u64)buf[0]);
+        sys_puts("\n");
+        return;
+    }
+    sys_puts("fblkdemo: sector rw ok\n");
+    sys1(ES_NR_fdclose, fd);
+}
+
 static void cmd_sigqdemo(void)
 {
     long pid, r, st = 0;
@@ -784,7 +884,8 @@ static void ux_exec(const char *path)
         sys_puts("run: bad phdrs\n");
         goto fail;
     }
-    if (sys3(ES_NR_lseek, fd, (long)(u32)eh.phoff, 0) != 0) {
+    /* 站39:lseek 返新位(POSIX 面),只拒负——旧判 !=0 撞新契约 */
+    if (sys3(ES_NR_lseek, fd, (long)(u32)eh.phoff, 0) < 0) {
         sys_puts("run: seek phoff failed\n");
         goto fail;
     }
@@ -818,7 +919,7 @@ static void ux_exec(const char *path)
                 pg[k] = 0;
         }
         if (ph->filesz) {
-            if (sys3(ES_NR_lseek, fd, (long)(u32)ph->offset, 0) != 0 ||
+            if (sys3(ES_NR_lseek, fd, (long)(u32)ph->offset, 0) < 0 ||
                 ux_copy_seg(fd, ph->vaddr, (u32)ph->filesz) < 0) {
                 sys_puts("run: seg copy failed\n");
                 goto fail;
@@ -1014,6 +1115,12 @@ static void shell_line(char *line)
         cmd_longdemo();
     } else if (streq(line, "sigqdemo")) {
         cmd_sigqdemo();
+    } else if (streq(line, "wrdemo")) {
+        cmd_wrdemo();
+    } else if (streq(line, "lsdemo")) {
+        cmd_lsdemo();
+    } else if (streq(line, "fblkdemo")) {
+        cmd_fblkdemo();
     } else if (starts(line, "spawn ")) {
         sys3(ES_NR_demo, RT_U_SPAWN, (long)(line + 6), 0);
     } else if (starts(line, "sleep")) {
@@ -1040,7 +1147,7 @@ static void shell_line(char *line)
     } else if (line[0]) {
         sys_puts("rtos: try echo <t> | selftest | utest | ps | spawn <n> | sleep [1-9]"
                  " | forkdemo | mmapdemo | exedemo | ipcdemo | pulsedemo | abortdemo | fddemo"
-                 " | futexdemo | sigdemo | sigqdemo | shmdemo | msgseg | mqdemo | pipedemo | longdemo | run <p>"
+                 " | futexdemo | sigdemo | sigqdemo | wrdemo | lsdemo | fblkdemo | shmdemo | msgseg | mqdemo | pipedemo | longdemo | run <p>"
                  " | fp | fpdual | fpstat | hb | yield | semdemo | mutexdemo"
                  " | pidemo | eventdemo | queuedemo | smpdemo | ipidemo | fpsmp | tmodemo | swtdemo | irqdemo | lowdemo"
                  " | stkdemo | stackcheck | overflow | host | exit\n");

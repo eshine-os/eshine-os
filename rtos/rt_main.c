@@ -4,7 +4,6 @@
 #include "miniuart.h"
 #include "gic.h"
 #include "timer.h"
-#include "virtio.h"
 #include "fdt.h"
 #include "hvc.h"
 #include "kernel/include/version.h"
@@ -147,11 +146,6 @@ static void isr_ipi(void)
     rt_resched_ipi();                /* 站二十:重调度判+收拍计数 */
 }
 
-static void isr_virtio(void)
-{
-    virtio_isr();
-}
-
 /* 站23A:uart 槽换钩助手——INTID 常量留 gic.h 的合法 TU
  * (gic.h 是单含静态头,拖进 rt_demo.c 会产未用静态警);demo 经
  * 此换/恢复 33 号槽(RT_RX_BIT 唤醒掩码恒由 uart 面携带)。 */
@@ -263,7 +257,7 @@ void guest_main(void)
     idle->name[3] = 'e'; idle->name[4] = '\0';
     idle->slice_left = RT_SLICE;
     gic_dist_init();                  /* 站12:vGIC 真启动式 */
-    virtio_blk_init();                /* 站10:probe+DRIVER_OK */
+    rt_blk_boot();                    /* 站39:探针相(rt_blk 单 TU) */
     fdt_check();                      /* 站11:三节点自查 */
     __asm__ volatile("msr cpacr_el1, %0" :: "r"(3UL << 20));  /* FPEN 自设 */
     __asm__ volatile("isb");
@@ -288,7 +282,6 @@ void guest_main(void)
     rt_irq_register(GUEST_INTID_VTIMER, isr_vtimer, 0);
     rt_irq_register(GUEST_INTID_IPI, isr_ipi, 0);
     rt_irq_register(GUEST_INTID_UART, isr_uart, RT_RX_BIT);
-    rt_irq_register(GUEST_INTID_VIRTIO, isr_virtio, 0);
     vtimer_arm_periodic();            /* 100Hz tick 起拍 */
     gic_guest_enable();              /* 解 IRQ:此后 tick/RX 走真中断 */
 
