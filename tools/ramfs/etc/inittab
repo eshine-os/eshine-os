@@ -1,0 +1,4 @@
+# eshine vm0 init table(站40:壳代处理器;真 PID1 init=后弧)
+# <id>:<runlevels>:<action>:<process>
+::sysinit:/bin/initmark
+::respawn:/bin/beat

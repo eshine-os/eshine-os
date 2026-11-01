@@ -287,6 +287,23 @@ int rt_proc_create(rt_task_t *leader, struct rt_proc **out)
     }
     p->l0 = l0_pool[slot];
     p->l1 = l1_pool[slot];
+    /* 站41:CAPR 生命域——create=零能力(fail-closed 由此起);
+     * uuid=随机身份(站 40 混出器同源,非密码级记档);rlimit
+     * 默认满额(自降单向)。 */
+    p->caps = 0;
+    {
+        char ub[8];
+
+        rt_rng_fill(ub, sizeof(ub));
+        p->uuid = ((u64)ub[0] << 56) | ((u64)ub[1] << 48) |
+                  ((u64)ub[2] << 40) | ((u64)ub[3] << 32) |
+                  ((u64)ub[4] << 24) | ((u64)ub[5] << 16) |
+                  ((u64)ub[6] << 8) | (u64)ub[7];
+        if (!p->uuid)
+            p->uuid = (u64)p->pid << 32 | 0xA41;   /* 零=换挡 */
+    }
+    p->max_fd = RT_FD_MAX;
+    p->max_child = RT_PROC_MAX - 1;
     p->leader = leader;
     p->mmap_next = AS_MMAP_BASE;
     as_build_tables(p);
@@ -370,6 +387,7 @@ void rt_proc_boot_shell(rt_task_t *shell)
 
     if (rt_proc_create(shell, &p) < 0)
         rt_panic("proc: no slot for shell", 0);
+    p->caps = CAP_ALL;             /* 站41:壳=全权 boot 域 */
     p->state = RT_PROC_RUN;
     rt_as_declare(p, (u64)__user_start & ~(AS_PAGE - 1), end);
     for (va = (u64)__user_start & ~(AS_PAGE - 1); va < end; va += AS_PAGE)
@@ -391,6 +409,22 @@ int rt_proc_fork_as(struct rt_proc *parent, struct rt_proc *child)
     u32 i, bi, pi;
 
     child->mmap_next = parent->mmap_next;
+    /* 站41:能力/上限承继(fail-closed 世系:无能力子不因
+     * fork 得能力);uuid=新身份(资源承继,身份不承)。 */
+    child->caps = parent->caps;
+    child->max_fd = parent->max_fd;
+    child->max_child = parent->max_child;
+    {
+        char ub[8];
+
+        rt_rng_fill(ub, sizeof(ub));
+        child->uuid = ((u64)ub[0] << 56) | ((u64)ub[1] << 48) |
+                      ((u64)ub[2] << 40) | ((u64)ub[3] << 32) |
+                      ((u64)ub[4] << 24) | ((u64)ub[5] << 16) |
+                      ((u64)ub[6] << 8) | (u64)ub[7];
+        if (!child->uuid)
+            child->uuid = (u64)child->pid << 32 | 0xA41;
+    }
     for (i = 0; i < parent->nvma; i++) {
         if (parent->vma[i].pool == 2) {
             if (rt_as_declare_shm(child, parent->vma[i].start,
@@ -527,6 +561,19 @@ struct rt_proc *rt_proc_zombie_find(int pid, int *exit_code)
 void rt_proc_reap(struct rt_proc *p)
 {
     p->used = 0;
+}
+
+/* 站41:rlimit 面——本进程在册子数(ZOMBIE 计,fork 满额判) */
+u32 rt_proc_child_count(struct rt_proc *p)
+{
+    u32 i, n = 0;
+
+    if (!p)
+        return 0;
+    for (i = 0; i < RT_PROC_MAX; i++)
+        if (procs[i].used && procs[i].parent == p->pid)
+            n++;
+    return n;
 }
 
 /* 站40:wait4 WNOHANG 判活(1=活;0=非此子——zombie 侦收在前,

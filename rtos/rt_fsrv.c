@@ -682,6 +682,25 @@ static int fd_slot_ok(struct rt_proc *p, int fd)
     return p && fd >= 0 && (u32)fd < RT_FD_MAX && p->fds[fd].used;
 }
 
+/* ---- 站41:CAPR fail-closed 执法点(fd 六门) ----
+ * 无 CAP_VFS 即拒(-EPERM);零能力 create 起步的进程连名字
+ * 都摸不到。fail-closed=缺省拒绝,授权是显式且唯一的。 */
+static int vfs_check(struct rt_proc *p)
+{
+    return p && (p->caps & CAP_VFS);
+}
+
+/* rlimit:fd 槽满额判定(自降单向,默认 RT_FD_MAX) */
+static u32 fd_used_count(struct rt_proc *p)
+{
+    u32 i, n = 0;
+
+    for (i = 0; i < RT_FD_MAX; i++)
+        if (p->fds[i].used)
+            n++;
+    return n;
+}
+
 int rt_fd_open(struct rt_proc *p, const char *kpath)
 {
     struct rt_fdreq req;
@@ -690,6 +709,10 @@ int rt_fd_open(struct rt_proc *p, const char *kpath)
 
     if (!p)
         return -22;
+    if (!vfs_check(p))
+        return -1;                     /* 站41:CAP_VFS fail-closed */
+    if (fd_used_count(p) >= p->max_fd)
+        return -24;                    /* 站41:rlimit EMFILE */
     coid = rt_msg_name_open(kpath);
     if (coid < 0) {
         /* 站40:目录回退——直名未挂者路由 ramfs 元名,由服务器解析
@@ -806,6 +829,10 @@ long rt_fd_create(struct rt_proc *p, const char *kpath)
 
     if (!p)
         return -22;
+    if (!vfs_check(p))
+        return -1;                     /* 站41:CAP_VFS fail-closed */
+    if (fd_used_count(p) >= p->max_fd)
+        return -24;                    /* 站41:rlimit EMFILE */
     /* 新文件尚无挂名:CREATE 走 ramfs 元名路由(服务器建名即挂名,
      * 后续 open 按名寻径);fd 三元组的 coid 亦驻此连接(生命周期
      * 同 open 面:close 时 CLOSE 消息+conn_detach)。 */
@@ -846,6 +873,8 @@ long rt_fd_unlink(struct rt_proc *p, const char *kpath)
 
     if (!p)
         return -22;
+    if (!vfs_check(p))
+        return -1;                     /* 站41:CAP_VFS fail-closed */
     coid = rt_msg_name_open(kpath);
     if (coid < 0)
         return coid;                   /* -ENOENT:无人挂此名 */
@@ -869,6 +898,8 @@ long rt_fd_dir(struct rt_proc *p, int index, char *kpath, u32 len)
 
     if (!p || !kpath || !len)
         return -22;
+    if (!vfs_check(p))
+        return -1;                     /* 站41:CAP_VFS fail-closed */
     coid = rt_msg_name_open("/dev/ramfs");
     if (coid < 0)
         return coid;
@@ -972,6 +1003,8 @@ long rt_fd_getdents64(struct rt_proc *p, int fd, char *ubuf, u32 len)
 
     if (!fd_slot_ok(p, fd))
         return -9;
+    if (!vfs_check(p))
+        return -1;                     /* 站41:CAP_VFS fail-closed */
     f = &p->fds[fd];
     fd_zero(&req, sizeof(req));
     req.op = RT_FDOP_READDIR;
@@ -1013,6 +1046,8 @@ long rt_fd_fstatat(struct rt_proc *p, const char *kpath, u32 *mode,
 
     if (!p || !kpath)
         return -22;
+    if (!vfs_check(p))
+        return -1;                     /* 站41:CAP_VFS fail-closed */
     coid = rt_msg_name_open(kpath);
     if (coid < 0) {
         coid = rt_msg_name_open("/dev/ramfs");   /* 目录回退(OPEN 同律) */

@@ -17,9 +17,13 @@ static u64 rng_state;
  * 异拍)+rt_ticks(调度可见性)。v0 诚实面:非密码级。 */
 void rt_rng_fill(char *buf, u32 len)
 {
-    u64 x = rng_state ^ (rt_ticks << 16);
     u32 i;
+    u64 x;
 
+    if (!rng_state)                   /* 站41:首用自种子(uuid 走
+                                       * create 期,早于 rngsrv 起立) */
+        rng_state = vtimer_now() | 1;
+    x = rng_state ^ (rt_ticks << 16);
     x ^= vtimer_now() & 0xffffULL;
     for (i = 0; i < len; i++) {
         x ^= x >> 12;

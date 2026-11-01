@@ -523,7 +523,33 @@ hint 顶游标则 musl 线程栈族挤爆窗尾=pt 第 3 线程 EAGAIN 实
 单飞（respawn 子加载与 run 子 fork 重叠=ramfs 通道双发送者
 并发,seg copy 中途断实测定谳;内核侧并发发送者疑点带证挂
 账后弧取证）** →
-**站34 yocto 门（[111]——meta-eshine 层入仓：git archive 提交树
+**站41 CAPR 能力框架（[107-111]——参考实现五面的最小站内形：
+能力位图 u64 caps 四位 CAP_VFS/SPAWN/KILL/MM（create=零能
+力,boot 壳=CAP_ALL,fork 按位继承,无任何加能力路径=self-inc-out
+由构造保证）+fail-closed 执法点=choke point 非全铠甲（fd 六门
+open/create/unlink/dir/getdents64/fstatat 判 CAP_VFS 缺=-1;
+fork/clone 判 CAP_SPAWN;kill/sigqueue 判 CAP_KILL;mmap/shm/
+mq/pipe 判 CAP_MM;read/write 已开窗不设卡 v0 记档）+rlimit 自
+降单向（max_fd 默认 RT_FD_MAX 满额拒 -24 EMFILE/max_child
+默认 RT_PROC_MAX-1 满额拒 -EAGAIN,rlimit_self 583 只降不升）
++uuid 进程身份（create 期站 40 混出器随机 8B,fork=新 uuid 资源
+承继身份不承,零值 pid 换挡）；号面 cap_drop 580/cap_get 581/
+uuid_get 582/rlimit_self 583;判据 [111]=壳 CAP_ALL 全脸隐式回
+归;粗粒度位图/读写不分档/MAC-RBAC-LSM 真形=后弧记档;
+站内最大战果=吞行自雷三小时法医：插 CAP_SPAWN/child_count
+两检查时 Edit 吞掉 rt_proc_create(NULL,&cp) 一行,cp 成未初
+始化野指针,fork_as 拿它狂写→EL1 数据中止→静默驻车（原
+guest_park 语义,wfi 永环）=全系统死锁零故障行；三重伪象（state
+=RUN 非 BLOCK/watchpoint 零命中/断点后零停点）最终由
+"调用者驻车于 rt_sched 空队列 WFI"全解释,git diff 定谳;
+**-Wall -Wextra 本就在构建里且当轮必已打 cp 未初始化警告
+——警告在,没人读;freestanding 无 -Werror,构建输出必须过
+眼**;第二判据教训重犯：新 demo 针线不看实输出,fddemo
+假 FAIL 一轮）;站 40 提交完整性洞六文件补收（busybox 构建配
+方+beat/initmark 源与产物+inittab——配方自宣"配方入仓"却没
+入仓,git archive 纪律站 34 立站 40 未用;busybox 二进制仓外
+=GPL 隔离故意非洞）** →
+**站34 yocto 门（[116]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
 部署四件（eshine.elf/rtos.bin/guest2.bin/ramfs.cpio）；判据=
@@ -532,7 +558,7 @@ hint 顶游标则 musl 线程栈族挤爆窗尾=pt 第 3 线程 EAGAIN 实
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-111 步手动走查清单。
+116 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

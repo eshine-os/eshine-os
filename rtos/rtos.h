@@ -331,6 +331,23 @@ struct rt_fdreq {
 #define ES_NR_getrandom      278   /* 混出器直面(与 /dev/random 同源) */
 #define RT_BOOT_EPOCH_NS  1793491200000000000ULL /* 2026-11-01T00:00:00Z(drvfw/RTC=后弧) */
 
+/* ---- 站四十一:CAPR 能力框架(参考实现五面的最小站内形) ----
+ * 句柄式 cap 表=粗粒度位图 v0;fail-closed=执法点缺能力即拒;
+ * self-inc-out=无任何加能力路径(只减不增由构造保证);
+ * rlimit=max_fd/max_child 自降单向;uuid=创建时随机身份
+ * (站 40 混出器同源,fork=新 uuid)。 */
+#define ES_NR_cap_drop   580   /* 自削掩码(单向) */
+#define ES_NR_cap_get    581   /* 自查位图 */
+#define ES_NR_uuid_get   582   /* 自查身份 */
+#define ES_NR_rlimit_self 583  /* 自降 max_fd/max_child(单向) */
+#define ES_EPERM          1
+#define ES_EMFILE         24
+#define CAP_VFS    0x1ULL     /* fd 六门:open/create/unlink/dir/dents/stat */
+#define CAP_SPAWN  0x2ULL     /* fork/clone */
+#define CAP_KILL   0x4ULL     /* kill/sigqueue */
+#define CAP_MM     0x8ULL     /* mmap/shm/mq/pipe */
+#define CAP_ALL    0xFULL
+
 /* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
  * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
 enum {
@@ -411,6 +428,11 @@ struct rt_proc {
     struct rt_task *leader;
     u64 brk;                      /* 站40:堆游标(0=未起;exec 后=mmap_next;
                                   * brk(0)=读,brk(a)=窗内 hint-mmap 增量) */
+    u64 caps;                     /* 站41:能力位图(create=0;壳=CAP_ALL;
+                                  * fork 继承;无加能力路径=self-inc-out) */
+    u64 uuid;                     /* 站41:进程身份(创建随机,fork 新) */
+    u32 max_fd;                   /* 站41:rlimit(fd 槽上限,默认 RT_FD_MAX) */
+    u32 max_child;                /* 站41:rlimit(子数上限) */
 };
 typedef struct rt_proc rt_proc_t;
 
@@ -554,6 +576,7 @@ long rt_fd_getdents64(struct rt_proc *p, int fd, char *ubuf, u32 len); /* 每调
 long rt_fd_fstatat(struct rt_proc *p, const char *kpath, u32 *mode, u32 *size);
 long rt_fd_dup3(struct rt_proc *p, int oldfd, int newfd);
 long rt_proc_child_alive(struct rt_proc *p, int pid);   /* WNOHANG 判活 */
+u32  rt_proc_child_count(struct rt_proc *p);  /* 站41:rlimit fork 面 */
 void rt_srv_boot(rt_task_t *shell);   /* 固定序列 spawn(boot 链面) */
 
 /* ---- 站三十二:signal+futex(rt_sig.c;参考实现 §10 站内收编) ----

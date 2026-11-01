@@ -158,6 +158,8 @@ static long sys_mmap(u64 *frame)
 
     if (!rt_cur->proc)
         return -ES_EINVAL;
+    if (!(rt_cur->proc->caps & CAP_MM))
+        return -1;                     /* 站41:CAP_MM fail-closed */
     va = rt_as_mmap(rt_cur->proc, hint, len);
     return va ? (long)va : -ES_ENOMEM;
 }
@@ -237,6 +239,10 @@ static long sys_fork(u64 *frame)
 
     if (!pp)
         return -ES_EINVAL;
+    if (!(pp->caps & CAP_SPAWN))
+        return -1;                     /* 站41:CAP_SPAWN fail-closed */
+    if (rt_proc_child_count(pp) >= pp->max_child)
+        return -ES_EAGAIN;             /* 站41:rlimit fork 满额 */
     if (rt_proc_create(NULL, &cp) < 0)
         return -ES_EAGAIN;
     if (rt_proc_fork_as(pp, cp) < 0) {
@@ -408,6 +414,8 @@ static long sys_shm_create(u64 *frame)
 {
     if (!rt_cur->proc)
         return -ES_EINVAL;
+    if (!(rt_cur->proc->caps & CAP_MM))
+        return -1;                     /* 站41:CAP_MM fail-closed */
     return rt_shm_create((u32)FR(0));
 }
 
@@ -483,6 +491,8 @@ static long sys_mq_open(u64 *frame)
 
     if (!rt_cur->proc)
         return -ES_EINVAL;
+    if (!(rt_cur->proc->caps & CAP_MM))
+        return -1;                     /* 站41:CAP_MM fail-closed */
     if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
         return -ES_EFAULT;
     return rt_mq_open(kpath);
@@ -534,6 +544,8 @@ static long sys_pipe(u64 *frame)
 
     if (!rt_cur->proc)
         return -ES_EINVAL;
+    if (!(rt_cur->proc->caps & CAP_MM))
+        return -1;                     /* 站41:CAP_MM fail-closed */
     r = rt_pipe_create(rt_cur->proc);
     if (r < 0)
         return r;
@@ -624,6 +636,8 @@ static long sys_futex(u64 *frame)
 
 static long sys_kill(u64 *frame)
 {
+    if (rt_cur->proc && !(rt_cur->proc->caps & CAP_KILL))
+        return -1;                     /* 站41:CAP_KILL fail-closed */
     return rt_sig_kill((int)FR(0), (u32)FR(1));
 }
 
@@ -638,6 +652,8 @@ static long sys_sigaction(u64 *frame)
 
 static long sys_sigqueueinfo(u64 *frame)
 {
+    if (rt_cur->proc && !(rt_cur->proc->caps & CAP_KILL))
+        return -1;                     /* 站41:CAP_KILL fail-closed */
     return rt_sig_queueinfo((long)FR(0), (u32)FR(1), FR(2));
 }
 
@@ -759,6 +775,8 @@ static long sys_clone(u64 *frame)
 
     if (!rt_cur->proc)
         return -ES_EINVAL;
+    if (!(rt_cur->proc->caps & CAP_SPAWN))
+        return -1;                     /* 站41:CAP_SPAWN fail-closed */
     if ((flags & RT_CLONE_PARENT_SETTID) && ptid &&
         !access_ok((void *)ptid, 8))
         return -ES_EFAULT;             /* 父语境写,先校 */
@@ -778,6 +796,48 @@ static long sys_gettid(u64 *frame)
 {
     (void)frame;
     return (long)rt_cur->tid;         /* 站35:leader=pid,线程=发号 */
+}
+
+/* ---- 站四十一:CAPR 面(参考实现五面的最小站内形) ---- */
+
+static long sys_cap_drop(u64 *frame)
+{
+    u64 mask = FR(0);
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    rt_cur->proc->caps &= ~mask;      /* 自削单向:无加能力路径 */
+    return 0;
+}
+
+static long sys_cap_get(u64 *frame)
+{
+    (void)frame;
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return (long)rt_cur->proc->caps;
+}
+
+static long sys_uuid_get(u64 *frame)
+{
+    (void)frame;
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return (long)rt_cur->proc->uuid;   /* 低 64 位截断打面(身份
+                                       * 判据=互异,非全值) */
+}
+
+static long sys_rlimit_self(u64 *frame)
+{
+    u32 fd = (u32)FR(0), ch = (u32)FR(1);
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (fd && fd < rt_cur->proc->max_fd)
+        rt_cur->proc->max_fd = fd;    /* 只降不升(0=不动) */
+    if (ch && ch < rt_cur->proc->max_child)
+        rt_cur->proc->max_child = ch;
+    return 0;
 }
 
 /* ---- 站四十:busybox/服务收编薄面(qemu-user -strace 需求定谳) ---- */
@@ -1228,6 +1288,11 @@ void rt_syscall_init(void)
     table[ES_NR_getegid]         = sys_uid0;
     table[ES_NR_brk]             = sys_brk;
     table[ES_NR_getrandom]       = sys_getrandom;
+    /* 站41:CAPR 面 */
+    table[ES_NR_cap_drop]        = sys_cap_drop;
+    table[ES_NR_cap_get]         = sys_cap_get;
+    table[ES_NR_uuid_get]        = sys_uuid_get;
+    table[ES_NR_rlimit_self]     = sys_rlimit_self;
 }
 
 void rt_syscall_dispatch(u64 *frame)

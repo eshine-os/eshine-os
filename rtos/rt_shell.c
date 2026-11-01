@@ -1335,6 +1335,111 @@ static void cmd_fddemo(void)
     fd_dump("/etc/version", "fddemo: version ");
 }
 
+/* ---- 站四十一:CAPR 四 demo(参考实现五面最小站内形) ---- */
+
+static void cmd_capdemo(void)
+{
+    long st = 0, pid = sys0(ES_NR_fork);
+
+    if (pid == (long)RT_FORK_MAGIC) {   /* 子:自削 VFS → open 拒 */
+        long dfd = sys1(ES_NR_fdopen, (long)"/etc");  /* 先开窗 */
+        long fd;
+
+        sys1(ES_NR_cap_drop, (long)CAP_VFS);
+        fd = sys1(ES_NR_fdopen, (long)"/etc/motd");
+        sys_puts(fd == -1 ? "cap: vfs dropped, open -EPERM ok\n"
+                          : "cap: open NOT denied?!\n");
+        {   /* spec §2[107]:已开 dir fd 上 getdents64 同拒(操作级
+             * 执法,非只开门) */
+            char db[64];
+            long r = sys3(ES_NR_getdents64, dfd, (long)db, sizeof(db));
+
+            sys_puts(r == -1 ? "cap: getdents64 -EPERM ok\n"
+                             : "cap: getdents64 NOT denied?!\n");
+            sys1(ES_NR_fdclose, dfd);
+        }
+        sys1(ES_NR_cap_drop, (long)CAP_ALL);   /* 再削尽:零面自证 */
+        sys_puts(sys1(ES_NR_cap_get, 0) == 0
+                 ? "cap: self-inc-out (no add path) ok\n"
+                 : "cap: caps not zero?!\n");
+        sys1(ES_NR_exit, 0);
+    }
+    if (pid < 0) {
+        sys_puts("capdemo: fork failed\n");
+        return;
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    /* spec §2[111]:fail-closed 回归——壳=CAP_ALL 全脸照常 */
+    sys_puts(sys1(ES_NR_cap_get, 0) == (long)CAP_ALL
+             ? "cap: shell CAP_ALL regression ok\n"
+             : "cap: shell caps wrong?!\n");
+    sys_puts("capdemo: done\n");
+}
+
+static void cmd_capdemo2(void)
+{
+    long st = 0, pid = sys0(ES_NR_fork);
+
+    if (pid == (long)RT_FORK_MAGIC) {   /* 子:自削 SPAWN → fork 拒 */
+        long c;
+
+        sys1(ES_NR_cap_drop, (long)CAP_SPAWN);
+        c = sys0(ES_NR_fork);
+        sys_puts(c == -1 ? "cap: spawn dropped, fork -EPERM ok\n"
+                         : "cap: fork NOT denied?!\n");
+        sys1(ES_NR_exit, 0);
+    }
+    if (pid < 0) {
+        sys_puts("capdemo2: fork failed\n");
+        return;
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts("capdemo2: done\n");
+}
+
+static void cmd_rlimitdemo(void)
+{
+    long st = 0, pid = sys0(ES_NR_fork);
+
+    if (pid == (long)RT_FORK_MAGIC) {   /* 子:max_fd 自降 3 → 第 4 开拒 */
+        long fd, i;
+
+        sys3(ES_NR_rlimit_self, 3, 0, 0);
+        for (i = 0; i < 4; i++)
+            fd = sys1(ES_NR_fdopen, (long)"/etc/motd");
+        sys_puts(fd == -24 ? "rlimit: 4th open -EMFILE ok\n"
+                           : "rlimit: open NOT capped?!\n");
+        sys1(ES_NR_exit, 0);
+    }
+    if (pid < 0) {
+        sys_puts("rlimitdemo: fork failed\n");
+        return;
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts("rlimitdemo: done\n");
+}
+
+static void cmd_uiddemo(void)
+{
+    long st = 0, a = sys1(ES_NR_uuid_get, 0), pid = sys0(ES_NR_fork);
+
+    if (pid == (long)RT_FORK_MAGIC) {   /* 子:uuid 互异自证 */
+        long b = sys1(ES_NR_uuid_get, 0);
+
+        sys_puts(b && b != a ? "uuid: child differs nonzero ok\n"
+                             : "uuid: identity broken?!\n");
+        sys1(ES_NR_exit, 0);
+    }
+    if (pid < 0) {
+        sys_puts("uiddemo: fork failed\n");
+        return;
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts("uuid: parent ");
+    sys_puts(a ? "nonzero ok\n" : "ZERO?!\n");
+    sys_puts("uiddemo: done\n");
+}
+
 /* ---- 站40:服务收编四 demo(判据面) ---- */
 
 static const char hexdig[] = "0123456789abcdef";
@@ -1564,6 +1669,14 @@ static void shell_line(char *line)
         cmd_slogdemo();
     } else if (streq(line, "initrespawn")) {
         cmd_initrespawn();
+    } else if (streq(line, "capdemo")) {
+        cmd_capdemo();
+    } else if (streq(line, "capdemo2")) {
+        cmd_capdemo2();
+    } else if (streq(line, "rlimitdemo")) {
+        cmd_rlimitdemo();
+    } else if (streq(line, "uiddemo")) {
+        cmd_uiddemo();
     } else if (streq(line, "futexdemo")) {
         cmd_futexdemo();
     } else if (streq(line, "sigdemo")) {

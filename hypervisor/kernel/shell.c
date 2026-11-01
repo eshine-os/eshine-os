@@ -25,7 +25,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (93 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (116 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -97,11 +97,14 @@ static void cmd_help(void)
     console_puts("  procdemo/slogdemo   -> /proc 任务表+slogd 环     [101-102]\n");
     console_puts("  run /bin/busybox echo/cat/ls/date/md5sum -> musl 精选集双世界 [103-106]\n");
     console_puts("  initrespawn         -> inittab sysinit 落标+门拍 respawn [105]\n");
-    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [107]\n");
-    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [108]\n");
-    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [109]\n");
-    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [110]\n");
-    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[111]\n");
+    console_puts("  capdemo/capdemo2    -> CAPR fail-closed:VFS/SPAWN 自削拒 [107-108]\n");
+    console_puts("  rlimitdemo/uiddemo  -> max_fd 自降 EMFILE+uuid 身份 [109-110]\n");
+    console_puts("  capdemo(复跑)      -> 壳 CAP_ALL 回归(fail-closed 隐式) [111]\n");
+    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [112]\n");
+    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [113]\n");
+    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [114]\n");
+    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [115]\n");
+    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[116]\n");
 }
 
 static void cmd_version(void)
