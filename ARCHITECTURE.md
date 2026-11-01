@@ -656,6 +656,12 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
 亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
 真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
+**站48 批收口（[128]——批四面合卷健康面板+批发布注记）：
+health=demo op RT_U_HEALTH 一屏（uptime tick/活任务/活进程/fp
+轮转计数/cpart·mpart 在役数/crash 环记录数/xvm 窗 seq·ack——
+43 观测/45 分区/46 崩溃/47 跨 VM 的自证合卷）;发布注记=
+docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
+用户管辖）** →
 **站34 yocto 门（[123]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
@@ -665,7 +671,7 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-132 步手动走查清单。
+133 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

@@ -127,3 +127,8 @@ void rt_crash_show(void)
         rt_puts_u64(" x29 0x", c->x[6], "\n");
     }
 }
+
+u32 rt_crash_count(void)                 /* 站48:health 面板出数 */
+{
+    return crash_next;                   /* 累计记录数(环 2 槽覆写) */
+}

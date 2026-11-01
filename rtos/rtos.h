@@ -413,7 +413,7 @@ enum {
     RT_U_LONGDEMO, RT_U_CALLTRACE,
     RT_U_FUPOKE,
     RT_U_APS, RT_U_MPART_ALLOC, RT_U_MPART_ATTACH, RT_U_MPART_FREE,
-    RT_U_PARTS, RT_U_CRASHINFO, RT_U_XVM,
+    RT_U_PARTS, RT_U_CRASHINFO, RT_U_XVM, RT_U_HEALTH,
 };
 
 /* ES_NR_sysinfo 的共享结构(user<->kernel) */
@@ -759,6 +759,13 @@ void rt_crash_show(void);
 /* ---- 站四十七:跨 VM 服务面(rt_xvm.c)——safeshm 窗+vm0
  *      设备后端(参考实现 xspace/VM_SET 白描) ---- */
 void rt_xvm_boot(void);               /* 开机生产者任务 */
+
+/* ---- 站四十八:健康面板(批四面合卷,一屏自证) ---- */
+void rt_health_show(void);
+u32  rt_crash_count(void);              /* rt_crash.c */
+u32  rt_cpart_used(void);               /* rt_part.c */
+u32  rt_mpart_used(void);
+u32  rt_proc_count(void);               /* rt_as.c */
 int  rt_as_user_mapped(struct rt_proc *p, u64 va);   /* 映射门 */
 rt_task_t *rt_idle1_task(void);      /* 站二十:次核 idle(池外伪任务) */
 void rtos_secondary_main(u32 cpu);   /* 站二十:次核世界(asm 入口落点) */

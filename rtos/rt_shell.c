@@ -2073,6 +2073,8 @@ static void shell_line(char *line)
         cmd_mprtdemo();
     } else if (streq(line, "parts")) {
         sys2(ES_NR_demo, RT_U_PARTS, 0);
+    } else if (streq(line, "health")) {
+        sys2(ES_NR_demo, RT_U_HEALTH, 0);
     } else if (streq(line, "crashdemo")) {
         cmd_crashdemo();
     } else if (streq(line, "crashinfo")) {

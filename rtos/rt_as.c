@@ -209,6 +209,16 @@ u64 rt_as_page_alloc(void)
 /* 站46:用户 VA 映射查(crash 用户帧链的逐读映射门——坏栈不得
  * 把取证变成 EL1 二次事故;只认 user/mmap 两块=xspage 不可
  * 走访面同律)。 */
+u32 rt_proc_count(void)                  /* 站48:health 面板出数 */
+{
+    u32 i, n = 0;
+
+    for (i = 0; i < RT_PROC_MAX; i++)
+        if (procs[i].used && procs[i].state != RT_PROC_ZOMBIE)
+            n++;
+    return n;
+}
+
 int rt_as_user_mapped(struct rt_proc *p, u64 va)
 {
     u32 bi = (u32)((va >> 21) & 511);

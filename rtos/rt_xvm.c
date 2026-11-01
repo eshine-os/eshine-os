@@ -56,3 +56,32 @@ void rt_xvm_boot(void)
     if (!rt_task_create("xvmsrv", xvm_srv, NULL, 15))
         rt_puts("srv: xvmsrv spawn failed\n");
 }
+
+/* ---- 站四十八:健康面板(批四面合卷:43 观测/45 分区/46 崩溃/
+ *      47 跨 VM;一屏自证,门 [128]) ---- */
+
+extern u32 rt_fp_saves;                   /* rt_fp.c(计数面) */
+
+u32 rt_proc_count(void);                  /* rt_as.c 池计数 */
+
+void rt_health_show(void)
+{
+    struct xvm_win *w = XVM_WIN;
+    unsigned int idx = 0, tasks = 0;
+    rt_task_t *t;
+
+    while ((t = rt_ps_next(&idx)) != NULL) {
+        if (t != rt_idle_task() && t->state != RT_FREE &&
+            t->state != RT_DEAD)
+            tasks++;
+    }
+    rt_puts_u64("health: uptime ", (u64)rt_ticks, " tick");
+    rt_puts_u64(", tasks ", tasks, "");
+    rt_puts_u64(", procs ", rt_proc_count(), "");
+    rt_puts_u64(", fp-saves ", rt_fp_saves, "\n");
+    rt_puts_u64("health: cparts ", rt_cpart_used(), "");
+    rt_puts_u64(", mparts ", rt_mpart_used(), "");
+    rt_puts_u64(", crashes ", rt_crash_count(), "");
+    rt_puts_u64(", xvm seq ", w->seq, "");
+    rt_puts_u64(" ack ", w->ack, "\n");
+}

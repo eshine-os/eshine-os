@@ -214,6 +214,27 @@ void rt_mpart_exit_all(struct rt_proc *p)
     }
 }
 
+/* 站48:health 面板出数(在役分区计数) */
+u32 rt_cpart_used(void)
+{
+    u32 i, n = 0;
+
+    for (i = 0; i < RT_CPART_MAX; i++)
+        if (cparts[i].used)
+            n++;
+    return n;
+}
+
+u32 rt_mpart_used(void)
+{
+    u32 i, n = 0;
+
+    for (i = 0; i < RT_MPART_MAX; i++)
+        if (mparts[i].used)
+            n++;
+    return n;
+}
+
 void rt_mpart_show(void)
 {
     u32 i;

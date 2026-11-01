@@ -1317,6 +1317,9 @@ static long sys_demo(u64 *frame)
     case RT_U_CRASHINFO:               /* 站46:crash 环倾倒(僵尸面) */
         rt_crash_show();
         break;
+    case RT_U_HEALTH:                 /* 站48:批四面合卷健康面板 */
+        rt_health_show();
+        break;
 
     default:
         return -ES_EINVAL;
