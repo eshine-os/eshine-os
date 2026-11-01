@@ -106,6 +106,12 @@ void rt_mm0_init(void)
         mm0_l1_dev[0x09000000UL >> 21] = MM0_DESC_DEVICE_EL1(0x09000000UL);
         mm0_l1_dev[0x0A000000UL >> 21] = MM0_DESC_DEVICE_EL1(0x0A000000UL);
 
+        /* 站47:跨 VM 服务窗(块 9 @0x41200000,IPA 恒等,EL1
+         * only+UXN+PXN)——vm0 设备后端形:窗口是内核设备,EL0
+         * 经 demo op(rt_xvm.c)代访;stage-2 侧窗在宿主 vm.c。 */
+        mm0_l1_ram[9] = MM0_DESC_NORMAL_EL1(0x41200000UL) |
+                        (1UL << 54) | (1UL << 53);
+
         /* RAM 八块(站29 半区重划,见上注) */
         for (i = 0; i < 8; i++) {
             u64 pa = MM0_KERN_BASE + (u64)i * MM0_BLOCK;

@@ -275,6 +275,7 @@ void guest_main(void)
     /* 站31:开机链(参考实现 PM 固定序列形状,协商位留后)——tty->
      * ramfs->pm。spawn 序=同优先级 FIFO 序:壳先跑打横幅后阻塞,
      * 服务器逐个起立挂名,PM 的 stdio open 一次即中。 */
+    rt_xvm_boot();                 /* 站47:跨 VM 服务生产者(常驻,静默) */
     rt_cpart_init();               /* 站45:分区 0=system(100%)
                                  * 先于 srv boot=服务器入 system 组 */
     rt_srv_boot(shell_task);

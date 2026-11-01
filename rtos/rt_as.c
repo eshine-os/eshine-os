@@ -278,6 +278,12 @@ static void as_build_tables(struct rt_proc *p)
         p->l1[b] = AS_BLOCK_EL1_DESC(0x40000000UL + b * AS_BLOCK);
     p->l1[AS_BLK_DTB] = AS_BLOCK_EL1_RO(0x40000000UL +
                                         AS_BLK_DTB * AS_BLOCK);
+    /* 站47:跨 VM 服务窗(块 9,EL1-only)——**必须入 per-proc 半区**:
+     * 内核 PGD 单侧加块=壳 demo op(per-proc 表+SPSel=0 语境)写窗
+     * 落 SP0 同步槽=guest_park 静默驻车站 28 家族(-d int 定谳:
+     * ESR 0x25/FAR 0x41200010→0x40013000 park)。EL1-only 面=设备
+     * 后端契约(EL0 经 demo op 代访)。 */
+    p->l1[9] = AS_BLOCK_EL1_DESC(0x40000000UL + 9 * AS_BLOCK);
 }
 
 int rt_proc_create(rt_task_t *leader, struct rt_proc **out)

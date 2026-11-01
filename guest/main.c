@@ -25,6 +25,12 @@
 #define GBUF_MAX 128
 
 static char linebuf[GBUF_MAX];
+/* 站47:跨 VM safeshm 窗镜像(与 rt_xvm.c 同构;seq/ack 代际协议) */
+struct xvm_win {
+    volatile u64 seq;
+    volatile u64 ack;
+    char text[64];
+};
 static volatile unsigned int wake_count;   /* vtimer IRQ 计数(sleep 唤醒判据) */
 /* virtio 完成计数在 virtio.h(virtio_done) */
 
@@ -130,6 +136,37 @@ void guest_main(void)
             } else if (streq(linebuf, "host")) {
                 puts_uart("releasing console...\n");
                 hvc_host();                  /* 交还 RX;此后 -2 -> WFI 让位 */
+            } else if (streq(linebuf, "xvm")) {
+                /* 站47:跨 VM 服务窗消费端(safeshm @0x41200000,
+                 * 裸机 VA=IPA 直访)。槽位占用(ack!=seq)即消费:
+                 * 读 text+ack=seq(代际协议,任何时刻入场皆真)。
+                 * 忙轮询=EL2 量子抢占保他客活。前台独占泵律
+                 * (站19D:console 按 VM 独占)下,本命令只在
+                 * owner=NULL 窗内生效(host 交还后双 VM 并跑)。 */
+                struct xvm_win *w = (struct xvm_win *)0x41200000UL;
+
+                puts_uart("xvm: waiting for vm0...\n");
+                while (w->ack == w->seq)
+                    __asm__ volatile("" ::: "memory");
+                __asm__ volatile("dmb ishld" ::: "memory");
+                puts_uart("xvm: got '");
+                puts_uart(w->text);
+                puts_uart("' seq=0x");
+                {
+                    char hex[20];
+                    u64 v = w->seq;
+                    int k;
+
+                    for (k = 15; k >= 0; k--) {
+                        hex[k] = "0123456789abcdef"[v & 0xF];
+                        v >>= 4;
+                    }
+                    hex[16] = '\0';
+                    puts_uart(hex);
+                }
+                uart_putc('\n');
+                w->ack = w->seq;
+                puts_uart("xvm: acked\n");
             } else if (streq(linebuf, "spin")) {
                 /* 迭代忙循环:不可让出负载。宿主 tick 在任意指令边界把本
                  * vCPU 抢占切走再无损续跑——计数器的存活性与最终输出即

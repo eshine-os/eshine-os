@@ -638,6 +638,24 @@ omit-frame-pointer 定谳**：用户码默认无 x29 链,首版 walk 0 帧
 （x29 残值在窗内但 [fp+8] 非返回址）;optimize 属性方案污染全 TU
 代码生成炸 strlen 弃;修=crashdemo 法医夹具手工挂 {x29,x30} 帧,
 真链用户构建（-fno-omit）同一机器即全链** →
+**站47 跨 VM 服务面（[127]——参考实现 xspace 全局窗/VM_SET 白描兑现,
+批令第六站）：safeshm 窗=宿主自有 2MB 物理雕刻（PA 0x52000000,
+三客 RAM 之外的空档）经 stage-2 双映 vm0/vm1（IPA 0x41200000 块 9,
+mem[1] 槽零新机器）;配置权唯一属宿主=安全面。**vm0 设备后端形**:
+窗在 RTOS stage-1 入内核 EL1-only（**必须双侧 L1:内核 PGD+per-proc
+半区——单侧加块=壳 demo op（per-proc 表+SPSel=0）写窗落 SP0 同步
+槽=guest_park 静默驻车站 28 家族,-d int 定谳 ESR 0x25/FAR 0x41200010
+→0x40013000**）。协议={seq,ack,text[64]}代际槽位（写方先 text 后
+dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实现 VM_SET
+单拷的优记档）。**前台独占泵律定谳（本站最大战果）**:站19D 的
+4 行规则 `if (console_owner && owner≠vm) continue`——谁持前台谁
+独享 CPU0,后台 VM 零切片;十连仪器取证（别名 gdb/双侧 stage-2
+描述符/vcpu 存档 PC-x5-x6/自写回环）全部指向正确,答案在调度器的
+泵规则里。demo 依律重铸:**开机常驻 xvmsrv 生产者（静默,交换才
+出声=站24 安静承诺)+vm1 客 xvm 消费者+host-owner 窗舞**（xvm 消费
+后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
+亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
+真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
 **站34 yocto 门（[123]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
@@ -647,7 +665,7 @@ omit-frame-pointer 定谳**：用户码默认无 x29 链,首版 walk 0 帧
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-131 步手动走查清单。
+132 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

@@ -135,6 +135,18 @@ int vm_create(u32 id)
     vm->mem[0].pa   = vm_geo[id].ram_pa;
     vm->mem[0].size = vm_geo[id].ram_size;
     vm->mem[0].attr = S2_ATTR_NORMAL;
+    if (id == 0 || id == 1) {
+        /* 站47:跨 VM 服务窗(safeshm)——2MB 双映 vm0/vm1
+         * @IPA 0x41200000(块 9)→PA 0x52000000(三客 RAM 之外
+         * 空档,spec §3 定谳);配置权唯一属宿主=安全面所在。
+         * 参考实现 xspace 全局窗白描的跨 VM 形;零拷(VM_SET 单拷
+         * 的优记档)。 */
+        vm->mem[1].ipa  = 0x41200000UL;
+        vm->mem[1].pa   = 0x52000000UL;
+        vm->mem[1].size = 0x200000UL;
+        vm->mem[1].attr = S2_ATTR_NORMAL;
+        vm->n_mem = 2;
+    }
     vm->devices[0].ipa  = VM_UART_IPA;
     vm->devices[0].pa   = 0;                /* 仿真设备无 PA:不映射,只有窗口 */
     vm->devices[0].size = VM_UART_SIZE;
