@@ -306,6 +306,11 @@ int rt_proc_create(rt_task_t *leader, struct rt_proc **out)
     p->max_child = RT_PROC_MAX - 1;
     p->pgid = p->pid;               /* 站42:leader 自成组(setsid 前) */
     p->sid = p->pid;                /* 站42:会话同律 */
+    p->mpart = -1;                  /* 站45:MPRT 未入组(复用槽必清
+                                     * ——站38 律第六案:残值 0=幻影
+                                     * 分区 0,fork 儿全被 max=0 拒,
+                                     * 冒烟四脸连炸定谳) */
+    p->mpart_pages = 0;             /* 声明页账由 declare 累计 */
     p->robust_head = 0;             /* 站42:robust 链未注册 */
     p->robust_len = 0;
     p->leader = leader;
@@ -343,6 +348,12 @@ static int as_declare_pool(struct rt_proc *p, u64 start, u64 end)
     p->vma[p->nvma].end = end;
     p->vma[p->nvma].pool = 1;
     p->nvma++;
+    /* 站45:MPRT 声明窗记账——mmap 与 fork 同走此咽喉,一钩双面;
+     * 超上限回滚 VMA,调用侧落 -ENOMEM(fork=内存隔离带孙面)。 */
+    if (rt_mpart_charge(p, (u32)((end - start) / AS_PAGE)) < 0) {
+        p->nvma--;
+        return -1;
+    }
     return 0;
 }
 
@@ -413,6 +424,9 @@ int rt_proc_fork_as(struct rt_proc *parent, struct rt_proc *child)
     u32 i, bi, pi;
 
     child->mmap_next = parent->mmap_next;
+    child->mpart = parent->mpart;   /* 站45:入组承继(参考实现 mprt_fork
+                                     * 白描);mpart_pages 从 0 起,
+                                     * 由下方 declare 累计 */
     /* 站41:能力/上限承继(fail-closed 世系:无能力子不因
      * fork 得能力);uuid=新身份(资源承继,身份不承)。 */
     child->caps = parent->caps;
@@ -440,6 +454,14 @@ int rt_proc_fork_as(struct rt_proc *parent, struct rt_proc *child)
                                   parent->vma[i].end,
                                   parent->vma[i].shm_id) < 0)
                 return -1;
+            continue;
+        }
+        if (parent->vma[i].pool == 0) {
+            /* 站45:identity VMA 走专口——零记账(VMA 本分=VA 即
+             * 后备,非匿名窗;旧码一股脑 as_declare_pool 在记
+             * 账钩子下会把 .user 块 14 页当匿名预算收) */
+            rt_as_declare(child, parent->vma[i].start,
+                          parent->vma[i].end);
             continue;
         }
         if (as_declare_pool(child, parent->vma[i].start,
@@ -499,7 +521,11 @@ int rt_as_munmap(struct rt_proc *p, u64 start, u64 len)
                     }
                 }
             }
-            /* VMA 摘除(尾移法,nvma 减一) */
+            /* VMA 摘除(尾移法,nvma 减一)。站45:pool==1 声明窗
+             * 退账(identity VMA 不记)。 */
+            if (p->vma[i].pool == 1)
+                rt_mpart_uncharge(p,
+                    (u32)((p->vma[i].end - p->vma[i].start) / AS_PAGE));
             for (; i + 1 < p->nvma; i++)
                 p->vma[i] = p->vma[i + 1];
             p->nvma--;
@@ -620,6 +646,7 @@ void rt_proc_exit(struct rt_proc *p, int code)
 
     p->exit_code = code;
     p->state = RT_PROC_ZOMBIE;
+    rt_mpart_exit_all(p);         /* 站45:声明窗全退(fork 承继同律) */
     as_free_asid(p->asid);
     p->asid = 0;
     rt_shm_exit(p);

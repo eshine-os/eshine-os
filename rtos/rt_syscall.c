@@ -1297,6 +1297,23 @@ static long sys_demo(u64 *frame)
          * FR(1)=用户字 VA=key,FR(2)=延迟拍;真 threads=站 33+) */
         rt_futex_poke(rt_cur->proc, FR(1), FR(2) ? FR(2) : 30);
         break;
+    case RT_U_APS:                      /* 站45:CPU 分区判据体(自含:
+                                          * 对齐+争跑窗+偷闲窗+表) */
+        rt_aps_demo();
+        break;
+    case RT_U_MPART_ALLOC:              /* 站45:内存分区(FL0 面:
+                                          * fork 子自 attach,壳不绑) */
+        return rt_mpart_alloc("mpdemo", (u32)FR(1));
+    case RT_U_MPART_ATTACH:
+        rt_mpart_attach(rt_cur->proc, (int)FR(1));
+        break;
+    case RT_U_MPART_FREE:
+        rt_mpart_free((int)FR(1));
+        break;
+    case RT_U_PARTS:
+        rt_cpart_show();                /* k_aps_show 镜像(参考实现白描) */
+        rt_mpart_show();
+        break;
     default:
         return -ES_EINVAL;
     }

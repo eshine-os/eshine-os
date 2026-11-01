@@ -112,6 +112,8 @@ struct rt_task {
     u32 sig_pending;              /* 站38:任务级待决位图(tgkill 定向)@760 */
     u32 wait_src;                 /* 站43:最近阻塞原语(归属列)@764 */
     u64 sig_val;                  /* 站38:定向信号载荷值@768 */
+    u32 cpart;                    /* 站45:CPU 分区(0=system)@776
+                                    * ——结构尾追加纪律,前部 asm 钉死 */
 };
 typedef struct rt_task rt_task_t;
 _Static_assert(__builtin_offsetof(rt_task_t, usp) == 672, "RT_TASK_USP=672");
@@ -410,6 +412,8 @@ enum {
     RT_U_HB, RT_U_SLEEP, RT_U_IPCDEMO, RT_U_PULSEDEMO, RT_U_ABORTDEMO,
     RT_U_LONGDEMO, RT_U_CALLTRACE,
     RT_U_FUPOKE,
+    RT_U_APS, RT_U_MPART_ALLOC, RT_U_MPART_ATTACH, RT_U_MPART_FREE,
+    RT_U_PARTS,
 };
 
 /* ES_NR_sysinfo 的共享结构(user<->kernel) */
@@ -495,6 +499,9 @@ struct rt_proc {
     u32 sig_altsize;
     u32 sig_retmask;              /* 站42:sigsuspend 还原掩码(sigreturn 兜) */
     u32 sig_suspflag;             /* 1=本次投递源自 sigsuspend 窗 */
+    /* 站45:MPRT 内存分区(-1=未入组;fork 承继入组,记账=声明窗) */
+    int mpart;                    /* 入组 id(0..3) */
+    u32 mpart_pages;              /* 本进程声明页账(mmap+/munmap-/退场清) */
 };
 typedef struct rt_proc rt_proc_t;
 
@@ -723,6 +730,25 @@ void rt_proc_reap(struct rt_proc *p);          /* ZOMBIE 槽全回收 */
 rt_task_t *rt_ps_first(unsigned int *idx);
 rt_task_t *rt_ps_next(unsigned int *idx);
 rt_task_t *rt_idle_task(void);
+int rt_task_in_pool(rt_task_t *t);       /* 站45:idle 池外伪任务判别 */
+
+/* ---- 站四十五:分区化(rt_part.c)——APS CPU 预算分区+MPRT 内存
+ *      预算分区(参考实现 k_aps/k_apm 白描;demo 级内核面,零新 syscall) ---- */
+void rt_cpart_init(void);               /* boot:分区 0=system(100%) */
+int  rt_cpart_alloc(const char *name, u32 pct);   /* 新分区从 system 扣 */
+void rt_cpart_join(u32 id, rt_task_t *t);
+int  rt_cpart_tick(rt_task_t *t);       /* 每系统 tick 记账(tick 语境);
+                                           返 1=当前任务被节流 */
+void rt_cpart_show(void);
+int  rt_mpart_alloc(const char *name, u32 max_pages);
+void rt_mpart_attach(struct rt_proc *p, int id);
+int  rt_mpart_charge(struct rt_proc *p, u32 npages);   /* 声明窗咽喉 */
+void rt_mpart_uncharge(struct rt_proc *p, u32 npages);
+void rt_mpart_exit_all(struct rt_proc *p);            /* 退场全退 */
+void rt_mpart_show(void);
+void rt_cpart_free(int id);              /* 站45:预算还 system,demo 收口 */
+void rt_mpart_free(int id);
+void rt_aps_demo(void);                  /* 站45:CPU 分区判据体(蹦床调) */
 rt_task_t *rt_idle1_task(void);      /* 站二十:次核 idle(池外伪任务) */
 void rtos_secondary_main(u32 cpu);   /* 站二十:次核世界(asm 入口落点) */
 void rtos_secondary_entry(void);      /* 站二十:asm 入口(vec.S .global) */

@@ -25,7 +25,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (126 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (129 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -107,11 +107,14 @@ static void cmd_help(void)
     console_puts("  calltrace           -> x29 FP 链走查+panic 钩子  [119]\n");
     console_puts("  polldemo            -> ppoll 超时/POLLIN/排空三脸 [120]\n");
     console_puts("  ps                  -> blk 归属列(挂起原语名)     [121]\n");
-    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [122]\n");
-    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [123]\n");
-    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [124]\n");
-    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [125]\n");
-    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[126]\n");
+    console_puts("  apsdemo             -> CPU 分区 20%保证+偷闲     [122]\n");
+    console_puts("  mprtdemo            -> 内存分区上限(fork 也拒)  [123]\n");
+    console_puts("  parts               -> 两分区表(k_aps_show 镜像)[124]\n");
+    console_puts("  ctrl-^ 0/1/2/h      -> 快捷键三台直切+回宿主   [125]\n");
+    console_puts("  vmconsole 0 / exit -> rtos 迟退 VM_DEAD     [126]\n");
+    console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [127]\n");
+    console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [128]\n");
+    console_puts("  yocto bitbake -> 部署产物可靴(musl run)[129]\n");
 }
 
 static void cmd_version(void)

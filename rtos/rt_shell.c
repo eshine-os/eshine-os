@@ -1719,6 +1719,49 @@ static void cmd_polldemo(void)
     sys_puts("polldemo: done\n");
 }
 
+static void cmd_mprtdemo(void)
+{
+    /* 站45:MPRT 内存分区——EL0 fork 面(壳永不入组:下游门不被
+     * 绑)。子自 attach:16p mmap ok/再 mmap -12/fork 孙被拒
+     * (窗全拷=32p>16,内存隔离带 fork 面)/munmap 后复 ok/退场
+     * 全退=表 cur 0。 */
+    long id, pid, r, st = 0;
+    u64 va;
+
+    id = sys2(ES_NR_demo, RT_U_MPART_ALLOC, 16);
+    if (id < 0) {
+        sys_puts("mprtdemo: alloc FAIL\n");
+        return;
+    }
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {
+        r = sys2(ES_NR_demo, RT_U_MPART_ATTACH, id);
+        (void)r;
+        va = (u64)sys2(ES_NR_mmap, 0, 16 * 4096);
+        sys_puts(va ? "mprt: mmap 16p ok\n" : "mprt: mmap FAIL\n");
+        r = sys2(ES_NR_mmap, 0, 16 * 4096);
+        sys_puts(r == -12 ? "mprt: mmap -12 budget ok\n"
+                           : "mprt: budget face wrong\n");
+        r = sys0(ES_NR_fork);       /* 孙:窗全拷>上限=fork 被拒 */
+        sys_puts(r == -12 ? "mprt: fork denied by budget ok\n"
+                          : "mprt: fork deny face wrong\n");
+        if (r == (long)RT_FORK_MAGIC)
+            sys1(ES_NR_exit, 1);    /* 保险丝:孙不得链式再入 */
+        sys2(ES_NR_munmap, (long)va, 16 * 4096);
+        r = sys2(ES_NR_mmap, 0, 16 * 4096);
+        sys_puts(r > 0 ? "mprt: mmap after munmap ok\n"
+                       : "mprt: munmap uncharge face wrong\n");
+        sys1(ES_NR_exit, 0);
+    }
+    sys_puts("mprtdemo: child running\n");
+    pid = sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts(st == 0 ? "mprtdemo: reaped code=0 ok\n"
+                     : "mprtdemo: reap FAIL\n");
+    sys2(ES_NR_demo, RT_U_PARTS, 0);    /* 表 face:cur 0/16=退场全退 */
+    sys2(ES_NR_demo, RT_U_MPART_FREE, id);
+    sys_puts("mprtdemo: done\n");
+}
+
 static void cmd_unamedemo(void)
 {
     char buf[6 * 65];
@@ -1992,6 +2035,12 @@ static void shell_line(char *line)
         cmd_polldemo();
     } else if (streq(line, "calltrace")) {
         sys2(ES_NR_demo, RT_U_CALLTRACE, 0);
+    } else if (streq(line, "apsdemo")) {
+        sys2(ES_NR_demo, RT_U_APS, 0);
+    } else if (streq(line, "mprtdemo")) {
+        cmd_mprtdemo();
+    } else if (streq(line, "parts")) {
+        sys2(ES_NR_demo, RT_U_PARTS, 0);
     } else if (streq(line, "futexdemo")) {
         cmd_futexdemo();
     } else if (streq(line, "sigdemo")) {

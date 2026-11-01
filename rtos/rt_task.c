@@ -121,6 +121,8 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
                                       * (电池序才撞:孤立跑任务位
                                       * 干净不现;站38 律第四现)。 */
     t->wait_src = RT_WSRC_NONE;     /* 站43:归属列,复用槽必清(站38 律) */
+    t->cpart = 0;                   /* 站45:CPU 分区(0=system,复用槽
+                                     * 必清——站38 律第五案预防位) */
     t->el0 = 0;                     /* 站40 定谳(12 站潜伏):el0 域
                                       * 站28 入槽时漏清单——boot 期
                                       * initmark/beat 子(首批早期
@@ -472,6 +474,13 @@ rt_task_t *rt_ps_next(unsigned int *idx)
     if (*idx == RT_POOL_MAX)
         return &idle_task;
     return NULL;
+}
+
+/* 站45:池内判定(idle1=池外伪任务,免 CPU 分区记账/免入别人
+ * 在跑扫描)。 */
+int rt_task_in_pool(rt_task_t *t)
+{
+    return t >= pool && t < pool + RT_POOL_MAX;
 }
 
 rt_task_t *rt_idle_task(void)

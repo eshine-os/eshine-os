@@ -605,6 +605,25 @@ ABI），dispatch 单点帧手术：elr 回拨 4 重取 svc+x0 槽不写保入�
 执行 svc 后指令错窗垃圾；x0 没保入参=拿 -512 当 uaddr 野访）；
 重启破则旧脸 -4 落 FAIL 行门红自抓。ERESTARTNOHAND/restart_block
 记档非目标（无消费者不落码）** →
+**站45 APS+MPRT 分区化（[122-124]——参考实现 k_aps.c/k_apm.c 白描兑
+现日，站27 差距清单分区项）：CPU 预算分区=百分比预算+tick 记账
+（窗 20 tick，credit=budget×20/100，两核同面，idle 池外免记账）+
+超标节流（复用站 17 睡客机器 state=RT_SLEEP+wake_tick=下窗界，
+零新等待逻辑）+**偷闲**（无人跑=free CPU 回冲记账，QNX guarantee
++steal 两语义）；分区 0=system（100% 余量池，新分区从它扣，Σ≤100
+纪律）。内存预算分区=**声明窗单一咽喉**记账（as_declare_pool=
+mmap 与 fork 同口，一钩双面；declare-time 模型记档差异 vs 参考实现
+resident 页）；munmap uncharge+退场全退；fork 承继入组（参考实现
+mprt_fork 白描）=孙窗全拷入组超限 fork 被拒（内存隔离带 fork 面）。
+判据=apsdemo（对齐窗界起任务,两满窗确定性 share=20% 带 10-30
+宽判+偷闲窗 45 拍独跑满账）+mprtdemo（16p mmap ok/再 mmap -12/
+fork 孙 -12/munmap 复 ok/退场 cur 0）+parts（两表,k_aps_show
+镜像）。**站38 律第六案（复用槽新域入清单）**:mpart 残值 0=
+幻影分区 0,fork 儿全被 max=0 拒,冒烟四脸连炸一根因定谳;
+**fork_as identity VMA 记账雷**:旧码一股脑 as_declare_pool,
+记账钩子下 .user 块 14 页被当匿名预算收,修=pool 0 走专口
+rt_as_declare 零记账。零新 syscall（demo 蹦床面,k_part_create
+同位）** →
 **站34 yocto 门（[123]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
@@ -614,7 +633,7 @@ ABI），dispatch 单点帧手术：elr 回拨 4 重取 svc+x0 槽不写保入�
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-126 步手动走查清单。
+129 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

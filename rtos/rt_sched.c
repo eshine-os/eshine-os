@@ -318,6 +318,10 @@ void rt_tick_bookkeep(void)
     }
     if (higher_ready_than(t))
         need_switch[c] = 1;
+    if (rt_cpart_tick(t))            /* 站45:分区记账+超标节流
+                                      * (两核同面;返 1=已节流,
+                                      * 睡客机器接管,窗界自醒) */
+        need_switch[c] = 1;
 }
 
 int rt_need_switch(void)
