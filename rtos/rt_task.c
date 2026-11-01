@@ -148,8 +148,15 @@ static unsigned int pool_slot_of(const rt_task_t *t);
 
 u64 rt_pid_of(rt_task_t *t)
 {
-    unsigned int slot = pool_slot_of(t);
+    unsigned int slot;
 
+    /* 站42 定谳(getpid 首个 fork 子受害者实抓):槽号≠pid——壳
+     * 28 站全绿只因任务槽 0 恰等于进程 pid 1;真 pid 在 proc 面
+     * (站 29 起),EL0 任务恒有 proc,内核任务(服务器)无 proc
+     * 退回槽号面(终态标签/调试面语义不变)。 */
+    if (t && t->proc)
+        return (u64)t->proc->pid;
+    slot = pool_slot_of(t);
     return slot < RT_POOL_MAX ? (u64)(slot + 1) : 0;
 }
 

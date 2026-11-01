@@ -549,7 +549,37 @@ guest_park 语义,wfi 永环）=全系统死锁零故障行；三重伪象（sta
 方+beat/initmark 源与产物+inittab——配方自宣"配方入仓"却没
 入仓,git archive 纪律站 34 立站 40 未用;busybox 二进制仓外
 =GPL 隔离故意非洞）** →
-**站34 yocto 门（[116]——meta-eshine 层入仓：git archive 提交树
+**站42 syscall 面补全（[112-118]——参考实现终审计补齐弧：调度器管
+理面真号组（setparam/setscheduler/getparam/getscheduler/affinity
+/yield/rr_get_interval/getcpu+setpriority/getpriority nice 图
+[16±n/2 线性两向一致]；**getpid 槽号≠pid 真身定谳**——rt_pid_of
+返任务池槽+1,壳 28 站全绿只因槽 0 恰等于 pid 1,首个 fork 子
+getpid 现形,修=proc 面 pid 优先）;信号补全（sigpending 136/
+sigsuspend 133=站24 rx 正牌三件套 wait_mask+BLOCK+rdy_remove 同
+DAIF 窗+**掩码还原移 sigreturn**[sig_retmask/suspflag 两域=POSIX
+掩码序:handler 用挂起窗掩码,完成还挂起前];sigaltstack 132 注册
+回读 v0 不切栈）;posix timer+itimer（timer_create 107/delete 111/
+settime 110/gettime 108/getoverrun 109+getitimer 102/setitimer
+103;SIGEV_THREAD_ID 面单形,全局池 8 槽骑站 20 软定时器,回调
+语境=禁调度版投递 rt_sig_queueinfo_ctx[tick 回调带 rt_sched=站20
+契约违],overrun=上发未收计数;**站 28 tp 守卫谓词扩展**=posix
+timer 池成合法第二驻地[守卫原只认任务池,真野值照抓不变]）;robust
+futex 链（set/get_robust_list 99/100,exit 路径遍历[musl 律节点
+基=锁字 offset 0,next@+0,用户窗范围门+100 跳保险丝]自动唤醒
+等者=持锁者死线程得救）;进程组/会话（setsid 157/getsid 156/
+setpgid 154/getpgid 155,fork 承继组与会话）;close_on_exec
+（fcntl 25 真 F_SETFD/F_GETFD 位,exec_setup 语境逐 fd 摘除,
+父侧不受子扰 POSIX 面）;uname 160 六字段。**裁剪记档**:E
+（ERESTARTSYS 重启语义,改站 32 契约面大）/H（calltrace+ps 观测
+扩展）/I（poll）三面后弧另立——账册 docs/specs/2026-11-01-
+station41-post-reference-audit.md。**战雷三枚冒烟定谳**:getpid 槽号
+真身（第一受害者定律新案:14 站无雷只因无人 fork 子调 getpid）/
+sigsuspend 漏 BLOCK 态=站41"调用者驻车"反面教材当日重演/
+**clone 子落父 C 帧=野址读**（恢复点在 wrapper 返回帧,新栈无父
+局部,[sp+1304] 读出字面串指针野值 far=ASCII 定谳;修=必入自有帧
+入口函数,musl __clone 同律——fork 子因整栈拷贝无此约束,两种
+child 两种纪律）**） →
+**站34 yocto 门（[123]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
 部署四件（eshine.elf/rtos.bin/guest2.bin/ramfs.cpio）；判据=
@@ -558,7 +588,7 @@ guest_park 语义,wfi 永环）=全系统死锁零故障行；三重伪象（sta
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-116 步手动走查清单。
+123 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

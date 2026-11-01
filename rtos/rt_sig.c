@@ -162,7 +162,7 @@ int rt_sig_action(struct rt_proc *p, u32 sig, u64 handler, u64 restorer)
     return 0;
 }
 
-static void sig_wake_task(rt_task_t *t)
+static void sig_wake_task_i(rt_task_t *t, int do_sched)
 {
     u64 d;
 
@@ -182,8 +182,13 @@ static void sig_wake_task(rt_task_t *t)
      * (sem/msg 等待者)由其 take 环吸收重挂,投递延至自然醒
      * (spec §4 边界)。 */
     rt_daif_load(d);
-    if (t->prio < rt_cur->prio)
+    if (do_sched && t->prio < rt_cur->prio)
         rt_sched();
+}
+
+static void sig_wake_task(rt_task_t *t)
+{
+    sig_wake_task_i(t, 1);
 }
 
 int rt_sig_kill(int pid, u32 sig)
@@ -229,6 +234,33 @@ long rt_sig_queueinfo(long pid_or_tid, u32 sig, u64 value)
     p->sig_pending |= 1u << sig;
     p->sig_val[sig] = value;
     sig_wake_task(p->leader);
+    return 0;
+}
+
+/* 站42:tick 语境投递(posix timer 到期面)——与 rt_sig_queueinfo
+ * 同体,唯唤醒不带让位(软定时器回调语境契约:禁 rt_sched)。 */
+long rt_sig_queueinfo_ctx(long pid_or_tid, u32 sig, u64 value)
+{
+    struct rt_proc *p;
+    rt_task_t *t;
+    unsigned int idx;
+
+    if (sig == 0 || sig >= RT_SIG_MAX)
+        return -22;
+    for (t = rt_ps_first(&idx); t; t = rt_ps_next(&idx))
+        if (t->state != RT_FREE && t->state != RT_DEAD &&
+            t->tid && t->tid == (u64)pid_or_tid) {
+            t->sig_pending |= 1u << sig;
+            t->sig_val = value;
+            sig_wake_task_i(t, 0);
+            return 0;
+        }
+    p = rt_proc_lookup((int)pid_or_tid);
+    if (!p)
+        return -3;
+    p->sig_pending |= 1u << sig;
+    p->sig_val[sig] = value;
+    sig_wake_task_i(p->leader, 0);
     return 0;
 }
 
@@ -331,6 +363,12 @@ long rt_sig_return(u64 *frame)
         frame[i] = p->sig_saved[i];
     rt_cur->usp = p->sig_saved_usp;     /* SP_EL0 还原(见投递注) */
     p->sig_active = 0;
+    /* 站42:sigsuspend 窗的投递——POSIX:handler 完成后掩码回
+     * 挂起前(sigreturn=还原唯一口,非 sigsuspend 返回口)。 */
+    if (p->sig_suspflag) {
+        p->sig_blocked = p->sig_retmask;
+        p->sig_suspflag = 0;
+    }
     x0 = (long)frame[2];
     return x0;
 }

@@ -25,6 +25,9 @@ typedef unsigned char u8;
 
 #define RT_RX_BIT    0x0001u          /* BLOCK 等待位:串口 RX
                                        * (通用原语——信号量/互斥——留十七站) */
+#define RT_SIG_BIT    0x0008u         /* 站42:sigsuspend 等待位——任何
+                                       * kill/queueinfo/timer 投递都会
+                                       * 清 wait_mask(sig_wake 律) */
 #define RT_PROC_BIT  0x0004u          /* 站29:子进程收尸唤醒位
                                        * (sys_exit 置 ZOMBIE 后广播) */
 
@@ -348,6 +351,46 @@ struct rt_fdreq {
 #define CAP_MM     0x8ULL     /* mmap/shm/mq/pipe */
 #define CAP_ALL    0xFULL
 
+/* ---- 站四十二:syscall 面补全(参考实现终审计补齐弧;号面从
+ * musl-1.2.5 aarch64 头钉死零臆测) ---- */
+#define ES_NR_set_robust_list  99   /* musl pthread 启动即注册 */
+#define ES_NR_get_robust_list  100
+#define ES_NR_ppoll            73   /* musl poll 走 ppoll */
+#define ES_NR_timer_create     107
+#define ES_NR_timer_gettime    108
+#define ES_NR_timer_getoverrun 109
+#define ES_NR_timer_settime    110
+#define ES_NR_timer_delete     111
+#define ES_NR_getitimer        102
+#define ES_NR_setitimer        103
+#define ES_NR_sched_setparam   118
+#define ES_NR_sched_setscheduler 119
+#define ES_NR_sched_getscheduler 120
+#define ES_NR_sched_getparam   121
+#define ES_NR_sched_setaffinity 122
+#define ES_NR_sched_getaffinity 123
+#define ES_NR_sched_yield      124
+#define ES_NR_sched_get_priority_max 125
+#define ES_NR_sched_get_priority_min 126
+#define ES_NR_sched_rr_get_interval 127
+#define ES_NR_restart_syscall  128
+#define ES_NR_sigaltstack      132
+#define ES_NR_rt_sigsuspend    133
+#define ES_NR_rt_sigpending    136
+#define ES_NR_rt_sigtimedwait  137
+#define ES_NR_setpriority      140
+#define ES_NR_getpriority      141
+#define ES_NR_setpgid          154
+#define ES_NR_getpgid          155
+#define ES_NR_getsid           156
+#define ES_NR_setsid           157
+#define ES_NR_getcpu           168
+#define ES_NR_uname            160
+#define SCHED_OTHER  0
+#define SCHED_FIFO   1
+#define FD_CLOEXEC   1          /* fcntl F_SETFD 位(ES_NR_fcntl 25 已在真号块) */
+
+
 /* 内核镜像命令号(demo 蹦床:EL0 壳经 sys_demo 让内核语境跑既有
  * 命令体——80 门判据逐字节不变;30+ 各面 syscall 化后逐批退役) */
 enum {
@@ -388,6 +431,7 @@ struct rt_fd {
     int coid;
     u32 ocb;
     u32 dircur;                    /* 站40:getdents64 每游标(READDIR 回执兑付) */
+    u32 cloexec;                   /* 站42:FD_CLOEXEC 位(fcntl F_SETFD) */
 };
 
 enum { RT_PROC_CREATE, RT_PROC_RUN, RT_PROC_ZOMBIE };
@@ -433,8 +477,19 @@ struct rt_proc {
     u64 uuid;                     /* 站41:进程身份(创建随机,fork 新) */
     u32 max_fd;                   /* 站41:rlimit(fd 槽上限,默认 RT_FD_MAX) */
     u32 max_child;                /* 站41:rlimit(子数上限) */
+    /* 站42:参考实现终审计补齐弧——进程组/会话+robust futex+
+     * posix timer(尾追纪律:前部偏移 asm/帧契约钉死)。 */
+    int pgid;                     /* 进程组(leader 自成组 pid;fork 承继) */
+    int sid;                      /* 会话(setsid=自成会话) */
+    u64 robust_head;              /* musl pthread robust 链头(0=未注册) */
+    u32 robust_len;
+    u64 sig_altsp;                /* 站42:sigaltstack 注册(v0=记档不切栈) */
+    u32 sig_altsize;
+    u32 sig_retmask;              /* 站42:sigsuspend 还原掩码(sigreturn 兜) */
+    u32 sig_suspflag;             /* 1=本次投递源自 sigsuspend 窗 */
 };
 typedef struct rt_proc rt_proc_t;
+
 
 /* rt_sync.c(第十七站):同步原语——每对象 FIFO 等待队列(参考RTOS 公开
  * 设计为基准的最小形态:唤醒队头,非广播)。take 重检环(醒后自己复核
@@ -577,6 +632,7 @@ long rt_fd_fstatat(struct rt_proc *p, const char *kpath, u32 *mode, u32 *size);
 long rt_fd_dup3(struct rt_proc *p, int oldfd, int newfd);
 long rt_proc_child_alive(struct rt_proc *p, int pid);   /* WNOHANG 判活 */
 u32  rt_proc_child_count(struct rt_proc *p);  /* 站41:rlimit fork 面 */
+int  rt_ptimer_in_pool(void *tm);     /* 站42:tp 守卫第二驻地谓词 */
 void rt_srv_boot(rt_task_t *shell);   /* 固定序列 spawn(boot 链面) */
 
 /* ---- 站三十二:signal+futex(rt_sig.c;参考实现 §10 站内收编) ----
@@ -590,6 +646,7 @@ long rt_futex_wake_key(struct rt_proc *p, u64 va, u32 n);
 int  rt_sig_action(struct rt_proc *p, u32 sig, u64 handler, u64 restorer);
 int  rt_sig_kill(int pid, u32 sig);
 long rt_sig_queueinfo(long pid_or_tid, u32 sig, u64 value);  /* 站38 */
+long rt_sig_queueinfo_ctx(long pid_or_tid, u32 sig, u64 value); /* 站42:tick 语境禁调度 */
 long rt_sig_timedwait(u32 sig, u64 ticks);   /* 站38:v0 轮询面 */
 int  rt_sig_deliver(u64 *frame);       /* syscall 出口(disp 尾);
                                          * 返 1=默认动作终局(dispatcher 走 exit) */
@@ -854,6 +911,24 @@ void rt_timer_init(rt_timer_t *t, void (*fn)(void *), void *arg);
 int  rt_timer_start(rt_timer_t *t, u64 ticks, int periodic);
 void rt_timer_stop(rt_timer_t *t);
 void rt_timer_tick(void);            /* 核 0 单写者扫描:到期即回调 */
+
+/* 站42:posix timer v0(全局池 8 槽;骑站 20 软定时器)。回调语境=
+ * 禁调度——投递走 sig 位图+无 rt_sched 唤醒版;到期=SIGEV_THREAD_ID
+ * 任务级 sigevent(v0 面单形);itimer(ITIMER_REAL)同池骑坐。 */
+struct rt_ptimer {
+    rt_timer_t tm;              /* 站 20 机器(armed 由 tm 自证) */
+    struct rt_proc *owner;
+    int slot;
+    int armed;
+    u64 interval_ns;            /* it_interval(0=单发) */
+    int signo;                  /* sigev_signo */
+    u64 value;                  /* sigev_value */
+    u64 target_tid;             /* SIGEV_THREAD_ID 目标(0=leader) */
+    u32 is_itimer;              /* 1=ITIMER_REAL 骑坐(到 leader,SIGALRM) */
+    u32 overrun;
+    u32 firing;                  /* 回调在役:pengding 未收即过期++ */
+};
+
 
 void rt_demo_swt(void);              /* 站22B:swtdemo 判据 */
 

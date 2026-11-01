@@ -304,6 +304,10 @@ int rt_proc_create(rt_task_t *leader, struct rt_proc **out)
     }
     p->max_fd = RT_FD_MAX;
     p->max_child = RT_PROC_MAX - 1;
+    p->pgid = p->pid;               /* 站42:leader 自成组(setsid 前) */
+    p->sid = p->pid;                /* 站42:会话同律 */
+    p->robust_head = 0;             /* 站42:robust 链未注册 */
+    p->robust_len = 0;
     p->leader = leader;
     p->mmap_next = AS_MMAP_BASE;
     as_build_tables(p);
@@ -414,6 +418,11 @@ int rt_proc_fork_as(struct rt_proc *parent, struct rt_proc *child)
     child->caps = parent->caps;
     child->max_fd = parent->max_fd;
     child->max_child = parent->max_child;
+    child->pgid = parent->pgid;      /* 站42:进程组承继(参考实现白描:
+                                      * fork 入组;setsid 面另立) */
+    child->sid = parent->sid;
+    child->robust_head = 0;          /* 站42:robust 链不承继(Linux 律:
+                                      * 每线程自注册,musl 启动即 set) */
     {
         char ub[8];
 

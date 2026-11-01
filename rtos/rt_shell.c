@@ -1440,6 +1440,256 @@ static void cmd_uiddemo(void)
     sys_puts("uiddemo: done\n");
 }
 
+/* ---- 站四十二:syscall 面补全 demo(参考实现终审计补齐弧) ---- */
+
+static void cmd_scheddemo(void)
+{
+    struct { u64 sec, nsec; } ts;
+    u32 param = 7;
+    long r;
+
+    sys3(ES_NR_sched_setscheduler, 0, SCHED_FIFO, (long)&param);
+    r = sys2(ES_NR_sched_getparam, 0, (long)&param);
+    sys_puts(r == 0 && param == 7 ? "sched: set+get prio 7 ok\n"
+                                  : "sched: getparam wrong?!\n");
+    sys0(ES_NR_sched_yield);
+    sys_puts("sched: yield ok\n");
+    ts.sec = ts.nsec = 0;
+    sys2(ES_NR_sched_rr_get_interval, 0, (long)&ts);
+    sys_puts(ts.nsec == 40000000ULL ? "sched: rr slice 40ms ok\n"
+                                    : "sched: rr interval wrong?!\n");
+    param = 5;                       /* 还原壳基准位(PI 纪律) */
+    sys3(ES_NR_sched_setscheduler, 0, SCHED_FIFO, (long)&param);
+    sys_puts("scheddemo: done\n");
+}
+
+static void sigdemo2_handler(long sig, long val)
+{
+    sys_puts("sig2: handler in own ctx ok\n");
+    (void)sig;
+    (void)val;
+    sys0(ES_NR_rt_sigreturn);         /* 站32 显式契约:restorer=0 面
+                                       * handler 末尾自调,永不返回 */
+}
+
+static void cmd_sigdemo2(void)
+{
+    long pid = sys0(ES_NR_fork), st = 0;
+
+    if (pid == (long)RT_FORK_MAGIC) {
+        u64 block = 1u << 7, old = 0, pend = 0, zero = 0;
+        u64 ss_in[2] = {0, 0x1000}, ss_old[2] = {99, 99};
+        long r;
+
+        sys3(ES_NR_rt_sigaction, 7, (long)sigdemo2_handler, 0);
+        sys3(ES_NR_rt_sigprocmask, 0, (long)&block, (long)&old); /* SIG_BLOCK 7 */
+        sys2(ES_NR_kill, (long)sys0(ES_NR_getpid), 7);           /* 自挂屏蔽中 */
+        r = sys2(ES_NR_rt_sigpending, (long)&pend, 8);
+        sys_puts(r == 0 && (pend & (1u << 7)) ? "sig2: pending bit ok\n"
+                                             : "sig2: pending wrong?!\n");
+        sys2(ES_NR_sigaltstack, (long)ss_in, (long)ss_old);
+        sys_puts(ss_old[1] == 0 ? "sig2: altstack reg ok\n"
+                                : "sig2: altstack wrong?!\n");
+        /* sigsuspend:清掩码挂起等投递——醒即投递(handler 在 syscall
+         * 出口)后以旧掩码续跑;此处 mask=0(全放行)。 */
+        r = sys2(ES_NR_rt_sigsuspend, (long)&zero, 8);
+        sys_puts(r == -4 ? "sig2: resumed -EINTR ok\n"
+                         : "sig2: suspend ret wrong?!\n");
+        sys1(ES_NR_exit, 0);
+    }
+    if (pid < 0) {
+        sys_puts("sigdemo2: fork failed\n");
+        return;
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts("sigdemo2: done\n");
+}
+
+static long timer_fire_cnt;
+
+static void timerdemo_handler(long sig, long val)
+{
+    timer_fire_cnt++;
+    sys0(ES_NR_rt_sigreturn);         /* 站32 显式契约(同 sigdemo2) */
+    (void)sig;
+    (void)val;
+}
+
+static void cmd_timerdemo(void)
+{
+    /* sigevent 布局(value@0/signo@8/notify@12/tid@16;notify=4=
+     * SIGEV_THREAD_ID v0 面单形,自洽判据) */
+    u64 sev[3] = {0, 15 | (4ULL << 32), 0};
+    struct { u64 isec, insec, vsec, vnsec; } its;
+    long id, r, i;
+
+    sys3(ES_NR_rt_sigaction, 15, (long)timerdemo_handler, 0);
+    r = sys3(ES_NR_timer_create, 1, (long)sev, (long)&id);
+    if (r < 0) {
+        sys_puts("timerdemo: create failed\n");
+        return;
+    }
+    its.isec = 0;
+    its.insec = 20000000ULL;          /* 周期 2 tick */
+    its.vsec = 0;
+    its.vnsec = 20000000ULL;          /* 首发同 2 tick */
+    sys4(ES_NR_timer_settime, id, 0, (long)&its, 0);
+    for (i = 0; i < 10 && timer_fire_cnt < 2; i++)
+        sleep_ticks(2);               /* 周期≥2 发=periodic 活证 */
+    sys_puts(timer_fire_cnt >= 2 ? "timer: periodic fired ok\n"
+                                 : "timer: NO fire?!\n");
+    r = sys1(ES_NR_timer_delete, id);
+    sys_puts(r == 0 ? "timer: delete ok\n" : "timer: delete wrong?!\n");
+    {   /* itimer 单发脸:ITIMER_REAL → SIGALRM(14) 到 leader */
+        u64 it[4] = {0, 0, 0, 30000000ULL};
+        struct { u64 sec, nsec; } g2 = {9, 9};
+
+        timer_fire_cnt = 0;
+        sys3(ES_NR_rt_sigaction, 14, (long)timerdemo_handler, 0);
+        sys3(ES_NR_setitimer, 0, (long)it, 0);
+        for (i = 0; i < 6 && !timer_fire_cnt; i++)
+            sleep_ticks(2);
+        sys2(ES_NR_getitimer, 0, (long)&g2);
+        sys_puts(timer_fire_cnt >= 1 ? "itimer: fired ok\n"
+                                     : "itimer: NO fire?!\n");
+        it[2] = 0;                    /* 停表(value=0) */
+        it[3] = 0;
+        sys3(ES_NR_setitimer, 0, (long)it, 0);
+    }
+    sys_puts("timerdemo: done\n");
+}
+
+/* robust futex:子内 clone 一线程挂同一字;持字者(leader)退出
+ * 不解锁——exit 路径的 robust 链遍历自动唤醒等待者(Linux 律)。 */
+static u64 robust_word;               /* .user 数据=子地址空间 */
+static u64 robust_node[8];            /* 链节点:next@+0(节点=锁字) */
+static u64 robust_thr_stack[512];
+
+static void robust_thread_entry(void)
+{
+    /* 自有帧:线程恢复后唯一合法落脚(见 cmd_robustdemo 注)。
+     * 字恒 0=值校验即过入等;leader 死亡→robust 链遍历唤醒。 */
+    long r = sys4(ES_NR_futex, (long)&robust_word, RT_FUTEX_WAIT, 0, 0);
+
+    sys_puts(r >= 0 ? "robust: waiter woke after death ok\n"
+                    : "robust: waiter woke with err ok\n");
+    sys1(ES_NR_exit, 0);
+}
+
+static void cmd_robustdemo(void)
+{
+    long pid = sys0(ES_NR_fork), st = 0;
+
+    if (pid == (long)RT_FORK_MAGIC) {
+        long t = sys6(ES_NR_clone,
+                      (long)(RT_CLONE_VM | RT_CLONE_THREAD | RT_CLONE_FS |
+                             RT_CLONE_FILES | RT_CLONE_SIGHAND |
+                             RT_CLONE_SYSVSEM),
+                      (long)(robust_thr_stack + 512), 0, 0, 0, 0);
+
+        if (t == 0) {
+            /* 站35 契约:clone 子栈全新,恢复点=wrapper 返回帧,
+             * 父 C 帧不可触([sp+X] 皆野址)——必入自有帧入口,
+             * musl __clone 同律(冒烟实测定谳:落父帧=字符串字面
+             * 指针从新栈读野,far=ASCII 串字节)。 */
+            robust_thread_entry();
+            __builtin_unreachable();
+        }
+        if (t < 0) {
+            sys_puts("robustdemo: clone failed\n");
+            sys1(ES_NR_exit, 1);
+        }
+        /* leader:先让线程入等(睡 4 tick),再注册链(节点基=锁字,
+         * next 环 0 终)持锁即退(不解锁)——死亡唤醒=链遍历面。 */
+        sleep_ticks(4);
+        robust_node[0] = (u64)&robust_word;
+        robust_word = 1;               /* 持锁记号(等者已入等,值校验已过) */
+        sys2(ES_NR_set_robust_list, (long)robust_node, 8 * 8);
+        sys1(ES_NR_exit, 0);          /* →链遍历→futex_wake(word) */
+    }
+    if (pid < 0) {
+        sys_puts("robustdemo: fork failed\n");
+        return;
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts("robustdemo: done\n");
+}
+
+static void cmd_pgiddemo(void)
+{
+    long pid, st = 0;
+
+    sys0(ES_NR_setsid);               /* 壳自会话(自成组) */
+    pid = sys0(ES_NR_fork);
+    if (pid == (long)RT_FORK_MAGIC) {
+        /* 承继律:子 pgid==sid(setsid 后 pgid=sid=父 pid) */
+        long pg = sys1(ES_NR_getpgid, 0), sd = sys1(ES_NR_getsid, 0);
+
+        sys_puts(pg > 0 && pg == sd ? "pgid: child inherits group ok\n"
+                                    : "pgid: child group wrong?!\n");
+        sys1(ES_NR_exit, 0);
+    }
+    if (pid < 0) {
+        sys_puts("pgiddemo: fork failed\n");
+        return;
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    sys_puts(sys1(ES_NR_getsid, 0) == (long)sys0(ES_NR_getpid) ?
+             "pgid: setsid self-leader ok\n" : "pgid: sid wrong?!\n");
+    sys_puts("pgiddemo: done\n");
+}
+
+static void cmd_cloexecdemo(void)
+{
+    long fd = sys1(ES_NR_fdopen, (long)"/etc/motd"), st = 0;
+    long pid = sys0(ES_NR_fork), r;
+    char b[4];
+
+    if (fd < 0) {
+        sys_puts("cloexecdemo: open failed\n");
+        return;
+    }
+    r = sys3(ES_NR_fcntl, fd, 1, 0);              /* F_GETFD 前值 */
+    sys_puts(r == 0 ? "cloexec: fd clean ok\n" : "cloexec: pre-set?!\n");
+    sys3(ES_NR_fcntl, fd, 2, FD_CLOEXEC);         /* F_SETFD */
+    r = sys3(ES_NR_fcntl, fd, 1, 0);
+    sys_puts(r == FD_CLOEXEC ? "cloexec: bit roundtrip ok\n"
+                             : "cloexec: bit wrong?!\n");
+    if (pid == (long)RT_FORK_MAGIC) {
+        sys1(ES_NR_exit, 0);                      /* 子不解锁位(拷贝
+                                                    * 语义两说,主判父侧) */
+    }
+    if (pid < 0) {
+        sys_puts("cloexecdemo: fork failed\n");
+        return;
+    }
+    sys3(ES_NR_wait4, pid, (long)&st, 0);
+    /* 父侧 fd 必须不受子任何影响存活(POSIX:cloexec 属进程私有) */
+    r = sys3(ES_NR_fdread, fd, (long)b, 3);
+    sys_puts(r == 3 ? "cloexec: parent fd survives ok\n"
+                    : "cloexec: parent fd broken?!\n");
+    sys1(ES_NR_fdclose, fd);
+    sys_puts("cloexecdemo: done\n");
+}
+
+static void cmd_unamedemo(void)
+{
+    char buf[6 * 65];
+    long r = sys1(ES_NR_uname, (long)buf);
+
+    if (r < 0) {
+        sys_puts("unamedemo: failed\n");
+        return;
+    }
+    sys_puts("uname: ");
+    sys_puts(buf);                   /* sysname */
+    sys_puts(" ");
+    sys_puts(buf + 2 * 65);           /* release */
+    sys_puts(" ");
+    sys_puts(buf + 4 * 65);           /* machine */
+    sys_puts(" ok\n");
+}
+
 /* ---- 站40:服务收编四 demo(判据面) ---- */
 
 static const char hexdig[] = "0123456789abcdef";
@@ -1677,6 +1927,20 @@ static void shell_line(char *line)
         cmd_rlimitdemo();
     } else if (streq(line, "uiddemo")) {
         cmd_uiddemo();
+    } else if (streq(line, "scheddemo")) {
+        cmd_scheddemo();
+    } else if (streq(line, "sigdemo2")) {
+        cmd_sigdemo2();
+    } else if (streq(line, "timerdemo")) {
+        cmd_timerdemo();
+    } else if (streq(line, "robustdemo")) {
+        cmd_robustdemo();
+    } else if (streq(line, "pgiddemo")) {
+        cmd_pgiddemo();
+    } else if (streq(line, "cloexecdemo")) {
+        cmd_cloexecdemo();
+    } else if (streq(line, "unamedemo")) {
+        cmd_unamedemo();
     } else if (streq(line, "futexdemo")) {
         cmd_futexdemo();
     } else if (streq(line, "sigdemo")) {

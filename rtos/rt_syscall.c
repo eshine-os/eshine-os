@@ -127,6 +127,80 @@ static long sys_sysinfo(u64 *frame)
 #define ES_EAGAIN 11
 #define ES_ENOMEM 12
 
+/* ---- 站四十二(前置体):posix timer 全局池+robust 链收尾 ----
+ * 池驻内核(8 槽),rt_ptimer.exit 面在 sys_exit 死者本人语境先于
+ * 地址空间拆除跑(tick 回调持有 owner 指针=收件人死后必先摘池)。 */
+static struct rt_ptimer ptimer_pool[8];
+
+/* 站42:posix timer 池=tp 守卫的合法第二驻地(站 28 守卫谓词
+ * 原只认任务池槽——vtimer 时代唯一合法居所;posix timer 的
+ * rt_timer_t 内嵌于本池槽头,守卫须放行,真野值照抓不变)。 */
+int rt_ptimer_in_pool(void *tm)
+{
+    u64 v = (u64)tm;
+
+    return v >= (u64)ptimer_pool &&
+           v < (u64)(ptimer_pool + 8) &&
+           (v - (u64)ptimer_pool) % sizeof(struct rt_ptimer) == 0;
+}
+
+static void ptimer_fire(void *arg)
+{
+    struct rt_ptimer *pt = arg;
+    struct rt_proc *p = pt->owner;
+    rt_task_t *t;
+    unsigned int idx;
+
+    if (!p || !p->used || p->state == RT_PROC_ZOMBIE) {
+        rt_timer_stop(&pt->tm);       /* 收件人先死:停摆即安 */
+        return;
+    }
+    if (pt->target_tid) {
+        for (t = rt_ps_first(&idx); t; t = rt_ps_next(&idx))
+            if (t->state != RT_FREE && t->state != RT_DEAD &&
+                t->tid && t->tid == pt->target_tid)
+                break;
+    } else {
+        t = p->leader;
+    }
+    if (!t)
+        return;
+    if (t->sig_pending & (1u << pt->signo)) {
+        pt->overrun++;                /* 上发未收:overrun 记账(POSIX 面) */
+        return;
+    }
+    rt_sig_queueinfo_ctx((long)(pt->target_tid ? pt->target_tid : t->tid),
+                         (u32)pt->signo, pt->value);
+}
+
+static void ptimer_exit_all(struct rt_proc *p)
+{
+    u32 i;
+
+    for (i = 0; i < 8; i++)
+        if (ptimer_pool[i].owner == p) {
+            rt_timer_stop(&ptimer_pool[i].tm);
+            ptimer_pool[i].owner = NULL;
+        }
+}
+
+/* robust futex 链收尾(站42 v0):持锁者死=遍历注册链逐节点唤醒。
+ * musl 律:节点基址=锁字(futex offset 0),next@+0;野环保险丝=
+ * 上限 100 跳+用户窗范围门(链数据在死者自己地址空间,exit 语境
+ * 页表未拆=直读合法)。 */
+static void robust_exit_walk(struct rt_proc *p)
+{
+    u64 node = p->robust_head;
+    u32 guard = 0;
+
+    while (node && guard++ < 100) {
+        if (node < 0x40200000ULL || node >= 0x41200000ULL)
+            break;
+        rt_futex_wake_key(p, node, 1);
+        node = *(u64 *)(void *)node;
+    }
+}
+
 static long sys_exit(u64 *frame)
 {
     long code = (long)FR(0);
@@ -141,6 +215,10 @@ static long sys_exit(u64 *frame)
         }
         /* 站31:逐 fd CLOSE(服务器 ocb 引用减+断连)——死亡关流;
          * rt_cur=死者本人,阻塞往返合法(仅此处调,ISR 无涉) */
+        /* 站42:先 robust 链唤醒(锁面)与 posix timer 摘池
+         * (tick 回调持 owner 指针)——都先于地址空间拆除。 */
+        robust_exit_walk(p);
+        ptimer_exit_all(p);
         rt_fd_close_all(p);
         rt_thr_group_kill(p);             /* 站35:线程群清扫(孤儿不悬空) */
         rt_proc_exit(p, (int)code);       /* 页池回收+L2 清+TLB 冲 */
@@ -280,10 +358,19 @@ static long sys_exec_setup(u64 *frame)
     /* 帧改写(参考实现 EXEC_SETUP 形状,内核不读任何镜像字节):
      * v0 入参 x0=entry x1=sp x2=arg;x3-x5 不读(壳 wrapper 只
      * 3 参;impl 侧整帧卫生清零,残值不进新帧)。 */
-    if (rt_cur->proc)
-        rt_cur->proc->brk = rt_cur->proc->mmap_next;
+    if (rt_cur->proc) {
+        rt_proc_t *p = rt_cur->proc;
+        u32 i;
+
+        /* 站42:CLOEXEC 摘除(exec 语境逐 fd:位在者关流断连;
+         * 死者本人在跑,阻塞往返合法同 sys_exit 律)。 */
+        for (i = 0; i < RT_FD_MAX; i++)
+            if (p->fds[i].used && p->fds[i].cloexec)
+                rt_fd_close(p, (int)i);
+        p->brk = p->mmap_next;
         /* 站40:堆种子=装像末(窗内游标;brk(0)=读,brk(a)=增量
          * hint-mmap——musl mallocng 探测面,qemu-user 实测定谳) */
+    }
     return sys_exec_setup_impl(frame, FR(0), FR(1), FR(2), 0, 0, 0);
 }
 
@@ -915,8 +1002,17 @@ static long sys_dup3(u64 *frame)
 
 static long sys_fcntl(u64 *frame)
 {
-    (void)frame;
-    return 0;                          /* v0:F_SETFD/F_GETFD 回 0(CLOEXEC 无 exec 面) */
+    /* 站42:FD_CLOEXEC 真落位(F_SETFD=2 记/F_GETFD=1 读);其余
+     * 命令(dup 旗/status 旗等)v0 仍回 0——exec 摘除面见
+     * sys_exec_setup。 */
+    struct rt_proc *p = rt_cur->proc;
+    int fd = (int)FR(0);
+
+    if (!p || fd < 0 || (u32)fd >= RT_FD_MAX || !p->fds[fd].used)
+        return -9;
+    if ((long)FR(1) == 2)              /* F_SETFD */
+        p->fds[fd].cloexec = (FR(2) & FD_CLOEXEC) ? 1 : 0;
+    return (long)FR(1) == 1 ? (long)p->fds[fd].cloexec : 0;
 }
 
 static long sys_clock_gettime(u64 *frame)
@@ -1205,6 +1301,568 @@ static long sys_ni(u64 *frame)
 
 static rt_sysfn_t table[ES_NR_MAX];
 
+/* ---- 站四十二:syscall 面补全(参考实现终审计补齐弧;号面从
+ *      musl-1.2.5 aarch64 头钉死零臆测)。 ---- */
+
+/* 调度器管理面目标解析:pid<=0=自己;他 pid=该进程 leader。 */
+static rt_task_t *sched_target(long pid, struct rt_proc **pp)
+{
+    struct rt_proc *p = rt_cur->proc;
+
+    if (!p)
+        return NULL;
+    if (pid <= 0) {
+        if (pp)
+            *pp = p;
+        return p->leader;
+    }
+    p = rt_proc_lookup((int)pid);
+    if (!p)
+        return NULL;
+    if (pp)
+        *pp = p;
+    return p->leader;
+}
+
+/* 优先级落位(站 18 PI 纪律:基准位全树唯一回收点——写 base_prio;
+ * 被 boost 中(prio!=base)只动基准,boost 卸载自然归新位;就绪者
+ * 摘队重排)。 */
+static void sched_apply_prio(rt_task_t *t, u32 np)
+{
+    u64 d;
+
+    if (np == t->base_prio)
+        return;
+    d = rt_daif_save();
+    if (t->prio == t->base_prio) {  /* 未被 boost:两域齐动 */
+        if (t->state == RT_READY) {
+            rdy_remove(t);
+            t->prio = np;
+            t->base_prio = np;
+            rt_ready_push(t);
+        } else {
+            t->prio = np;
+            t->base_prio = np;
+        }
+    } else {
+        t->base_prio = np;          /* boost 中:基准先行 */
+    }
+    rt_daif_load(d);
+}
+
+static u32 user_r32(u64 up)
+{
+    return access_ok((void *)up, 4) ? *(u32 *)(void *)up : 0;
+}
+
+static long sys_sched_getparam(u64 *frame)
+{
+    rt_task_t *t = sched_target((long)FR(0), NULL);
+
+    if (!t || !access_ok((void *)FR(1), 4))
+        return -ES_EINVAL;
+    *(u32 *)(void *)FR(1) = t->base_prio;
+    return 0;
+}
+
+static long sys_sched_setparam(u64 *frame)
+{
+    rt_task_t *t = sched_target((long)FR(0), NULL);
+    u32 np;
+
+    if (!t || !access_ok((void *)FR(1), 4))
+        return -ES_EINVAL;
+    np = *(u32 *)(void *)FR(1);
+    if (np >= 32u)
+        return -ES_EINVAL;
+    sched_apply_prio(t, np);
+    return 0;
+}
+
+static long sys_sched_setscheduler(u64 *frame)
+{
+    rt_task_t *t = sched_target((long)FR(0), NULL);
+    u32 np;
+
+    /* 站42 v0:策略字收下(FIFO/OTHER)但调度类不分档(位图调度
+     * 即 FIFO 形;CFS=参考实现记档偏差)。 */
+    if (!t || (long)FR(1) > SCHED_FIFO || !access_ok((void *)FR(2), 4))
+        return -ES_EINVAL;
+    np = *(u32 *)(void *)FR(2);
+    if (np >= 32u)
+        return -ES_EINVAL;
+    sched_apply_prio(t, np);
+    return 0;
+}
+
+static long sys_sched_getscheduler(u64 *frame)
+{
+    if (!sched_target((long)FR(0), NULL))
+        return -ES_ESRCH;
+    return SCHED_FIFO;                /* v0:位图调度即 FIFO 同形 */
+}
+
+static long sys_sched_yield(u64 *frame)
+{
+    (void)frame;
+    rt_sched();                      /* 同级 FIFO 轮转=站 16 量子律
+                                      * (hvc_yield=宿主暂停面,两物种) */
+    return 0;
+}
+
+static long sys_sched_get_priority_max(u64 *frame)
+{
+    (void)frame;
+    return 31;
+}
+
+static long sys_sched_get_priority_min(u64 *frame)
+{
+    (void)frame;
+    return 0;
+}
+
+static long sys_sched_rr_get_interval(u64 *frame)
+{
+    if (!access_ok((void *)FR(1), 16))
+        return -ES_EFAULT;
+    if (!sched_target((long)FR(0), NULL))
+        return -ES_ESRCH;
+    *(u64 *)(void *)FR(1) = 0;
+    *(u64 *)(void *)(FR(1) + 8) = (u64)RT_SLICE * 10 * 1000 * 1000;
+    return 0;
+}
+
+static long sys_sched_setaffinity(u64 *frame)
+{
+    rt_task_t *t = sched_target((long)FR(0), NULL);
+    u32 mask = user_r32(FR(2));
+
+    if (!t || !mask)
+        return -ES_EINVAL;
+    mask &= 3u;                       /* 双核拓扑(RT_NCPU=2) */
+    if (!mask)
+        return -ES_EINVAL;
+    t->cpu = (mask & 1u) ? 0 : 1;     /* v0:下次入队生效(就绪者
+                                      * 不强迁,醒来各归其 cpu) */
+    return 0;
+}
+
+static long sys_sched_getaffinity(u64 *frame)
+{
+    rt_task_t *t = sched_target((long)FR(0), NULL);
+
+    if (!t || !access_ok((void *)FR(2), 4))
+        return -ES_EFAULT;
+    *(u32 *)(void *)FR(2) = 1u << t->cpu;
+    return 4;
+}
+
+static long sys_getcpu(u64 *frame)
+{
+    if (FR(0) && access_ok((void *)FR(0), 4))
+        *(u32 *)(void *)FR(0) = rt_cpu_id();
+    if (FR(1) && access_ok((void *)FR(1), 4))
+        *(u32 *)(void *)FR(1) = 0;   /* node v0 恒 0 */
+    return 0;
+}
+
+/* 站42 nice 面:Linux nice[-20,19] ↔ 站内位图[1,31] 线性图
+ * (prio=16+~n/2;两向一致记档,精确 Linux 语义=后弧)。 */
+static long sys_setpriority(u64 *frame)
+{
+    rt_task_t *t = sched_target((long)FR(1), NULL);
+    long n = (long)FR(2);
+
+    if ((long)FR(0) != 0)             /* 仅 PRIO_PROCESS v0 */
+        return -ES_EINVAL;
+    if (!t || n < -20 || n > 19)
+        return -ES_EINVAL;
+    sched_apply_prio(t, (u32)(n < 0 ? 16 - ((-n + 1) >> 1)
+                                    : 16 + (n >> 1) + (n & 1)));
+    return 0;
+}
+
+static long sys_getpriority(u64 *frame)
+{
+    rt_task_t *t = sched_target((long)FR(1), NULL);
+
+    if ((long)FR(0) != 0 || !t)
+        return -ES_EINVAL;
+    return (long)t->base_prio >= 16 ? ((long)t->base_prio - 16) * 2
+                                    : -((17 - (long)t->base_prio) * 2);
+}
+
+static long sys_rt_sigpending(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    u64 set = (p ? ((u64)p->sig_pending | rt_cur->sig_pending) : 0);
+
+    if (!access_ok((void *)FR(0), 8))
+        return -ES_EFAULT;
+    *(u64 *)(void *)FR(0) = set;
+    return 0;
+}
+
+static long sys_rt_sigsuspend(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    u32 old, mask;
+
+    if (!p || !access_ok((void *)FR(0), 8))
+        return -ES_EINVAL;
+    mask = (u32)*(u64 *)(void *)FR(0);
+    old = p->sig_blocked;
+    p->sig_blocked = mask;
+    /* 站17 等待机器正牌形状(站24 rx 同律:判查+发布 BLOCK+摘队同
+     * DAIF 窗,窗后挂起已可见,投递者唤醒走 sig_wake wait_mask 支);
+     * 站41 教训反面教材=漏 BLOCK 态直调 rt_sched=调用者驻车。 */
+    for (;;) {
+        u64 d;
+
+        if ((p->sig_pending | rt_cur->sig_pending) & ~p->sig_blocked)
+            break;
+        d = rt_daif_save();
+        if ((p->sig_pending | rt_cur->sig_pending) & ~p->sig_blocked) {
+            rt_daif_load(d);           /* 窗内竞得:不挂起,回环顶重查 */
+            break;
+        }
+        rt_cur->wait_mask = RT_SIG_BIT;
+        rt_cur->state = RT_BLOCK;
+        rdy_remove(rt_cur);
+        rt_daif_load(d);
+        rt_sched();
+        rt_cur->wait_mask = 0;        /* sig_wake 清后此处恒 0;防重
+                                       * 挂窗口残值走读者清零 */
+    }
+    p->sig_retmask = old;            /* POSIX:掩码还原=handler 完成后
+                                      * (sigreturn 兜),非本返回口 */
+    p->sig_suspflag = 1;
+    return -4;                        /* -EINTR(投递在 syscall 出口,
+                                      * 挂起窗掩码=投递掩码) */
+}
+
+static long sys_sigaltstack(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+
+    if (!p)
+        return -ES_EINVAL;
+    if (FR(1) && access_ok((void *)FR(1), 16)) {   /* 回读旧注册 */
+        *(u64 *)(void *)FR(1) = p->sig_altsp;
+        *(u64 *)(void *)(FR(1) + 8) = p->sig_altsize;
+    }
+    if (FR(0) && access_ok((void *)FR(0), 16)) {
+        u64 sp = *(u64 *)(void *)FR(0);
+        u64 sz = *(u64 *)(void *)(FR(0) + 8);
+
+        p->sig_altsp = sp;
+        p->sig_altsize = (u32)sz;
+    }
+    return 0;                         /* v0:注册+回读;切栈投递=后弧 */
+}
+
+static long sys_setsid(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+
+    (void)frame;
+    if (!p)
+        return -ES_EPERM;
+    p->sid = p->pid;                  /* 自成会话=自成组(参考实现白描) */
+    p->pgid = p->pid;
+    return (long)p->pid;
+}
+
+static long sys_getsid(u64 *frame)
+{
+    struct rt_proc *p = (long)FR(0) <= 0 ? rt_cur->proc
+                                         : rt_proc_lookup((int)FR(0));
+
+    return p ? (long)p->sid : -ES_ESRCH;
+}
+
+static long sys_setpgid(u64 *frame)
+{
+    struct rt_proc *p = (long)FR(0) <= 0 ? rt_cur->proc
+                                         : rt_proc_lookup((int)FR(0));
+    struct rt_proc *g;
+
+    if (!p)
+        return -ES_ESRCH;
+    g = (long)FR(1) <= 0 ? NULL : rt_proc_lookup((int)FR(1));
+    if (g)
+        p->pgid = g->pgid;            /* 入组(组长为组内进程) */
+    else
+        p->pgid = p->pid;            /* pgid=0 面:自成组 */
+    return 0;
+}
+
+static long sys_getpgid(u64 *frame)
+{
+    struct rt_proc *p = (long)FR(0) <= 0 ? rt_cur->proc
+                                         : rt_proc_lookup((int)FR(0));
+
+    return p ? (long)p->pgid : -ES_ESRCH;
+}
+
+static long sys_set_robust_list(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+
+    if (!p)
+        return -ES_EINVAL;
+    p->robust_head = FR(0);
+    p->robust_len = (u32)FR(1);
+    return 0;
+}
+
+static long sys_get_robust_list(u64 *frame)
+{
+    struct rt_proc *p = (long)FR(0) <= 0 ? rt_cur->proc
+                                         : rt_proc_lookup((int)FR(0));
+
+    if (!p)
+        return -ES_ESRCH;
+    if (!access_ok((void *)FR(1), 8) ||
+        (FR(2) && !access_ok((void *)FR(2), 4)))
+        return -ES_EFAULT;
+    *(u64 *)(void *)FR(1) = p->robust_head;
+    if (FR(2))
+        *(u32 *)(void *)FR(2) = p->robust_len;
+    return 0;
+}
+
+static long sys_uname(u64 *frame)
+{
+    static const char *const f[6] = {
+        "eshine-os", "eshine-os", "27.04", "eshine-rtos 27.04-dev",
+        "aarch64", "(none)"
+    };
+    char *u = (char *)(void *)FR(0);
+    u32 i, j;
+
+    if (!access_ok(u, 6 * 65))
+        return -ES_EFAULT;
+    for (i = 0; i < 6; i++)
+        for (j = 0; j < 65; j++)
+            u[i * 65 + j] = (j == 64 || f[i][j]) ? f[i][j] : '\0';
+    return 0;
+}
+
+/* ---- 站42:posix timer+itimer(真号 107-111/102/103) ---- */
+
+static struct rt_ptimer *ptimer_find(struct rt_proc *p, u64 id)
+{
+    if (id == 0 || id > 8u)
+        return NULL;
+    if (ptimer_pool[id - 1].owner != p)
+        return NULL;
+    return &ptimer_pool[id - 1];
+}
+
+static long sys_timer_create(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    u64 sev = FR(1);
+    struct rt_ptimer *pt = NULL;
+    u32 i, signo, notify, tid;
+    u64 value;
+
+    if (!p || FR(0) > 1u)
+        return -ES_EINVAL;
+    if (!access_ok((void *)sev, 24) || !access_ok((void *)FR(2), 8))
+        return -ES_EFAULT;
+    value = *(u64 *)(void *)sev;                   /* sigev_value */
+    signo = *(u32 *)(void *)(sev + 8);             /* sigev_signo */
+    notify = *(u32 *)(void *)(sev + 12);           /* sigev_notify */
+    tid = *(u32 *)(void *)(sev + 16);              /* SIGEV_THREAD_ID 目标 */
+    if (notify != 4 || signo == 0 || signo >= RT_SIG_MAX)
+        return -ES_EINVAL;            /* v0:仅 SIGEV_THREAD_ID 面单形 */
+    for (i = 0; i < 8; i++)
+        if (!ptimer_pool[i].owner) {
+            pt = &ptimer_pool[i];
+            break;
+        }
+    if (!pt)
+        return -12;                   /* -ENOMEM */
+    pt->owner = p;
+    pt->slot = (int)i;
+    pt->interval_ns = 0;
+    pt->overrun = 0;
+    pt->is_itimer = 0;
+    pt->value = value;
+    pt->signo = (int)signo;
+    pt->target_tid = tid;
+    rt_timer_init(&pt->tm, ptimer_fire, pt);
+    *(u64 *)(void *)FR(2) = (u64)i + 1;
+    return 0;
+}
+
+static long sys_timer_delete(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    struct rt_ptimer *pt = p ? ptimer_find(p, FR(0)) : NULL;
+
+    if (!pt)
+        return -ES_EINVAL;
+    rt_timer_stop(&pt->tm);
+    pt->owner = NULL;
+    return 0;
+}
+
+static long sys_timer_settime(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    struct rt_ptimer *pt = p ? ptimer_find(p, FR(0)) : NULL;
+    u64 nint, nval, oint = 0, orem = 0;
+    u64 ticks;
+
+    if (!pt)
+        return -ES_EINVAL;
+    if (FR(3) && access_ok((void *)FR(3), 32)) {  /* 回写旧值先取 */
+        oint = pt->interval_ns;
+        orem = pt->tm.deadline ?
+               (pt->tm.deadline - rt_ticks) * 10 * 1000 * 1000 : 0;
+    }
+    if (!access_ok((void *)FR(2), 32))
+        return -ES_EFAULT;
+    nint = *(u64 *)(void *)(FR(2) + 8);            /* it_interval.nsec */
+    nint += *(u64 *)(void *)FR(2) * 1000000000ULL;
+    nval = *(u64 *)(void *)(FR(2) + 24);           /* it_value.nsec */
+    nval += *(u64 *)(void *)(FR(2) + 16) * 1000000000ULL;
+    rt_timer_stop(&pt->tm);
+    pt->interval_ns = nint;
+    if (nval) {
+        ticks = (nval + 9999999ULL) / 10000000ULL;
+        if (!ticks)
+            ticks = 1;
+        rt_timer_start(&pt->tm, ticks, nint != 0);
+    }
+    if (FR(3) && access_ok((void *)FR(3), 32)) {
+        *(u64 *)(void *)FR(3) = oint / 1000000000ULL;
+        *(u64 *)(void *)(FR(3) + 8) = oint % 1000000000ULL;
+        *(u64 *)(void *)(FR(3) + 16) = orem / 1000000000ULL;
+        *(u64 *)(void *)(FR(3) + 24) = orem % 1000000000ULL;
+    }
+    return 0;
+}
+
+static long sys_timer_gettime(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    struct rt_ptimer *pt = p ? ptimer_find(p, FR(0)) : NULL;
+    u64 rem, ns;
+
+    if (!pt || !access_ok((void *)FR(1), 32))
+        return -ES_EINVAL;
+    rem = pt->tm.deadline && pt->tm.deadline > rt_ticks
+          ? pt->tm.deadline - rt_ticks : 0;
+    ns = rem * 10 * 1000 * 1000;
+    *(u64 *)(void *)FR(1) = pt->interval_ns / 1000000000ULL;
+    *(u64 *)(void *)(FR(1) + 8) = pt->interval_ns % 1000000000ULL;
+    *(u64 *)(void *)(FR(1) + 16) = ns / 1000000000ULL;
+    *(u64 *)(void *)(FR(1) + 24) = ns % 1000000000ULL;
+    return 0;
+}
+
+static long sys_timer_getoverrun(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    struct rt_ptimer *pt = p ? ptimer_find(p, FR(0)) : NULL;
+    u32 r;
+
+    if (!pt)
+        return -ES_EINVAL;
+    r = pt->overrun;
+    pt->overrun = 0;
+    return (long)r;
+}
+
+/* itimer:仅 ITIMER_REAL(0)——SIGALRM 到 leader,同池骑坐。 */
+static struct rt_ptimer *itimer_of(struct rt_proc *p, int create)
+{
+    u32 i;
+
+    for (i = 0; i < 8; i++)
+        if (ptimer_pool[i].owner == p && ptimer_pool[i].is_itimer)
+            return &ptimer_pool[i];
+    if (!create)
+        return NULL;
+    for (i = 0; i < 8; i++)
+        if (!ptimer_pool[i].owner) {
+            ptimer_pool[i].owner = p;
+            ptimer_pool[i].is_itimer = 1;
+            ptimer_pool[i].signo = 14;             /* SIGALRM */
+            ptimer_pool[i].target_tid = 0;
+            ptimer_pool[i].value = 0;
+            ptimer_pool[i].interval_ns = 0;
+            ptimer_pool[i].overrun = 0;
+            rt_timer_init(&ptimer_pool[i].tm, ptimer_fire, &ptimer_pool[i]);
+            return &ptimer_pool[i];
+        }
+    return NULL;
+}
+
+static long sys_setitimer(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    struct rt_ptimer *pt;
+    u64 nint, nval, oint = 0, orem = 0;
+
+    if (!p || (long)FR(0) != 0)
+        return -ES_EINVAL;             /* 仅 ITIMER_REAL v0 */
+    if (FR(2) && access_ok((void *)FR(2), 32)) {
+        pt = itimer_of(p, 0);
+        if (pt) {
+            oint = pt->interval_ns;
+            orem = pt->tm.deadline ?
+                   (pt->tm.deadline - rt_ticks) * 10 * 1000 * 1000 : 0;
+        }
+    }
+    if (!access_ok((void *)FR(1), 32))
+        return -ES_EFAULT;
+    nint = *(u64 *)(void *)(FR(1) + 8);
+    nint += *(u64 *)(void *)FR(1) * 1000000000ULL;
+    nval = *(u64 *)(void *)(FR(1) + 24);
+    nval += *(u64 *)(void *)(FR(1) + 16) * 1000000000ULL;
+    pt = itimer_of(p, 1);
+    if (!pt)
+        return -12;
+    rt_timer_stop(&pt->tm);
+    pt->interval_ns = nint;
+    if (nval) {
+        u64 ticks = (nval + 9999999ULL) / 10000000ULL;
+
+        rt_timer_start(&pt->tm, ticks ? ticks : 1, nint != 0);
+    }
+    if (FR(2) && access_ok((void *)FR(2), 32)) {
+        *(u64 *)(void *)FR(2) = oint / 1000000000ULL;
+        *(u64 *)(void *)(FR(2) + 8) = oint % 1000000000ULL;
+        *(u64 *)(void *)(FR(2) + 16) = orem / 1000000000ULL;
+        *(u64 *)(void *)(FR(2) + 24) = orem % 1000000000ULL;
+    }
+    return 0;
+}
+
+static long sys_getitimer(u64 *frame)
+{
+    struct rt_proc *p = rt_cur->proc;
+    struct rt_ptimer *pt = p ? itimer_of(p, 0) : NULL;
+    u64 rem, ns;
+
+    if (!p || (long)FR(0) != 0 || !access_ok((void *)FR(1), 32))
+        return -ES_EINVAL;
+    rem = pt && pt->tm.deadline && pt->tm.deadline > rt_ticks
+          ? pt->tm.deadline - rt_ticks : 0;
+    ns = rem * 10 * 1000 * 1000;
+    *(u64 *)(void *)FR(1) = (pt ? pt->interval_ns : 0) / 1000000000ULL;
+    *(u64 *)(void *)(FR(1) + 8) = (pt ? pt->interval_ns : 0) % 1000000000ULL;
+    *(u64 *)(void *)(FR(1) + 16) = ns / 1000000000ULL;
+    *(u64 *)(void *)(FR(1) + 24) = ns % 1000000000ULL;
+    return 0;
+}
+
 void rt_syscall_init(void)
 {
     rt_task_pool_init();              /* 站35:素槽 RT_FREE 清池 */
@@ -1293,6 +1951,37 @@ void rt_syscall_init(void)
     table[ES_NR_cap_get]         = sys_cap_get;
     table[ES_NR_uuid_get]        = sys_uuid_get;
     table[ES_NR_rlimit_self]     = sys_rlimit_self;
+    /* 站42:syscall 面补全 */
+    table[ES_NR_sched_setparam]  = sys_sched_setparam;
+    table[ES_NR_sched_setscheduler] = sys_sched_setscheduler;
+    table[ES_NR_sched_getscheduler] = sys_sched_getscheduler;
+    table[ES_NR_sched_getparam]  = sys_sched_getparam;
+    table[ES_NR_sched_setaffinity] = sys_sched_setaffinity;
+    table[ES_NR_sched_getaffinity] = sys_sched_getaffinity;
+    table[ES_NR_sched_yield]      = sys_sched_yield;
+    table[ES_NR_sched_get_priority_max] = sys_sched_get_priority_max;
+    table[ES_NR_sched_get_priority_min] = sys_sched_get_priority_min;
+    table[ES_NR_sched_rr_get_interval] = sys_sched_rr_get_interval;
+    table[ES_NR_getcpu]          = sys_getcpu;
+    table[ES_NR_setpriority]     = sys_setpriority;
+    table[ES_NR_getpriority]     = sys_getpriority;
+    table[ES_NR_rt_sigpending]   = sys_rt_sigpending;
+    table[ES_NR_rt_sigsuspend]   = sys_rt_sigsuspend;
+    table[ES_NR_sigaltstack]     = sys_sigaltstack;
+    table[ES_NR_setsid]          = sys_setsid;
+    table[ES_NR_getsid]          = sys_getsid;
+    table[ES_NR_setpgid]         = sys_setpgid;
+    table[ES_NR_getpgid]         = sys_getpgid;
+    table[ES_NR_set_robust_list] = sys_set_robust_list;
+    table[ES_NR_get_robust_list] = sys_get_robust_list;
+    table[ES_NR_uname]           = sys_uname;
+    table[ES_NR_timer_create]    = sys_timer_create;
+    table[ES_NR_timer_gettime]   = sys_timer_gettime;
+    table[ES_NR_timer_getoverrun] = sys_timer_getoverrun;
+    table[ES_NR_timer_settime]   = sys_timer_settime;
+    table[ES_NR_timer_delete]    = sys_timer_delete;
+    table[ES_NR_getitimer]       = sys_getitimer;
+    table[ES_NR_setitimer]       = sys_setitimer;
 }
 
 void rt_syscall_dispatch(u64 *frame)

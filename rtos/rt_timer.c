@@ -102,7 +102,7 @@ void rt_timer_tick(void)
 
             u64 base = (u64)rt_pool_base();
 
-            if (v != 0 &&
+            if (v != 0 && !rt_ptimer_in_pool((void *)v) &&
                 (v < base ||
                  v >= base + (u64)RT_POOL_MAX * sizeof(rt_task_t) ||
                  (v - base) % sizeof(rt_task_t) != 0)) {
