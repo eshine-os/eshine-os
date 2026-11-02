@@ -656,6 +656,17 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
 亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
 真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
+**站51 driver_manager 治理面 v0（[146-148]——参考实现白描:JSON 服务清单+
+有序拉起+就绪门+waitpid 监控+重启上限;RPC 注册面 v0 不立,批次 A 第三站）**：
+治理域=inittab 基流之外的服务域（inittab 判据行是门锚,不动）。
+`/etc/services.json` 清单（marker/gated/beater 三服务）驱动：最小
+JSON 行走器（schema 约束:平对象/无嵌套/仓内配方生成——js_key 按键
+取值,首版漏跳开头 '{'=manifest parse failed 战雷）+有序拉起（boot 尾
+与 svcdemo 命令同体交互复跑）+就绪门检查点（探针 open,100 拍上界;
+顺序语义=检查点非同步栅,异步拉起形态=后弧记档）+respawn 监控
+（waitpid 阻塞收尸+restart 上限+giving up）。EL0 壳体实现
+（rt_shell.c=.user 段,壳侧助手必须单 TU）。
+
 **站50 slog 持久化+klog 双源+procfs 扩面（[140-145]——参考实现 slog/
 log_file+seq_file 机制白描的站内形，批次 A 第二站）**：slogsrv 以
 resmgr **客户端**身份走消息面写 /var/log（服务器互为客户端=微内核
@@ -715,7 +726,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-145 步手动走查清单。
+148 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

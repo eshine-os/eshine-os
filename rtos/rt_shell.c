@@ -1290,6 +1290,240 @@ next:
     sys_puts("init: inittab processed\n");
 }
 
+/* ---- 站51:driver_manager 治理面 v0(参考实现白描:JSON 服务清单+有序
+ * 拉起+就绪门+waitpid 监控+重启上限;RPC 注册面 v0 不立)。
+ * 域=inittab 基流之外的服务域(inittab 判据行是门锚,不动)。
+ * 最小 JSON 行走器=schema 约束(清单由仓内配方生成:平对象,值=串/
+ * 整/布尔,无嵌套);js_key 在对象内按键取值指针(未中跳值再试)。 ---- */
+
+static const char *js_ws(const char *p)
+{
+    while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t')
+        p++;
+    return p;
+}
+
+/* 值指针(已剥引号前缀)→串拷;返回消费后指针(闭引号后) */
+static const char *jsv_str(const char *v, char *out, u32 cap)
+{
+    const char *p = v;
+    u32 n = 0;
+
+    if (*p != '"')
+        return v;
+    p++;
+    while (*p && *p != '"' && n + 1 < cap)
+        out[n++] = *p++;
+    out[n] = '\0';
+    if (*p == '"')
+        p++;
+    return p;
+}
+
+static long jsv_int(const char *v)
+{
+    long r = 0;
+    int neg = 0;
+
+    if (*v == '-') {
+        neg = 1;
+        v++;
+    }
+    while (*v >= '0' && *v <= '9')
+        r = r * 10 + (*v++ - '0');
+    return neg ? -r : r;
+}
+
+/* 平对象内按键取值(schema 约束:无嵌套对象/数组值;obj 可带开头
+ * '{'——doc 顶层与服务元素两用,首版漏跳 '{'=manifest parse failed) */
+static const char *js_key(const char *obj, const char *key)
+{
+    const char *p = js_ws(obj);
+
+    if (*p == '{')
+        p = js_ws(p + 1);
+    while (*p && *p != '}') {
+        const char *a, *s;
+
+        if (*p == ',')
+            p = js_ws(p + 1);
+        if (*p != '"')
+            return NULL;
+        p++;
+        a = p;
+        while (*p && *p != '"')
+            p++;
+        if (*p != '"')
+            return NULL;
+        s = a;
+        { const char *q = key;
+          while (s < p && *q && *s == *q) { s++; q++; }
+          if (*q == 0 && s == p) {          /* 键中 */
+              p = js_ws(p + 1);
+              if (*p != ':')
+                  return NULL;
+              return js_ws(p + 1);
+          }
+        }
+        p = js_ws(p + 1);                   /* 未中:跳过 值 */
+        if (*p != ':')
+            return NULL;
+        p = js_ws(p + 1);
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"') p++;
+            if (*p) p++;
+        } else {
+            while (*p && *p != ',' && *p != '}') p++;
+        }
+        p = js_ws(p);
+    }
+    return NULL;
+}
+
+#define SVC_MAX 4u
+
+struct svc_def {
+    char name[12];
+    char path[24];
+    char mode[10];                 /* once|respawn */
+    char wait_file[24];            /* 就绪门文件(可空) */
+    u32 max_restarts;
+};
+
+/* 治理面:解析清单+有序拉起+就绪门检查点+respawn 监控+重启上限。
+ * boot 尾与 svcdemo 命令同体(门禁交互复跑);顺序语义=检查点非
+ * 同步栅(异步拉起的后弧形态,记档)。 */
+static void svc_govern(void)
+{
+    static char doc[512];
+    struct svc_def sv[SVC_MAX];
+    u32 n = 0, i;
+    long fd;
+    const char *arr, *obj;
+
+    fd = sys1(ES_NR_fdopen, (long)"/etc/services.json");
+    if (fd < 0) {
+        sys_puts("svc: no /etc/services.json\n");
+        return;
+    }
+    {
+        u32 got = 0;
+
+        for (;;) {
+            long r;
+
+            if (got + 64 > sizeof(doc))
+                break;
+            r = sys3(ES_NR_fdread, fd, (long)(doc + got), 64);
+            if (r <= 0)
+                break;
+            got += (u32)r;
+        }
+        doc[got] = '\0';
+    }
+    sys1(ES_NR_fdclose, fd);
+
+    arr = js_key(doc, "services");
+    if (!arr || *arr != '[') {
+        sys_puts("svc: manifest parse failed\n");
+        return;
+    }
+    obj = js_ws(arr + 1);
+    while (*obj == '{' && n < SVC_MAX) {
+        struct svc_def *s = &sv[n];
+        const char *v;
+
+        s->name[0] = s->path[0] = s->mode[0] = s->wait_file[0] = 0;
+        s->max_restarts = 0;
+        if ((v = js_key(obj, "name")))
+            jsv_str(v, s->name, sizeof(s->name));
+        if ((v = js_key(obj, "path")))
+            jsv_str(v, s->path, sizeof(s->path));
+        if ((v = js_key(obj, "mode")))
+            jsv_str(v, s->mode, sizeof(s->mode));
+        if ((v = js_key(obj, "wait")))
+            jsv_str(v, s->wait_file, sizeof(s->wait_file));
+        if ((v = js_key(obj, "max_restarts")))
+            s->max_restarts = (u32)jsv_int(v);
+        if (!s->name[0] || !s->path[0])
+            goto skip;                     /* 必填缺=整项记档直过 */
+        n++;
+skip:
+        while (*obj && *obj != '}')
+            obj++;
+        if (*obj)
+            obj++;
+        obj = js_ws(obj);
+        if (*obj == ',')
+            obj = js_ws(obj + 1);
+    }
+
+    for (i = 0; i < n; i++) {
+        struct svc_def *s = &sv[i];
+        char *argv[4];
+        int argc;
+        u32 rs;
+
+        sys_puts("svc: ");
+        sys_puts(s->name);
+        sys_puts(" start\n");
+        if (s->wait_file[0]) {
+            /* 就绪门检查点:探针 open(存在即开门;100 拍=1s 上界,
+             * 异步拉起形态下真等待,顺序形态即开) */
+            u32 t;
+            long pd;
+
+            sys_puts("svc: ");
+            sys_puts(s->name);
+            sys_puts(" gate ");
+            sys_puts(s->wait_file);
+            sys_puts("\n");
+            for (t = 0; t < 100; t++) {
+                pd = sys1(ES_NR_fdopen, (long)s->wait_file);
+                if (pd >= 0) {
+                    sys1(ES_NR_fdclose, pd);
+                    break;
+                }
+                sleep_ticks(1);
+            }
+            sys_puts("svc: ");
+            sys_puts(s->name);
+            sys_puts(" gate open\n");
+        }
+        argc = ux_split(s->path, argv, 4);
+        if (argc <= 0)
+            continue;
+        for (rs = 0;; rs++) {
+            long st = 0;
+            long pid = spawn_exec(argv[0], argc, argv);
+
+            if (pid < 0) {
+                sys_puts("svc: spawn failed\n");
+                break;
+            }
+            sys3(ES_NR_wait4, pid, (long)&st, 0);
+            if (s->mode[0] == 'r') {       /* respawn:监控+重启上限 */
+                if (rs >= s->max_restarts) {
+                    sys_puts("svc: ");
+                    sys_puts(s->name);
+                    sys_puts(" giving up\n");
+                    break;
+                }
+                sys_puts("svc: ");
+                sys_puts(s->name);
+                sys_puts(" restart\n");
+                continue;
+            }
+            sys_puts("svc: ");
+            sys_puts(s->name);
+            sys_puts(" exited\n");
+            break;
+        }
+    }
+    sys_puts("svc: governed\n");
+}
+
 static void cmd_run(const char *args)
 {
     char *argv[UX_ARGC_MAX];
@@ -2073,6 +2307,8 @@ static void shell_line(char *line)
         cmd_mprtdemo();
     } else if (streq(line, "parts")) {
         sys2(ES_NR_demo, RT_U_PARTS, 0);
+    } else if (streq(line, "svcdemo")) {
+        svc_govern();                /* 站51:治理面交互复跑(门禁锚) */
     } else if (streq(line, "health")) {
         sys2(ES_NR_demo, RT_U_HEALTH, 0);
     } else if (streq(line, "logdemo")) {
@@ -2174,6 +2410,7 @@ void rt_shell_task(void *arg)
 
     (void)arg;
     init_inittab();                  /* 站40:sysinit/once/wait/respawn */
+    svc_govern();                    /* 站51:清单治理域(有序+门+上限) */
     sys_puts("rtos> ");
     for (;;) {
         char c;
