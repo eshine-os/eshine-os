@@ -26,6 +26,12 @@ SECTIONS
     .rodata : { *(.rodata .rodata.*) } :rodata
     .data    : { *(.data .data.*) } :data
 
+    /* 站49:eshine_log 模块注册段(linker section 聚合,GNU ld 自动
+     * 给 __start_/__stop_;level 运行时可改故入 data 段) */
+    .eshine_log_mods : {
+        KEEP(*(.eshine_log_mods))
+    } :data
+
     . = ALIGN(16);
     __bss_start = .;
     .bss : { *(.bss .bss.*) *(COMMON) } :data

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "kernel/include/console.h"
+#include "kernel/include/elog.h"
 #include "kernel/include/sched.h"
 #include "kernel/include/shell.h"
 #include "kernel/include/types.h"
@@ -18,6 +19,7 @@ static void cmd_help(void)
 {
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
     console_puts("          vmrun <id> vmconsole <id|host> vmstat vmrx vmtrail [N] vmkill <id>\n");
+    console_puts("          logdemo loglevel <lvl|mod lvl> logmods logdump\n");
     console_puts("    (前台会话期 Ctrl-](0x1d)=宿主夺回控制台)\n");
     console_puts("    (会话期 Ctrl-^(0x1e) 前缀=控制台快捷键:0|1|2 切 VM,\n");
     console_puts("     h 回宿主,Ctrl-^ 双击=字面直递;未绑定键=取消照常)\n");
@@ -25,7 +27,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (133 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (139 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -119,6 +121,12 @@ static void cmd_help(void)
     console_puts("  overflow -> rt_panic 指名(vm0 复活链)       [131]\n");
     console_puts("  Ctrl-] / vmkill 2    -> 处决壳 VM+宿主完整     [132]\n");
     console_puts("  yocto bitbake -> 部署产物可靴(musl run)[133]\n");
+    console_puts("  logdemo             -> 三级现身+滤除+限流面    [134]\n");
+    console_puts("  loglevel elog dbg    -> 复跑 dbg/trc 现身(调级) [135]\n");
+    console_puts("  logmods             -> 双模块表(段聚合)       [136]\n");
+    console_puts("  logdump             -> 环倾倒+boot 行环审计    [137]\n");
+    console_puts("  (vm0) logdemo       -> rtos 契约三级+滤除+限流 [138]\n");
+    console_puts("  (vm0) loglevel/logmods -> 调级生效+模块表     [139]\n");
 }
 
 static void cmd_version(void)
@@ -311,6 +319,14 @@ static void dispatch(char *line)
         }
     } else if (strncmp(line, "vmstat", 64) == 0) {
         cmd_vmstat();
+    } else if (strncmp(line, "logdemo", 64) == 0) {
+        elog_logdemo();
+    } else if (strncmp(line, "loglevel", 64) == 0) {
+        elog_loglevel_args(args);
+    } else if (strncmp(line, "logmods", 64) == 0) {
+        elog_logmods();
+    } else if (strncmp(line, "logdump", 64) == 0) {
+        elog_logdump();
     } else if (strncmp(line, "vmkill", 64) == 0) {
         bool ok;
         u32 id = parse_id(args, &ok);

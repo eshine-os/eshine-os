@@ -11,14 +11,14 @@ CFLAGS  := -ffreestanding -fno-builtin -fno-pie -fno-pic \
            -mgeneral-regs-only -march=armv8-a -std=gnu11 -O2 -g \
            -DESHINE_VERSION_STR=\"$(VERSION)\" \
            -MMD -MP \
-           -Wall -Wextra -Ihypervisor
+           -Wall -Wextra -Ihypervisor -Icommon
 ASFLAGS := -mgeneral-regs-only -march=armv8-a
 LDFLAGS := -nostdlib -Wl,--build-id=none -T linker.ld
 
 CSRCS := $(wildcard hypervisor/kernel/*.c) $(wildcard hypervisor/drivers/*.c) \
          $(wildcard hypervisor/arch/arm64/mm/*.c)
 ASRCS := $(wildcard hypervisor/arch/arm64/*.S)
-OBJS  := $(CSRCS:.c=.o) $(ASRCS:.S=.o)
+OBJS  := $(CSRCS:.c=.o) $(ASRCS:.S=.o) common/elog_core_el2.o
 
 TARGET := eshine.elf
 
@@ -26,6 +26,16 @@ TARGET := eshine.elf
 GOBJS := guest/start.o guest/vec.o guest/main1.o
 
 all: $(TARGET) rtos.bin guest2.bin
+
+# 站49:eshine_log 契约核心(双树单源 common/,两侧各自编为独立对象:
+# 标志不同不可共物,一源两物=契约单源与构建隔离两立)。规则必须
+# 在 all: 之后——首目标=默认 goal,规则先于 all 会劫持 make 裸跑
+# (实测:elog_be.o 从未编译、main.o 陈旧、elf 不重链而 make 静默
+# "已是最新";站 49 战雷第一枚)。
+common/elog_core_el2.o: common/eshine_log_core.c common/eshine_log.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+common/elog_core_rt.o: common/eshine_log_core.c common/eshine_log.h
+	$(CC) $(RT_CFLAGS) -c -o $@ $<
 
 $(TARGET): $(OBJS) linker.ld
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS)
@@ -72,7 +82,8 @@ RTOBJS := rtos/start.o rtos/vec.o rtos/rt_sched.o rtos/rt_task.o \
           rtos/rt_sync.o rtos/rt_ipc.o rtos/rt_demo.o rtos/rt_timer.o \
           rtos/rt_as.o rtos/rt_msg.o rtos/rt_fsrv.o rtos/ramfs.o \
           rtos/rt_sig.o rtos/rt_shm.o rtos/rt_mq.o rtos/rt_pipe.o rtos/rt_blk.o \
-          rtos/rt_thr.o rtos/rt_rng.o rtos/rt_procfs.o rtos/rt_slog.o rtos/rt_part.o rtos/rt_crash.o rtos/rt_xvm.o
+          rtos/rt_thr.o rtos/rt_rng.o rtos/rt_procfs.o rtos/rt_slog.o rtos/rt_part.o rtos/rt_crash.o rtos/rt_xvm.o \
+          rtos/rt_log_be.o common/elog_core_rt.o
 
 # 站31:rootfs 构建期打包——tools/ramfs 树 -> cpio(newc),ramfs.S
 # .incbin 内嵌(汇编期展开,-MMD 抓不到 -> ramfs.o 显式依赖归档)

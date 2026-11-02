@@ -7,6 +7,9 @@
 #include "fdt.h"
 #include "hvc.h"
 #include "kernel/include/version.h"
+#include "eshine_log.h"
+
+LOG_MODULE_REGISTER("boot");
 
 /* eshine-rtos bring-up:与裸机客同一套设备自证链(同一 ABI 头),
  * 再起调度世界。IRQ 解掩(gic_guest_enable)在 RTOS 世界就绪之后——
@@ -291,6 +294,7 @@ void guest_main(void)
     rt_puts("uart irq on\n");         /* 与裸机同 needle(RXIM 已使能) */
     rt_puts("virtio blk on\n");
     rt_puts("rtos: up (eshine-rtos " ESHINE_VERSION_STR ") 32-prio bitmap, tick 100Hz\n");
+    LOG_INF("log core up, mods=%u\n", rt_log_mod_count());
 
     /* 站二十:次核上线(世界已立:调度器/队/锁/SGI 机制全就绪才可)。
      * EL2 置帧+poke,cpu3 专泵扫到即跑;拒绝只报不炸(单核退化仍活)。 */

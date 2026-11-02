@@ -656,6 +656,28 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
 亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
 真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
+**站49 eshine_log 日志契约（[134-139]——参考实现 log/ 三仓契约的站内形，
+批次 A 首站）**：`common/eshine_log.{h,core.c}` 双树单源（方案 A：共享
+核心+各侧弱符号后端钩子；冻结 ABI=级别枚举/模块结构/钩子签名；一源
+两物=契约单源与构建隔离两立——**规则必须落 all: 之后，先于 all 的
+规则劫持默认 goal，elog_be.o 静默不编而 make 报"已是最新"=站 49 战雷
+第一枚**）。级别模型 Zephyr 对齐（ERR..TRC 数值越大越啰嗦，默认 INF）
++ LOG_MODULE_REGISTER 入 `eshine_log_mods` linker section（GNU ld
+__start_/__stop_ 聚合，双侧 linker.ld KEEP；不依赖 constructor——
+bare-metal 安全）+ 调用点宏级别检查内联（低于阈值零参数求值）。
+后端：宿主=cntpct 时钟+console 行级锁窗整行+ring console 锁窗；
+RTOS=cntvct 时钟+rt_puts_n（DAIF 行级）+ring 自旋锁窗——**参考实现的
+"单写者 ring"假设在 4 CPU 下不成立，环完整性=后端锁窗内调 raw（站 20
+实态修正）**。核心自带最小 vsnprintf（%d/%u/%x/%s/%c/%p/%%，l/ll/z
+收纳；两侧本无 snprintf 面——house 手搓行传统的契约需要格式化面）。
+32KiB 字节环覆盖最旧+logdump 倾倒；ratelimit 窗口+burst+suppressed
+计数；panic 通道（无锁后端+banner+环倾倒+halt，代码完备无判据=记档
+非目标——ESHINE_PANIC 会 halt 系统，首个真实消费者接入时验）。四命令
+双侧（宿主直调/RTOS 经 sys_demo 蹦床 RT_U_LOG*）：logdemo（三级现身
++dbg/trc 默认滤除=禁现判据+ratelimit 3/10 面）/loglevel（全局与 per
+模块调级）/logmods（段聚合模块表）/logdump（环倾倒+boot 行环审计）。
+boot 自证：双侧 banner 后 LOG_INF "log core up, mods=2"（模块计数=
+段聚合自证）。
 **站48 批收口（[128]——批四面合卷健康面板+批发布注记）：
 health=demo op RT_U_HEALTH 一屏（uptime tick/活任务/活进程/fp
 轮转计数/cpart·mpart 在役数/crash 环记录数/xvm 窗 seq·ack——
@@ -671,7 +693,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-133 步手动走查清单。
+139 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

@@ -3,10 +3,14 @@
 #include "drivers/include/gicv3.h"
 #include "drivers/include/timer.h"
 #include "kernel/include/console.h"
+#include "kernel/include/elog.h"
 #include "kernel/include/sched.h"
 #include "kernel/include/shell.h"
 #include "kernel/include/vcpu.h"
 #include "kernel/include/version.h"
+#include "eshine_log.h"
+
+LOG_MODULE_REGISTER("boot");
 
 /* 站十八D:PSCI CPU_ON 唤起次核(QEMU virt 上电即 PSCI off,探针
  * 实证;conduit=smc——DTB psci 节点 method 字段为准,el2_sync 现形
@@ -66,6 +70,7 @@ void main(void)
     timer_init();
     vcpu_init();                       /* SP_EL2 异常栈,越早越稳 */
     console_puts("\n" ESHINE_BANNER "\n");
+    LOG_INF("log core up, mods=%u\n", elog_mod_count());
     __asm__ volatile("msr daifclr, #2");   /* 解 IRQ:中断面就绪后才可 */
     smp_boot_secondary(1, 1);           /* 站十八D:CPU1(站19D ctx=核号) */
     smp_boot_secondary(2, 2);           /* 站十九D:CPU2(vm2.vcpu1 专泵) */

@@ -1310,6 +1310,10 @@ static long sys_demo(u64 *frame)
     case RT_U_MPART_FREE:
         rt_mpart_free((int)FR(1));
         break;
+    case RT_U_LOGDEMO:    k_logdemo();      break;
+    case RT_U_LOGLEVEL:   k_loglevel_args((const char *)FR(1)); break;
+    case RT_U_LOGMODS:    k_logmods();      break;
+    case RT_U_LOGDUMP:    k_logdump();      break;
     case RT_U_PARTS:
         rt_cpart_show();                /* k_aps_show 镜像(参考实现白描) */
         rt_mpart_show();

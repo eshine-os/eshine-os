@@ -2075,6 +2075,18 @@ static void shell_line(char *line)
         sys2(ES_NR_demo, RT_U_PARTS, 0);
     } else if (streq(line, "health")) {
         sys2(ES_NR_demo, RT_U_HEALTH, 0);
+    } else if (streq(line, "logdemo")) {
+        sys2(ES_NR_demo, RT_U_LOGDEMO, 0);
+    } else if (starts(line, "loglevel")) {
+        /* loglevel <lvl> | loglevel <mod> <lvl>:参数串整串直递内核解析 */
+        if (line[8] != ' ')
+            sys_puts("usage: loglevel <lvl> | loglevel <mod> <lvl>\n");
+        else
+            sys3(ES_NR_demo, RT_U_LOGLEVEL, (long)(line + 9), 0);
+    } else if (streq(line, "logmods")) {
+        sys2(ES_NR_demo, RT_U_LOGMODS, 0);
+    } else if (streq(line, "logdump")) {
+        sys2(ES_NR_demo, RT_U_LOGDUMP, 0);
     } else if (streq(line, "crashdemo")) {
         cmd_crashdemo();
     } else if (streq(line, "crashinfo")) {
