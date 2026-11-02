@@ -221,6 +221,38 @@ int rt_msg_name_open(const char *path)
     return -2;
 }
 
+/* 站50:前缀路由——深径未挂者按最长前缀寻径("/proc/meminfo" ->
+ * "/proc");精确命中优先(自全长起逐级截短到根);服务器收 OPEN 带
+ * 全径自解析子径。命中=路由归属,不命中=调用方原回退(ramfs 元名),
+ * 既有语义不动。 */
+int rt_msg_name_prefix_open(const char *path)
+{
+    char pre[RT_NAME_PATH];
+    u32 n = 0;
+
+    if (!path)
+        return -22;
+    while (path[n] && n < sizeof(pre) - 1) {
+        pre[n] = path[n];
+        n++;
+    }
+    pre[n] = '\0';
+    if (path[n])
+        return -36;                   /* -ENAMETOOLONG */
+    for (;;) {
+        int coid = rt_msg_name_open(pre);
+
+        if (coid >= 0)
+            return coid;
+        while (n > 1 && pre[n - 1] != '/')
+            n--;
+        if (n <= 1)
+            return -2;               /* 到根皆无主 */
+        n--;                         /* 截去尾段(含 '/') */
+        pre[n] = '\0';
+    }
+}
+
 /* ---- 到达队列:优先级序插(低值高优先,参考实现发送优先级链) ---- */
 
 static void q_insert(struct rt_chan *ch, struct rt_msg *m)

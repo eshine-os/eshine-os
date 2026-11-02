@@ -1,0 +1,86 @@
+[
+ {
+  "expect": "eshine> "
+ },
+ {
+  "send": "vmcreate 0",
+  "expect": "vm0: CREATED"
+ },
+ {
+  "send": "vmrun 0",
+  "expect": "rtos: up (eshine-rtos"
+ },
+ {
+  "expect": "srv: pm bound stdio",
+  "timeout": 90,
+  "fail_if": "pm stdio bind failed"
+ },
+ {
+  "expect": "cpu1: online (rtos psci)",
+  "timeout": 90
+ },
+ {
+  "send": "vmconsole 0",
+  "expect": "console -> vm"
+ },
+ {
+  "send": "",
+  "expect": "rtos> "
+ },
+ {
+  "send": "logdemo",
+  "expect": "logdemo err line 1"
+ },
+ {
+  "send": "logctrl flush",
+  "expect": "logctrl: flushed, kcursor ",
+  "timeout": 90
+ },
+ {
+  "send": "run /bin/busybox cat /var/log/slog",
+  "expect": "logdemo err line 1",
+  "timeout": 90
+ },
+ {
+  "expect": "log core up, mods=2"
+ },
+ {
+  "send": "logctrl stat",
+  "expect": "B  /var/log/slog",
+  "timeout": 90
+ },
+ {
+  "send": "logdemo 16",
+  "expect": "ratelimit pass=3 suppressed=7",
+  "timeout": 120
+ },
+ {
+  "send": "logctrl flush",
+  "expect": "logctrl: flushed, kcursor ",
+  "timeout": 90
+ },
+ {
+  "send": "logctrl stat",
+  "expect": "B  /var/log/slog.1",
+  "timeout": 90
+ },
+ {
+  "send": "run /bin/busybox cat /proc/meminfo",
+  "expect": "MemTotal:  8192",
+  "timeout": 90
+ },
+ {
+  "send": "run /bin/busybox cat /proc/cpuinfo",
+  "expect": "processor\t: 1",
+  "timeout": 90
+ },
+ {
+  "send": "run /bin/busybox cat /proc/interrupts",
+  "expect": " 27: ",
+  "timeout": 90
+ },
+ {
+  "expect": " 33: ",
+  "timeout": 60
+ }
+]

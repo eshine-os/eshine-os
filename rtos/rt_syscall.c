@@ -629,6 +629,9 @@ static long sys_pipe(u64 *frame)
 {
     long r;
 
+    (void)frame;                    /* 站50:wire 面 r0/r1 出参,frame
+                                     * 不入参——存量警告清账(站41 教训
+                                     * "警告在,没人读"再犯即抓) */
     if (!rt_cur->proc)
         return -ES_EINVAL;
     if (!(rt_cur->proc->caps & CAP_MM))
@@ -1310,10 +1313,11 @@ static long sys_demo(u64 *frame)
     case RT_U_MPART_FREE:
         rt_mpart_free((int)FR(1));
         break;
-    case RT_U_LOGDEMO:    k_logdemo();      break;
+    case RT_U_LOGDEMO:    k_logdemo(FR(1)); break;
     case RT_U_LOGLEVEL:   k_loglevel_args((const char *)FR(1)); break;
     case RT_U_LOGMODS:    k_logmods();      break;
     case RT_U_LOGDUMP:    k_logdump();      break;
+    case RT_U_LOGCTRL:    k_logctrl((const char *)FR(1)); break;
     case RT_U_PARTS:
         rt_cpart_show();                /* k_aps_show 镜像(参考实现白描) */
         rt_mpart_show();

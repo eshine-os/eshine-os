@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "rtos.h"
+#include "miniuart.h"    /* 站50:puts_uart 声明前置(gic.h 静态
+                           * gic_dist_init 消费;头单含契约) */
 #include "gic.h"         /* GUEST_INTID_VIRTIO(单含静态头) */
 #include "virtio.h"
 

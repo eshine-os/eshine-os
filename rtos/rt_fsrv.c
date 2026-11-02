@@ -729,10 +729,12 @@ int rt_fd_open(struct rt_proc *p, const char *kpath)
         return -1;                     /* 站41:CAP_VFS fail-closed */
     if (fd_used_count(p) >= p->max_fd)
         return -24;                    /* 站41:rlimit EMFILE */
-    coid = rt_msg_name_open(kpath);
+    coid = rt_msg_name_prefix_open(kpath);
     if (coid < 0) {
         /* 站40:目录回退——直名未挂者路由 ramfs 元名,由服务器解析
-         * (文件/目录前缀/-ENOENT;openat("/etc") 即走此路)。 */
+         * (文件/目录前缀/-ENOENT;openat("/etc") 即走此路)。
+         * 站50:前缀路由先行——深径("/proc/meminfo")按最长前缀
+         * 寻径挂名服务器,不再一律落 ramfs。 */
         coid = rt_msg_name_open("/dev/ramfs");
         if (coid < 0)
             return coid;

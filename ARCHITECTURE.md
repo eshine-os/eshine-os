@@ -656,6 +656,28 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
 亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
 真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
+**站50 slog 持久化+klog 双源+procfs 扩面（[140-145]——参考实现 slog/
+log_file+seq_file 机制白描的站内形，批次 A 第二站）**：slogsrv 以
+resmgr **客户端**身份走消息面写 /var/log（服务器互为客户端=微内核
+正道，零内部 API 泄漏）：open/create（ramfs 元名连接）+SEEK END+
+WRITE 追加（44B 窗分块）+STAT 尺寸影子；**双世代交替命名轮转**
+（slog/slog.1，rotate=unlink 对侧+create 对侧=零拷贝；8MB 页池下
+10MB×10 不可为）3.5KB 触发。klog 双源=站 49 elog 环增量收割入卷
+（核心 `eshine_log_ring_delta` 游标 API+log_ring_lock/unlock 锁对——
+绝对索引模型 phys(K)=K%SIZE，head=total mod SIZE 恒等式）；用户
+slog WRITE 面 'S [X]' 前缀入卷；recv 1s 超时醒=周期 flush+用户写
+piggyback。**boot 期往返惰性化**：slogsrv 的 ramfs 往返与 pm stdio
+绑定窗同拍打散 FIFO 序=pm 间歇 bind 失败（busybox 全链挂死），
+实测定谳；惰性开卷（首个客户端写/周期收割时）后 4/4 稳。
+**深径前缀路由**（`rt_msg_name_prefix_open`：最长前缀逐级截短，
+"/proc/meminfo"→"/proc"；既有 ramfs 元名回退语义不动）——深径
+openat 从未真正路由过（站 40 v0 全失配回退 ramfs），procfs 文件面
+的第一块基石。procfs OPEN 按路径分型（任务表既有/meminfo 页池账
+/cpuinfo 双核行/interrupts 逐中断计数行——rt_irq_tab 新 count 域，
+dispatch 逐中断递增）。logctrl 三脸（flush/stat/echo on|off）。
+存量警告清账三处（sys_pipe frame/gic.h static→inline/rt_blk
+include 序——"警告在,没人读"再犯即抓）。
+
 **站49 eshine_log 日志契约（[134-139]——参考实现 log/ 三仓契约的站内形，
 批次 A 首站）**：`common/eshine_log.{h,core.c}` 双树单源（方案 A：共享
 核心+各侧弱符号后端钩子；冻结 ABI=级别枚举/模块结构/钩子签名；一源
@@ -693,7 +715,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-139 步手动走查清单。
+145 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

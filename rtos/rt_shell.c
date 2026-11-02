@@ -2076,7 +2076,18 @@ static void shell_line(char *line)
     } else if (streq(line, "health")) {
         sys2(ES_NR_demo, RT_U_HEALTH, 0);
     } else if (streq(line, "logdemo")) {
-        sys2(ES_NR_demo, RT_U_LOGDEMO, 0);
+        sys3(ES_NR_demo, RT_U_LOGDEMO, 0, 0);   /* 0=1 次(站50 参数面) */
+    } else if (starts(line, "logdemo ")) {
+        /* logdemo N:N 次重复(轮转灌满面);界内一位数即可触发 */
+        u64 n = 0;
+        u32 i = 8;
+
+        while (line[i] >= '0' && line[i] <= '9' && n < 64)
+            n = n * 10 + (u64)(line[i++] - '0');
+        if (n && (line[i] == '\0'))
+            sys3(ES_NR_demo, RT_U_LOGDEMO, (long)n, 0);
+        else
+            sys_puts("usage: logdemo [N]\n");
     } else if (starts(line, "loglevel")) {
         /* loglevel <lvl> | loglevel <mod> <lvl>:参数串整串直递内核解析 */
         if (line[8] != ' ')
@@ -2087,6 +2098,14 @@ static void shell_line(char *line)
         sys2(ES_NR_demo, RT_U_LOGMODS, 0);
     } else if (streq(line, "logdump")) {
         sys2(ES_NR_demo, RT_U_LOGDUMP, 0);
+    } else if (starts(line, "logctrl")) {
+        /* logctrl [flush|stat|echo on|off]:参数串整串直递内核解析 */
+        if (line[7] == '\0')
+            sys3(ES_NR_demo, RT_U_LOGCTRL, (long)"", 0);
+        else if (line[7] == ' ')
+            sys3(ES_NR_demo, RT_U_LOGCTRL, (long)(line + 8), 0);
+        else
+            sys_puts("usage: logctrl [flush|stat|echo on|off]\n");
     } else if (streq(line, "crashdemo")) {
         cmd_crashdemo();
     } else if (streq(line, "crashinfo")) {

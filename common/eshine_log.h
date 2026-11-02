@@ -144,8 +144,18 @@ void log_halt(void) __attribute__((noreturn));
 
 
 /* ============================================================
- * 7. ring 倾倒(panic/logdump)
+ * 7. ring 倾倒(panic/logdump)+增量收割(站50 klog 双源)
  * ============================================================ */
 void log_dump_ring(void (*emit)(char));
+
+/* 环锁对(站50:收割读与存环写共锁,环读一致;弱默认无锁=无收割
+ * 消费者的侧不 override 即可) */
+void log_ring_lock(void);
+void log_ring_unlock(void);
+
+/* 增量收割:自 *cursor 起拷未收割字节到 dst(≤dstsz),*cursor 推进
+ * 到当前 head;返回拷贝字节数(0=无新)。调用方持 log_ring_lock。 */
+unsigned int eshine_log_ring_delta(char *dst, unsigned int dstsz,
+                                   unsigned int *cursor);
 
 #endif /* ESHINE_LOG_H */

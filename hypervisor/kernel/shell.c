@@ -20,6 +20,7 @@ static void cmd_help(void)
     console_puts("commands: help version echo <text> state tick vmls vmcreate <id>\n");
     console_puts("          vmrun <id> vmconsole <id|host> vmstat vmrx vmtrail [N] vmkill <id>\n");
     console_puts("          logdemo loglevel <lvl|mod lvl> logmods logdump\n");
+    console_puts("rtos 追加: logctrl [flush|stat|echo] logdemo [N] cat /proc/* /var/log/*\n");
     console_puts("    (前台会话期 Ctrl-](0x1d)=宿主夺回控制台)\n");
     console_puts("    (会话期 Ctrl-^(0x1e) 前缀=控制台快捷键:0|1|2 切 VM,\n");
     console_puts("     h 回宿主,Ctrl-^ 双击=字面直递;未绑定键=取消照常)\n");
@@ -27,7 +28,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (139 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (145 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -127,6 +128,12 @@ static void cmd_help(void)
     console_puts("  logdump             -> 环倾倒+boot 行环审计    [137]\n");
     console_puts("  (vm0) logdemo       -> rtos 契约三级+滤除+限流 [138]\n");
     console_puts("  (vm0) loglevel/logmods -> 调级生效+模块表     [139]\n");
+    console_puts("  (vm0) logctrl flush+cat -> klog 环收割入 /var/log [140]\n");
+    console_puts("  (vm0) slogdemo+cat  -> 用户源 'S [X]' 行入卷    [141]\n");
+    console_puts("  (vm0) logdemo 16+stat -> 双世代轮转(slog+.1)   [142]\n");
+    console_puts("  (vm0) cat /proc/meminfo -> 页池账(前缀路由)    [143]\n");
+    console_puts("  (vm0) cat /proc/cpuinfo -> 双核行              [144]\n");
+    console_puts("  (vm0) cat /proc/interrupts -> 逐中断计数行     [145]\n");
 }
 
 static void cmd_version(void)

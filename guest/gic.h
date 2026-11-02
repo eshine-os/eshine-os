@@ -116,7 +116,10 @@ static inline void vgicr_write(unsigned long off, unsigned int v)
 /* 真启动式 GIC bring-up(判据自报两行,门禁 [12-13]):
  *   gicd v3 ok       <- PIDR2 探测 [7:4]==3
  *   gic on: 27 33 35 <- GICR PPI 27 + GICD SPI 33/35 使能并回读验证 */
-static void gic_dist_init(void)
+/* gic_dist_init:站50 存量警告清账——static→static inline(头内
+ * 未用 inline 不警告;vm0 rt_main.c 与 vm1 裸机客 guest/main.c 双
+ * 消费者,驻头是正形,一字修=非搬移)。 */
+static inline void gic_dist_init(void)
 {
     if ((vgicd_read(GICD_PIDR2) & 0xF0u) != 0x30u) {
         puts_uart("gic FAIL: not v3\n");

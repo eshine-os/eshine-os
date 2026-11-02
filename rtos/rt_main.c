@@ -96,7 +96,18 @@ static struct {
     u32 intid;
     void (*isr)(void);
     u32 wake_mask;
+    u64 count;                    /* 站50:逐中断计数(/proc/interrupts) */
 } rt_irq_tab[RT_IRQ_MAX];
+
+/* 站50:procfs 枚举面——idx 序进,intid/count 出;返回 0=末 */
+u32 rt_irq_entry(u32 idx, u32 *intid, u64 *count)
+{
+    if (idx >= RT_IRQ_MAX || !rt_irq_tab[idx].isr)
+        return 0;
+    *intid = rt_irq_tab[idx].intid;
+    *count = rt_irq_tab[idx].count;
+    return 1;
+}
 
 void (*rt_irq_register(u32 intid, void (*isr)(void), u32 wake_mask))(void)
 {
@@ -166,6 +177,7 @@ rt_task_t *rt_irq_dispatch(void)
     for (i = 0; i < RT_IRQ_MAX; i++) {
         if (rt_irq_tab[i].isr && rt_irq_tab[i].intid == (u32)iar) {
             rt_irq_tab[i].isr();
+            rt_irq_tab[i].count++;            /* 站50:/proc/interrupts */
             if (rt_irq_tab[i].wake_mask)
                 rt_task_wake_all(rt_irq_tab[i].wake_mask);
             hit = 1;

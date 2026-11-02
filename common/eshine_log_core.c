@@ -252,6 +252,7 @@ static int fmt_mod(char *buf, unsigned int sz, const char *name)
 static char         g_ring[ES_RING_SIZE];
 static unsigned int g_ring_head;
 static unsigned int g_ring_len;
+static unsigned int g_ring_total;   /* 单调写入总量(站50 收割游标基准) */
 
 void eshine_log_ring_raw(const char *buf, unsigned int len)
 {
@@ -265,6 +266,7 @@ void eshine_log_ring_raw(const char *buf, unsigned int len)
         if (g_ring_len < ES_RING_SIZE)
             g_ring_len++;
     }
+    g_ring_total += len;
 }
 
 __attribute__((weak)) void log_ring_store(const char *buf, unsigned int len,
@@ -284,6 +286,36 @@ void log_dump_ring(void (*emit)(char))
         return;
     for (i = 0; i < g_ring_len; i++)
         emit(g_ring[(start + i) % ES_RING_SIZE]);
+}
+
+/* ---- 站50:增量收割(锁窗内读,与存环同锁保一致) ----
+ * 绝对索引模型:total=单调写入量;stored=min(total,SIZE);最旧存字节
+ * 绝对位=oldest=total-stored(回绕后恒=total-SIZE,物理位=head);
+ * 游标<oldest=历史已被覆写,重锚最旧续收(收割滞后世代的诚实脸)。 */
+__attribute__((weak)) void log_ring_lock(void) { }
+__attribute__((weak)) void log_ring_unlock(void) { }
+
+unsigned int eshine_log_ring_delta(char *dst, unsigned int dstsz,
+                                   unsigned int *cursor)
+{
+    unsigned int total = g_ring_total;
+    unsigned int oldest = total - g_ring_len;
+    unsigned int avail, n, i;
+
+    if (!dst || !dstsz || !cursor)
+        return 0;
+    if (*cursor < oldest)
+        *cursor = oldest;                 /* 历史已失:重锚 */
+    if (*cursor > total)
+        *cursor = total;                   /* 未来游标:夹回 */
+    avail = total - *cursor;
+    n = avail < dstsz ? avail : dstsz;
+    /* head = total mod SIZE 恒成立(逐字节同进),环=线性流取模:
+     * phys(K) = K % SIZE,无需存区偏移换算(首版 off 换算=错位雷) */
+    for (i = 0; i < n; i++)
+        dst[i] = g_ring[(*cursor + i) % ES_RING_SIZE];
+    *cursor += n;
+    return n;
 }
 
 /* ============================================================

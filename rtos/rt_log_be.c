@@ -87,20 +87,26 @@ unsigned int rt_log_mod_count(void)
     return n;
 }
 
-void k_logdemo(void)
+/* 站49:logdemo(三级+滤除+限流);站50:n 重复参数(轮转灌满面) */
+void k_logdemo(u64 n)
 {
     eshine_log_ratelimit_t rl = { 0, 0, 0 };
     unsigned int i, pass = 0;
+    u64 rep;
 
-    LOG_ERR("logdemo err line %d\n", 1);
-    LOG_WRN("logdemo wrn line %d\n", 2);
-    LOG_INF("logdemo inf line %d\n", 3);
-    LOG_DBG("logdemo dbg line %d\n", 4);    /* 默认 INF:两行滤除面 */
-    LOG_TRC("logdemo trc line %d\n", 5);
-    for (i = 0; i < 10; i++)                /* burst=3/10 发:限流面 */
-        if (eshine_log_ratelimit(&rl, 1000000, 3))
-            pass++;
-    LOG_INF("ratelimit pass=%u suppressed=%u\n", pass, rl.suppressed);
+    if (n == 0)
+        n = 1;
+    for (rep = 0; rep < n; rep++) {
+        LOG_ERR("logdemo err line %d\n", 1);
+        LOG_WRN("logdemo wrn line %d\n", 2);
+        LOG_INF("logdemo inf line %d\n", 3);
+        LOG_DBG("logdemo dbg line %d\n", 4);    /* 默认 INF:两行滤除面 */
+        LOG_TRC("logdemo trc line %d\n", 5);
+        for (i = 0; i < 10; i++)                /* burst=3/10 发:限流面 */
+            if (eshine_log_ratelimit(&rl, 1000000, 3))
+                pass++;
+        LOG_INF("ratelimit pass=%u suppressed=%u\n", pass, rl.suppressed);
+    }
 }
 
 /* "loglevel <lvl>"(全局) | "loglevel <mod> <lvl>";uargs=EL0 壳行

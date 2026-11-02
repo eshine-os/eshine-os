@@ -415,15 +415,21 @@ enum {
     RT_U_APS, RT_U_MPART_ALLOC, RT_U_MPART_ATTACH, RT_U_MPART_FREE,
     RT_U_PARTS, RT_U_CRASHINFO, RT_U_XVM, RT_U_HEALTH,
     RT_U_LOGDEMO, RT_U_LOGLEVEL, RT_U_LOGMODS, RT_U_LOGDUMP,
+    RT_U_LOGCTRL,
 };
 
 /* 站49:eshine_log 契约控制面(体在 rt_log_be.c 内核语境;sys_demo
  * 蹦床调用;契约本体见 common/eshine_log.h) */
-void k_logdemo(void);
+void k_logdemo(u64 n);            /* n=重复次数(轮转灌满面;0=1) */
 void k_loglevel_args(const char *uargs); /* 用户窗直读,界内拷贝 */
 void k_logmods(void);
 void k_logdump(void);
 unsigned int rt_log_mod_count(void);    /* 注册模块计数(boot 自证) */
+
+/* 站50:slog 持久化控制面(体在 rt_slog.c;flush/stat/echo 三脸) */
+void k_logctrl(const char *uargs);      /* 用户窗直读,界内拷贝 */
+u32  rt_as_pages_used(void);            /* 页池在役页数(/proc/meminfo) */
+u32  rt_irq_entry(u32 idx, u32 *intid, u64 *count);  /* irq 表枚举 */
 
 /* ES_NR_sysinfo 的共享结构(user<->kernel) */
 struct rt_sysinfo {
@@ -593,6 +599,7 @@ int  rt_msg_conn_detach(int coid);
 int  rt_msg_name_attach(const char *path, int chid);
 int  rt_msg_name_detach(const char *path);
 int  rt_msg_name_open(const char *path);
+int  rt_msg_name_prefix_open(const char *path);  /* 站50:最长前缀寻径 */
 long rt_msg_send(int coid, const void *sbuf, u32 slen,
                  void *rbuf, u32 rlen, u64 ticks);
 long rt_msg_recv(int chid, void *buf, u32 buflen, u64 ticks,

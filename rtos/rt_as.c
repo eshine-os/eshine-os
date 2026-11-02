@@ -197,6 +197,22 @@ static int as_map_page(struct rt_proc *p, u64 va, u64 pa)
     return 0;
 }
 
+/* 站50:页池统计(/proc/meminfo 面)——位图数 1,只读出访 */
+u32 rt_as_pages_used(void)
+{
+    u32 used = 0, i;
+
+    for (i = 0; i < AS_POOL_PAGES / 64; i++) {
+        u64 w = page_pool[i];
+
+        while (w) {
+            used += (u32)(w & 1UL);
+            w >>= 1;
+        }
+    }
+    return used;
+}
+
 /* ---- 站36 暴露面:rt_shm.c 消费(段页取/还/映/清+SHM VMA 申报) ----
  * 页归属铁律:段页自页池取出后归段注册表所有,唯一还池入口=
  * rt_as_page_free(由 rt_shm_destroy 调);fork/munmap/退场三路
