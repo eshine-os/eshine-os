@@ -1704,8 +1704,11 @@ def main():
             # 在装载进行中耗尽=快装时代纯运气——先排空回显行,真
             # 输出窗 300s(批负载下装载诚实墙时),exit 窗 30s。
             buf = read_until(s, buf, b"echo ESHINE40-BB\r\n", time.time() + 20, start=p3)
-            buf = read_until(s, buf, b"ESHINE40-BB", time.time() + 300, start=p3)
-            buf = read_until(s, buf, b"run: exited code=0", time.time() + 150, start=p3)
+            p4 = len(buf)              # 站48 定谳:排空后必挪锚——旧针线
+                                      # 从 p3 重扫即撞同句回显瞬匹配,exit
+                                      # 窗在真输出前耗尽([103] 九连炸真身)
+            buf = read_until(s, buf, b"ESHINE40-BB", time.time() + 300, start=p4)
+            buf = read_until(s, buf, b"run: exited code=0", time.time() + 150, start=p4)
             s.sendall(b"run /bin/busybox cat /tmp/init40\n")
             buf = read_until(s, buf, b"ESHINE40-INIT", time.time() + 300, start=p3)
             print("  [103/133] busybox echo + cat inittab marker (musl static, argc/argv loader)")
