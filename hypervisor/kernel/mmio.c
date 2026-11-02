@@ -81,6 +81,14 @@ void mmio_dispatch(struct vcpu *v, u64 esr)
                     v->gprs[srt] = virtio_mmio_read(vm, (u32)vm->vmid,
                                                     ipa - d->ipa);
                 break;
+            case VM_DEV_VIRTIO_NET:      /* 站58:net 第二窗口(回环后端) */
+                if (wnr)
+                    virtio_net_mmio_write(vm, (u32)vm->vmid, ipa - d->ipa,
+                                          v->gprs[srt]);
+                else if (srt != 31)
+                    v->gprs[srt] = virtio_net_mmio_read(vm, (u32)vm->vmid,
+                                                        ipa - d->ipa);
+                break;
             case VM_DEV_VGICD:           /* 第十二站:vGIC distributor 面 */
                 if (wnr)
                     vgic_dist_mmio_write(&vm->vgic, (u32)(ipa - d->ipa),

@@ -65,4 +65,34 @@ void virtio_mmio_write(struct eshine_vm *vm, u32 vmid, u64 off, u64 val);
 u64  virtio_mmio_read(struct eshine_vm *vm, u32 vmid, u64 off);
 bool virtio_irq_ready(const struct eshine_vm *vm);
 
+/* ---- 站五十八:virtio-net(设备 id 1;OASIS virtio 1.1 spec clean-room,
+ * 唯一合法参照——参考实现的 virtio-net 组件 连行为参考也不进,权属红线)。
+ * 消费者=vm2 Linux virtio_net(设备级判据:驱动绑定+帧收发);
+ * 后端=回环(TX 帧入设备即回灌 guest 预投的 RX 缓冲)——无栈先设备级
+ * (路线 spec 诚实形),宿主侧网络弧=后弧记边界。 ---- */
+#define VIRTIO_NET_BASE   0x0A001000UL   /* 第二窗口(blk 后次页,净设备独立 4K) */
+#define VIRTIO_NET_F_MAC  (1UL << 5)     /* 特性位 5:配置区 MAC(OASIS §5.1.3) */
+#define VIRTIO_NET_QUEUES 2UL            /* q0 rx(收缓冲)/q1 tx;ctrl 队不供(零特性诚形) */
+#define VIRTIO_NET_RX     0UL
+#define VIRTIO_NET_TX     1UL
+#define VIRTIO_NET_HDR    10UL           /* legacy 无 MRG 的 net 头(OASIS §5.1.6
+                                         * 前六字段=10B;+2B num_buffers 只随
+                                         * VIRTIO_NET_F_MRG_RXBUF——插桩定谳:
+                                         * Linux tx hdr desc len=10) */
+
+struct virtio_net {
+    u32 status;
+    u32 drv_features;
+    u32 queue_pfn[VIRTIO_NET_QUEUES];    /* legacy 队列基址(逐队列) */
+    u32 queue_num[VIRTIO_NET_QUEUES];
+    u32 queue_align;                     /* 仅 4096(与 blk 同律) */
+    u32 queue_sel;
+    u32 int_pend;
+    u16 last_avail[VIRTIO_NET_QUEUES];   /* 逐队列宿主消费位 */
+};
+
+void virtio_net_mmio_write(struct eshine_vm *vm, u32 vmid, u64 off, u64 val);
+u64  virtio_net_mmio_read(struct eshine_vm *vm, u32 vmid, u64 off);
+bool virtio_net_irq_ready(const struct eshine_vm *vm);
+
 #endif /* ESHINE_VIRTIO_H */

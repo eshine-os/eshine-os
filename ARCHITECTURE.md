@@ -691,6 +691,22 @@ refs 引用计数（fork 继承镜像,pipe 同款——子进程退出 CLOSE 不
 connect 先于 accept+send 先于 recv=零重试环零时序,冒烟确定性优先;
 printf 收口="sockdemo: echo ok <ESHINE57>"）。
 
+**站58 virtio-net（[168-171]——OASIS virtio 1.1 spec clean-room,批次 C 第二站）**：
+**virtio-net 设备模型**（第二窗口 0x0A001000,legacy,设备 id 1;q0 rx/q1 tx 双
+vq;F_MAC+配置区 MAC;tx kick=回环后端:读 tx 链帧入设备暂存区,拷进 guest 预投
+rx 缓冲,双 used 环同拍完成）;vSPI 36（LR 通道=VTR 探测:QEMU 实测 4 LR——LR4
+写=未实现寄存器 EL2 异常 ESR 0x02000000 首版即死,VTR 探测后与 vblk 共 LR3,
+同 pCPU 语义不撞记边界）+唤醒/注入双钩（vm.c 泵路径）。**消费者=vm2 Linux
+virtio_net**（DTB 增第二 virtio_mmio 节点;busybox 精选集+IFCONFIG/PING+initramfs
+dev/mem 节点）。**定谳矩阵（九刀二分+插桩,站 53 MDCR/TCG 同例的平台边界）**:
+撤 vIRQ=活;IRQ+空 poll=活;rx 完成无帧=活;零帧=活;IP ethtype=活;**ARP
+（请求/应答,自/他 IP,单播/广播）=死**（6.6 Oops 于 __netif_receive_skb_core+0x4
+执行 FDT 字节,ESR 0x02000000=QEMU 未实现寄存器同号异常;host 侧 gdump 取证:
+客物理文本净且崩前崩后不变=客 stage-1/我 stage-2 映射分歧,机制未穿透）——
+v0 丢弃 ARP 回声（真实 NIC 不收自家出向广播,回环回声本就病态;RX 完整递送
+证明走原路设计:宿主侧 QEMU -netdev 桥接弧）。**gdump 宿主取证命令**（客 RAM
+十六进制倾倒;EL2_sync 加 ELR+EC 解码——LR4 定谳即其产物）。
+
 **站54 跨域 fail-closed 门（[155-157]——safeshm 窗 ACL+运行时 stage-2 改表,批次 B 第二站）**：
 xvmacl 授权表（默认 vm0/vm1 授权=站 47 几何保位,vm2 不授）+运行时
 开关=条目级 stage-2 改表（`stage2_window_toggle`:l2_ram 单块条目

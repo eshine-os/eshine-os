@@ -18,6 +18,7 @@
 #define GIC_PPI_VTIMER  27UL              /* guest CNTV 虚拟定时器 */
 #define GIC_SPI_UART     33UL              /* QEMU virt PL011 IRQ 线(第八站虚注) */
 #define GIC_SPI_VIRTIO   35UL              /* virtio 完成中断(第十站虚注;34 为 vblk 时代遗号) */
+#define GIC_SPI_VNET     36UL              /* 站58:virtio-net 完成中断(纯虚注,LR4 通道) */
 #define IAR_SPURIOUS    1023UL
 
 /* HCR_EL2 宿主值:IMO(bit4) 是 EL2 物理 IRQ 的路由门(QEMU target_el_table
@@ -26,6 +27,7 @@
 #define HCR_EL2_HOST 0x10UL
 
 void gicv3_init(void);
+u32  gic_vif_lrs(void);             /* 站58:虚拟接口 LR 数(VTR 探测) */
 void gicv3_secondary_init(u32 cpu);   /* 站19D:帧号=本核 */   /* 站十八D:CPU1 本核面(GICD 共享不动) */                    /* dist/redist/cpuif,EOImode=1 */
 u64  gicv3_claim(void);                   /* mrs ICC_IAR1_EL1 */
 void gicv3_eoi_dir(u64 intid);            /* 降优先级 + DIR 撤销(宿主自有) */
@@ -37,6 +39,7 @@ bool vtimer_inflight(void);        /* 站十六:vm27 挂起在途(抢占守门) 
 void vgic_inject_uart(void);
 void vgic_inject_sgi(u32 intid, u8 prio);   /* 站19D:LR2 通道 */              /* 第八站:LR1 纯虚拟注入 vINTID 33 */
 void vgic_inject_virtio(void);             /* 第十站:LR3 纯虚拟注入 vINTID 35 */
+void vgic_inject_vnet(void);               /* 站58:LR4 纯虚拟注入 vINTID 36 */
 void vgic_wake_waiter(void);              /* 27 到点:关 CNTV 降线+降优先级(WOKE 交泵注入) */
 
 #endif /* ESHINE_GICV3_H */

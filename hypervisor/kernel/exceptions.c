@@ -14,15 +14,20 @@
 
 void el2_sync(void)
 {
-    u64 esr, far;
+    u64 esr, far, elr;
 
     __asm__ volatile("mrs %0, esr_el2" : "=r"(esr));
     __asm__ volatile("mrs %0, far_el2" : "=r"(far));
+    __asm__ volatile("mrs %0, elr_el2" : "=r"(elr));
     console_puts("\n[EXC] unexpected synchronous exception at EL2\n");
     console_puts("  ESR_EL2 = 0x");
     console_puthex(esr);
-    console_puts("\n  FAR_EL2 = 0x");
+    console_puts(" (EC=0x");
+    console_puthex((esr >> 26) & 0x3F);
+    console_puts(")  FAR_EL2 = 0x");
     console_puthex(far);
+    console_puts("\n  ELR_EL2 = 0x");
+    console_puthex(elr);
     console_puts("\nhalting (WFI)\n");
     for (;;)
         __asm__ volatile("wfi");

@@ -29,7 +29,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (167 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (171 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -157,6 +157,10 @@ static void cmd_help(void)
     console_puts("  (vm0) run /bin/sockdemo -> AF_UNIX 八门真号往返 [165]\n");
     console_puts("  (vm0) sockdemo 重跑     -> socket 对象回收复用   [166]\n");
     console_puts("  (vm0) run /bin/hello    -> fd 层共存无回归       [167]\n");
+    console_puts("  (vm2) ls /sys/class/net -> virtio_net 绑定      [168]\n");
+    console_puts("  (vm2) cat eth0/address  -> F_MAC 协商+配置区     [169]\n");
+    console_puts("  (vm2) ping+cat /proc/net/dev -> 42B/1 包 TX 面  [170]\n");
+    console_puts("  gdump <hex-pa> [len]    -> 客 RAM 取证(ARMd)    [171]\n");
 }
 
 static void cmd_version(void)
@@ -409,6 +413,49 @@ static void dispatch(char *line)
         }
     } else if (strncmp(line, "vmdbg", 64) == 0) {
         vm_dbg_dump();                /* 站53:per-VM mdscr 槽倾倒 */
+    } else if (strncmp(line, "gdump", 64) == 0) {
+        /* 站58 取证(临):客物理内存十六进制倾倒
+         * 用法:gdump <hex-pa> [len-hex]——诊断后撤(dispatch 已
+         * 分词:解析走 args,站54 分词雷同病不再犯) */
+        u64 pa = 0, ln = 0x40UL, v;
+        const char *p = args;
+
+        while (*p == ' ')
+            p++;
+        while (*p >= '0' && *p <= 'f') {
+            v = (*p <= '9') ? (u64)(*p - '0') : (u64)(*p - 'a' + 10);
+            pa = (pa << 4) | v;
+            p++;
+        }
+        while (*p == ' ')
+            p++;
+        if (*p >= '0' && *p <= 'f') {
+            ln = 0;
+            while (*p >= '0' && *p <= 'f') {
+                v = (*p <= '9') ? (u64)(*p - '0') : (u64)(*p - 'a' + 10);
+                ln = (ln << 4) | v;
+                p++;
+            }
+        }
+        if (ln > 0x400UL)
+            ln = 0x400UL;
+        console_puts("gdump @");
+        console_puthex(pa);
+        console_puts(" len=");
+        console_puthex(ln);
+        console_puts("\n");
+        for (u64 o = 0; o < ln; o += 16UL) {
+            console_puthex(pa + o);
+            console_puts(": ");
+            for (u32 k = 0; k < 16u && o + k < ln; k++) {
+                const u8 *b = (const u8 *)(pa + o + k);
+
+                console_puthex(*b & 0xFFu);
+                console_puts(" ");
+            }
+            console_puts("\n");
+        }
+    } else if (strncmp(line, "logdemo", 64) == 0) {
     } else if (strncmp(line, "logdemo", 64) == 0) {
         elog_logdemo();
     } else if (strncmp(line, "loglevel", 64) == 0) {

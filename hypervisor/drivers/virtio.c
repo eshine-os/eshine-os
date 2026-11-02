@@ -211,3 +211,219 @@ bool virtio_irq_ready(const struct eshine_vm *vm)
     return (vm->virtio.status & VIRTIO_STATUS_DRIVER_OK) != 0u &&
            (vm->virtio.int_pend & 1u) != 0u;
 }
+
+/* ---- 站五十八:virtio-net(设备 id 1;OASIS virtio 1.1 spec clean-room) ----
+ * 回环后端:tx kick 时读 tx 链(hdr 10B 跳过+帧数据入设备暂存区),再
+ * 拷进 guest 预投的 rx 单描述符缓冲(帧前留 10B net 头),双 used 环
+ * 同拍完成+int_pend。rx kick=v0 无待灌帧(guest 补缓冲,无积压);
+ * rx 缓冲未投=丢帧计数(诚实计数器记边界)。
+ *
+ * **ARP 回声丢弃(v0 平台边界)**:ethtype 0x0806 的回环递送丢弃
+ * (tx 完成照常)。定谳矩阵(九刀二分+插桩,站 53 MDCR/TCG 同例):
+ * 撤 vIRQ=活;IRQ+空 poll=活;rx 完成无帧=活;零帧=活;IP ethtype=活;
+ * ARP(请求/应答,自/他 IP,单播/广播)=死(6.6 Oops 于
+ * __netif_receive_skb_core+0x4 执行 FDT 字节,ESR 0x02000000——
+ * QEMU 未实现寄存器同号异常;host 侧 gdump 物理文本净且崩前崩后
+ * 不变=客 stage-1/我 stage-2 映射分歧,机制未穿透)。
+ * 真实 NIC 也不收自家出向广播——回环回声本就病态;RX 递送的
+ * 完整证明走原路设计(宿主侧 QEMU -netdev 桥接弧,roadmap E6)。 */
+
+#define VIRTIO_MAX_FRAME 1526u         /* 以太网最大帧(v0 MTU 边界) */
+
+static u8 vnet_frame[VIRTIO_MAX_FRAME];
+static u32 vnet_drop_count;
+
+static void virtio_net_process_tx(struct eshine_vm *vm)
+{
+    struct virtio_net *vn = &vm->vnet;
+    u32 n = vn->queue_num[VIRTIO_NET_TX];
+    u64 base = (u64)vn->queue_pfn[VIRTIO_NET_TX] << 12;
+    struct vq_desc *desc, *rdesc;
+    u16 *avail, *ravail;
+    struct vq_used *used, *rused;
+    u16 avail_idx;
+
+    if (n == 0u || vn->queue_pfn[VIRTIO_NET_TX] == 0u)
+        return;
+    desc = (struct vq_desc *)vm_ipa_to_pa(vm, base + desc_off(), 16UL * n);
+    avail = (u16 *)vm_ipa_to_pa(vm, base + avail_off(n), 6UL + 2UL * n);
+    used = (struct vq_used *)vm_ipa_to_pa(vm, base + used_off(n),
+                                          6UL + 8UL * n);
+    if (desc == NULL || avail == NULL || used == NULL)
+        return;
+
+    avail_idx = avail[1];
+    while (vn->last_avail[VIRTIO_NET_TX] != avail_idx) {
+        u16 head = avail[2 + (vn->last_avail[VIRTIO_NET_TX] & (n - 1))];
+        struct vq_desc *d = &desc[head];
+        u8 *rxbuf = NULL;
+        u16 rxhead = 0;
+        u32 copied = 0;
+        bool arp = false;
+
+        /* tx 链走读:首描述符=net 头(10B 跳过),续描述符=帧数据(gather);
+         * ethertype 探头(ARP 判定=回声丢弃边界) */
+        while (d->flags & VIRTQ_DESC_F_NEXT) {
+            struct vq_desc *nd = &desc[d->next];
+
+            if (nd->len != 0UL) {
+                u8 *src = (u8 *)vm_ipa_to_pa(vm, nd->addr, nd->len);
+
+                if (src != NULL) {
+                    if (copied == 0u && nd->len >= 14u &&
+                        src[12] == 0x08u && src[13] == 0x06u)
+                        arp = true;
+                    if (rxbuf != NULL && copied < VIRTIO_MAX_FRAME) {
+                        u32 m = nd->len > VIRTIO_MAX_FRAME - copied
+                                    ? VIRTIO_MAX_FRAME - copied : nd->len;
+
+                        memcpy(vnet_frame + copied, src, m);
+                        copied += m;
+                    }
+                }
+            }
+            d = nd;
+        }
+
+        /* rx 缓冲:guest 预投单描述符(hdr+帧窗口);ARP 回声不递送 */
+        if (!arp) {
+            u32 rn = vn->queue_num[VIRTIO_NET_RX];
+            u64 rbase = (u64)vn->queue_pfn[VIRTIO_NET_RX] << 12;
+
+            if (rn != 0u && vn->queue_pfn[VIRTIO_NET_RX] != 0u) {
+                rdesc = (struct vq_desc *)vm_ipa_to_pa(vm, rbase + desc_off(),
+                                                       16UL * rn);
+                ravail = (u16 *)vm_ipa_to_pa(vm, rbase + avail_off(rn),
+                                              6UL + 2UL * rn);
+                rused = (struct vq_used *)vm_ipa_to_pa(vm, rbase + used_off(rn),
+                                                        6UL + 8UL * rn);
+                if (rdesc != NULL && ravail != NULL && rused != NULL &&
+                    rdesc->len > VIRTIO_NET_HDR &&
+                    copied <= rdesc->len - VIRTIO_NET_HDR &&
+                    vn->last_avail[VIRTIO_NET_RX] != ravail[1]) {
+                    rxhead = ravail[2 + (vn->last_avail[VIRTIO_NET_RX] &
+                                         (rn - 1))];
+                    rxbuf = (u8 *)vm_ipa_to_pa(vm, rdesc[rxhead].addr,
+                                                rdesc[rxhead].len);
+                    if (rxbuf != NULL) {
+                        u32 cap = (u32)rdesc[rxhead].len -
+                                  (u32)VIRTIO_NET_HDR;
+
+                        if (copied > cap)
+                            copied = cap;
+                        for (u32 i = 0; i < VIRTIO_NET_HDR; i++)
+                            rxbuf[i] = 0u;   /* 净头:无 offload 诚形 */
+                        memcpy(rxbuf + VIRTIO_NET_HDR, vnet_frame, copied);
+                        rused->e[rused->idx & (rn - 1u)].id = rxhead;
+                        rused->e[rused->idx & (rn - 1u)].len =
+                            (u32)VIRTIO_NET_HDR + copied;
+                        rused->idx++;
+                        vn->last_avail[VIRTIO_NET_RX]++;
+                    }
+                }
+            }
+        }
+        if (arp || rxbuf == NULL)
+            vnet_drop_count++;         /* ARP 回声/rx 缓冲未投:丢帧记数 */
+        used->e[used->idx & (n - 1)].id = head;
+        used->e[used->idx & (n - 1)].len = (u32)VIRTIO_NET_HDR + copied;
+        used->idx++;
+        vn->last_avail[VIRTIO_NET_TX]++;
+    }
+    vn->int_pend = 1u;
+}
+
+void virtio_net_mmio_write(struct eshine_vm *vm, u32 vmid, u64 off, u64 val)
+{
+    struct virtio_net *vn = &vm->vnet;
+
+    (void)vmid;
+    switch (off) {
+    case VIRTIO_REG_DRV_FEATURES:
+        vn->drv_features = (u32)val & (u32)VIRTIO_NET_F_MAC;  /* 只收 MAC 位 */
+        return;
+    case VIRTIO_REG_DRV_FEAT_SEL:
+        return;
+    case VIRTIO_REG_QUEUE_SEL:
+        vn->queue_sel = (u32)val;           /* 0 rx/1 tx;他值选不中队 */
+        return;
+    case VIRTIO_REG_QUEUE_NUM:
+        if (((u32)val & ((u32)val - 1u)) == 0u && (u32)val <= VIRTIO_QUEUE_MAX &&
+            vn->queue_sel < VIRTIO_NET_QUEUES)
+            vn->queue_num[vn->queue_sel] = (u32)val;
+        else
+            vn->status |= VIRTIO_STATUS_FAILED;
+        return;
+    case VIRTIO_REG_QUEUE_ALIGN:
+        if ((u32)val == 4096u)
+            vn->queue_align = (u32)val;
+        else
+            vn->status |= VIRTIO_STATUS_FAILED;
+        return;
+    case VIRTIO_REG_QUEUE_PFN:
+        if (vn->queue_sel < VIRTIO_NET_QUEUES) {
+            vn->queue_pfn[vn->queue_sel] = (u32)val;
+            vn->last_avail[vn->queue_sel] = 0;
+        }
+        return;
+    case VIRTIO_REG_QUEUE_NOTIFY:
+        if ((u32)val == VIRTIO_NET_TX)
+            virtio_net_process_tx(vm);
+        return;                             /* rx kick:v0 无待灌帧 */
+    case VIRTIO_REG_INT_ACK:
+        vn->int_pend &= ~((u32)val & 1u);
+        return;
+    case VIRTIO_REG_STATUS:
+        vn->status = (u32)val & 0xFFu;
+        return;
+    default:
+        return;
+    }
+}
+
+u64 virtio_net_mmio_read(struct eshine_vm *vm, u32 vmid, u64 off)
+{
+    static const u8 vnet_mac[6] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x58 };
+    struct virtio_net *vn = &vm->vnet;
+
+    (void)vmid;
+    switch (off) {
+    case VIRTIO_REG_MAGIC:
+        return 0x74726976UL;
+    case VIRTIO_REG_VERSION:
+        return 1UL;                         /* legacy(v1 真身,与 blk 同律) */
+    case VIRTIO_REG_DEVICE_ID:
+        return 1UL;                         /* net(OASIS §5.1.2) */
+    case VIRTIO_REG_VENDOR_ID:
+        return 0x4553UL;                    /* 'ES' */
+    case VIRTIO_REG_DEV_FEATURES:
+        return VIRTIO_NET_F_MAC;            /* 唯一特性:配置区 MAC */
+    case VIRTIO_REG_DEV_FEAT_SEL:
+        return 0UL;
+    case VIRTIO_REG_QUEUE_SEL:
+        return vn->queue_sel;
+    case VIRTIO_REG_QUEUE_NUM_MAX:
+        return VIRTIO_QUEUE_MAX;
+    case VIRTIO_REG_QUEUE_PFN:
+        return vn->queue_sel < VIRTIO_NET_QUEUES
+                   ? vn->queue_pfn[vn->queue_sel] : 0UL;
+    case VIRTIO_REG_INT_STATUS:
+        return vn->int_pend & 1UL;
+    case VIRTIO_REG_STATUS:
+        return vn->status;
+    case VIRTIO_REG_QUEUE_ALIGN:
+        return vn->queue_align;
+    default:
+        if (off >= VIRTIO_REG_CONFIG && off < VIRTIO_REG_CONFIG + 6) {
+            /* net 配置区唯一字段:MAC 6B(OASIS §5.1.4+特性位 5 */
+            return (u64)vnet_mac[off - VIRTIO_REG_CONFIG];
+        }
+        return 0UL;
+    }
+}
+
+bool virtio_net_irq_ready(const struct eshine_vm *vm)
+{
+    return (vm->vnet.status & VIRTIO_STATUS_DRIVER_OK) != 0u &&
+           (vm->vnet.int_pend & 1u) != 0u;
+}

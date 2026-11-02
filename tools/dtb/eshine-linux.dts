@@ -86,6 +86,15 @@
 		compatible = "virtio,mmio";
 	};
 
+	virtio_net@a001000 {			/* 站58:virtio-net 第二窗口(blk 后次页,
+						 * 设备 id 1,Linux virtio_net 绑定;
+						 * 回环后端=无栈先设备级) */
+		dma-coherent;
+		interrupts = <0x00 0x04 0x04>;	/* SPI 4 = INTID 36 */
+		reg = <0x00 0xa001000 0x00 0x200>;
+		compatible = "virtio,mmio";
+	};
+
 	pl011@9000000 {
 		clock-names = "uartclk\0apb_pclk";
 		clocks = <0x01 0x01>;

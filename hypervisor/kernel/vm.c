@@ -213,6 +213,7 @@ int vm_create(u32 id)
     }
     vuart_init(&vm->vu);
     memset(&vm->virtio, 0, sizeof(vm->virtio));  /* regs 复位;磁盘数据不在生命周期内 */
+    memset(&vm->vnet, 0, sizeof(vm->vnet));       /* 站58:net regs 复位(回环无跨代数据) */
     /* 站二十:重分发帧数随几何表(拆 19D 的 id==2 硬码)——vm0 双核后
      * 次核同样要帧 1 面;nframes=1 时 vgic 的挂起循环(f<nframes)与
      * sgi_take/重分发读写的帧卫兵把帧 1 全 WI/RAZ,次核的 SGI0 使能
@@ -220,7 +221,7 @@ int vm_create(u32 id)
     vgic_reset(&vm->vgic, vm_geo[id].n_vcpu);
 
     /* vGIC 窗口(第十二站):镜像 QEMU virt 真布局,树里 intc 节点据此描述。
-     * ESHINE_MAX_DEV=4 恰好满编:vuart/virtio/vgicd/vgicr。 */
+     * 站58 起 MAX_DEV=5:vuart/virtio/vgicd/vgicr/vnet。 */
     vm->devices[2].ipa  = 0x08000000UL;
     vm->devices[2].pa   = 0;
     vm->devices[2].size = 0x10000UL;
@@ -235,7 +236,14 @@ int vm_create(u32 id)
      * SGI/PPI 面(ipidemo rx=0 定谳:窗口单帧=次核使能写落空)。 */
     vm->devices[3].attr = S2_ATTR_EMULATED;
     vm->devices[3].dev  = VM_DEV_VGICR;
-    vm->n_dev = 4;                     /* 四设备满编 */
+    /* 站58:virtio-net 第二窗口(blk 后次页;消费者=vm2 Linux virtio_net,
+     * DTB 节点决定可见性——vm0/vm1 树无节点=死窗,零暴露面) */
+    vm->devices[4].ipa  = VIRTIO_NET_BASE;
+    vm->devices[4].pa   = 0;
+    vm->devices[4].size = 0x1000UL;
+    vm->devices[4].attr = S2_ATTR_EMULATED;
+    vm->devices[4].dev  = VM_DEV_VIRTIO_NET;
+    vm->n_dev = 5;                     /* 五设备满编 */
     {
         /* 站19D:vCPU 阵列初始化——vcpu0 恒为引导帧;次核(vi>0)
          * 无帧停泊(wait_state=1 泵滤掉),待 guest 的 PSCI CPU_ON
@@ -724,7 +732,9 @@ static bool pump_run_vcpu(u32 id, u32 vi)
              ((vuart_rx_irq_ready(&vm->vu) &&
                vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) ||
               (virtio_irq_ready(vm) &&
-               vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO)))))
+               vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO)) ||
+              (virtio_net_irq_ready(vm) &&          /* 站58:net 完成同律唤醒 */
+               vgic_spi_enabled(&vm->vgic, GIC_SPI_VNET)))))
             v->wait_state = 0UL;
         else if (v->wait_reason == VCPU_WAIT_TIMER &&
                  (v->vtimer_ctl & 1UL)) {
@@ -829,6 +839,11 @@ static bool pump_run_vcpu(u32 id, u32 vi)
         vgic_spi_enabled(&vm->vgic, GIC_SPI_VIRTIO)) {
         /* 第十站:virtio 完成中断(LR3);站19D:归 vcpu0 面(同上) */
         vgic_inject_virtio();
+    }
+    if (vi == 0 && virtio_net_irq_ready(vm) &&
+        vgic_spi_enabled(&vm->vgic, GIC_SPI_VNET)) {
+        /* 站58:virtio-net 完成中断(LR4);归 vcpu0 面(同上) */
+        vgic_inject_vnet();
     }
     /* vtimer ctx 切入对(第七站):cortex-a57(v8.0)无 CNTV 陷阱位,
      * guest 直写物理;泵以切换对齐——切入还本人 ctx,物理 CNTV

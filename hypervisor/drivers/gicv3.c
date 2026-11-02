@@ -45,6 +45,17 @@ static void ppi_configure(u64 sgi_base, u32 mask)
     wr32(sgi_base + GICR_ISENABLER0, mask);
 }
 
+/* 站58:虚拟接口 LR 数探测(ICH_VTR_EL2 [4:0]=nLR-1)。QEMU 实测
+ * 4(LR4 写=未实现寄存器,EL2 同步异常 EC=0——首版臆断 16 的教训:
+ * 平台假设必实测,站 53 MDCR 同病)。 */
+u32 gic_vif_lrs(void)
+{
+    u64 vtr;
+
+    __asm__ volatile("mrs %0, ich_vtr_el2" : "=r"(vtr));
+    return (u32)(vtr & 0x1FUL) + 1u;
+}
+
 void gicv3_init(void)
 {
     (void)rd32(GICR_RD_BASE + GICR_TYPER);          /* CPU0 redistributor 在位探测 */
@@ -164,6 +175,23 @@ void vgic_inject_virtio(void)
     u64 lr = GIC_SPI_VIRTIO | ICH_LR_GROUP1 | ICH_LR_PENDING;
 
     __asm__ volatile("msr ich_lr3_el2, %0" :: "r"(lr));
+    __asm__ volatile("isb");
+}
+
+void vgic_inject_vnet(void)
+{
+    /* 站58:同 virtio 纯虚拟注入。通道=VTR 探测:LR>=5 用 LR4;
+     * 平台 4 LR(QEMU 实测定谳:LR4 写=未实现寄存器,EL2 同步异常
+     * EC=0 首版即死)则 LR3 与 vblk 共道——同 pCPU 语义不撞(vm2 专
+     * 泵 CPU1/2 无 vblk I/O;vm0 的 vblk 在 CPU0/3 无 net 消费者),
+     * 同时挂起=覆写丢一记 v0 边界(两侧今日均不可达,记档)。 */
+    u64 lr = GIC_SPI_VNET | ICH_LR_GROUP1 | ICH_LR_PENDING;
+
+    if (gic_vif_lrs() >= 5) {
+        __asm__ volatile("msr ich_lr4_el2, %0" :: "r"(lr));
+    } else {
+        __asm__ volatile("msr ich_lr3_el2, %0" :: "r"(lr));
+    }
     __asm__ volatile("isb");
 }
 

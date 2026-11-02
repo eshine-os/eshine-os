@@ -1,0 +1,14 @@
+[
+ {"expect": "eshine> "},
+ {"send": "vmcreate 2", "expect": "vm2: CREATED"},
+ {"send": "vmrun 2", "expect": "Booting Linux on physical CPU", "timeout": 300},
+ {"expect": "Run /init as init process", "timeout": 420},
+ {"expect": "~ # ", "timeout": 120},
+ {"send": "vmconsole 2", "expect": "console -> vm", "timeout": 60},
+ {"send": "", "expect": "~ # ", "timeout": 60},
+ {"send": "ls /sys/class/net", "expect": "eth0", "timeout": 30},
+ {"send": "cat /sys/class/net/eth0/address", "expect": "52:55:0a:00:02:58", "timeout": 30},
+ {"send": "ifconfig eth0 10.0.0.2 netmask 255.255.255.0 up", "expect": "~ # ", "timeout": 90},
+ {"send": "ping -c 1 -W 3 10.0.0.1", "expect": "~ # ", "timeout": 90},
+ {"send": "cat /proc/net/dev", "expect": "eth0:", "timeout": 30}
+]

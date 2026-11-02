@@ -19,13 +19,14 @@ extern u32 vm_cpu_map[ESHINE_MAX_VMS][ESHINE_MAX_VCPUS];
  *   pcpu1:专泵 vm2.vcpu0(跑到出)
  *   pcpu2:专泵 vm2.vcpu1(guest 的 PSCI CPU_ON 后才有帧,跑到出) */
 #define ESHINE_MAX_MEM    4
-#define ESHINE_MAX_DEV    4
+#define ESHINE_MAX_DEV    5
 
 /* 仿真设备类型(设备表化:mmio_dispatch 按 dev 分发) */
 #define VM_DEV_VUART  1UL
 #define VM_DEV_VIRTIO 2UL
 #define VM_DEV_VGICD  3UL             /* 第十二站:vGIC distributor 窗口 */
 #define VM_DEV_VGICR  4UL             /* 第十二站:vGIC redistributor 窗口 */
+#define VM_DEV_VIRTIO_NET 5UL         /* 站58:virtio-net 窗口(回环后端) */
 
 enum vm_state {
     VM_INIT,
@@ -48,6 +49,7 @@ struct eshine_vm {
     struct vm_device  devices[ESHINE_MAX_DEV];
     struct vuart      vu;                    /* 仿真串口实例(EMULATED 设备的模型态) */
     struct virtio_mmio virtio;               /* virtio-blk regs(磁盘数据在 virtio.c 静态区) */
+    struct virtio_net vnet;                  /* 站58:virtio-net regs(回环后端) */
     struct vgic       vgic;                  /* vGIC 状态(随 VM 生命周期,不跨 create) */
     struct vm_space   space;
 };

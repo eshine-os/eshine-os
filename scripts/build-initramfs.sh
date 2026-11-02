@@ -69,13 +69,14 @@ exec /bin/sh
 EOF_INIT
 chmod 755 "$ROOT/init"
 # cat/echo/mount 等为门禁与手玩备好
-for cmd in sh cat echo ls uname mount umount ps free sleep; do
+for cmd in sh cat echo ls uname mount umount ps free sleep ifconfig ping; do
     ln -sf busybox "$ROOT/bin/$cmd"
 done
 
 echo "== 打包 newc(定长 ${SLOT} 槽) =="
 python3 "$REPO/tools/mkinitcpio.py" "$ROOT" --size "$SLOT" \
-        --dev console:5:1 --dev null:1:3 > "$DIR/initramfs.cpio"
+        --dev console:5:1 --dev null:1:3 \
+        --dev dev/mem:1:1 > "$DIR/initramfs.cpio"   # 站58:mem=内核文本客侧取证
 
 size=$(stat -c%s "$DIR/initramfs.cpio")
 echo "== 产物: $DIR/initramfs.cpio ($size 字节;硬门 <= ${SLOT}) =="
