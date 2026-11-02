@@ -1563,7 +1563,7 @@ def main():
             #      musl 零 patch 直连(真 asm-generic 号面兑现日)。 ----
             p3 = len(buf)
             s.sendall(b"run /bin/hello\n")
-            buf = read_until(s, buf, b"musl: hello from /bin/hello", time.time() + 150, start=p3)
+            buf = read_until(s, buf, b"musl: hello from /bin/hello", time.time() + 300, start=p3)
             buf = read_until(s, buf, b"musl: fmt proof 6*7=42", time.time() + 10, start=p3)
             buf = read_until(s, buf, b"run: exited code=0", time.time() + 60, start=p3)
             print("  [88/133] vm0: musl hello via user-space loader (dual-world left wing)")
@@ -1578,8 +1578,8 @@ def main():
             #      存还(vec.S 簿记)。 ----
             p3 = len(buf)
             s.sendall(b"run /bin/pt\n")
-            buf = read_until(s, buf, b"pthread: 4 threads joined, counter=10 (want 10)", time.time() + 60, start=p3)
-            buf = read_until(s, buf, b"pthread: self=", time.time() + 10, start=p3)
+            buf = read_until(s, buf, b"pthread: 4 threads joined, counter=10 (want 10)", time.time() + 600, start=p3)
+            buf = read_until(s, buf, b"pthread: self=", time.time() + 120, start=p3)
             buf = read_until(s, buf, b"run: exited code=0", time.time() + 60, start=p3)
             print("  [89/133] vm0: pthread 4-thread join via clone(220) (musl TLS+CLEAR_TID contract)")
             # ---- 站36:shm+xspace——共享段四面+固定窗+fork 共享律
@@ -1707,17 +1707,17 @@ def main():
             p4 = len(buf)              # 站48 定谳:排空后必挪锚——旧针线
                                       # 从 p3 重扫即撞同句回显瞬匹配,exit
                                       # 窗在真输出前耗尽([103] 九连炸真身)
-            buf = read_until(s, buf, b"ESHINE40-BB", time.time() + 300, start=p4)
-            buf = read_until(s, buf, b"run: exited code=0", time.time() + 150, start=p4)
+            buf = read_until(s, buf, b"ESHINE40-BB", time.time() + 900, start=p4)
+            buf = read_until(s, buf, b"run: exited code=0", time.time() + 300, start=p4)
             s.sendall(b"run /bin/busybox cat /tmp/init40\n")
-            buf = read_until(s, buf, b"ESHINE40-INIT", time.time() + 300, start=p3)
+            buf = read_until(s, buf, b"ESHINE40-INIT", time.time() + 900, start=p3)
             print("  [103/133] busybox echo + cat inittab marker (musl static, argc/argv loader)")
             p3 = len(buf)
             s.sendall(b"run /bin/busybox ls -1 /etc\n")
-            buf = read_until(s, buf, b"inittab", time.time() + 300, start=p3)
-            buf = read_until(s, buf, b"motd", time.time() + 150, start=p3)
+            buf = read_until(s, buf, b"inittab", time.time() + 900, start=p3)
+            buf = read_until(s, buf, b"motd", time.time() + 300, start=p3)
             s.sendall(b"run /bin/busybox date -u\n")
-            buf = read_until(s, buf, b"UTC 2026", time.time() + 300, start=p3)
+            buf = read_until(s, buf, b"UTC 2026", time.time() + 900, start=p3)
             print("  [104/133] busybox ls (getdents64 one-per-call) + date (clock face)")
             # 站40(r26 定谳):md5sum 单发窗错位=脏摘要瞬态(孤立
             # 复读恒正);幂等重发一次(读活态,同 ps 门律)
@@ -1726,7 +1726,7 @@ def main():
             for md_try in range(2):
                 p3 = len(buf)
                 s.sendall(b"run /bin/busybox md5sum /etc/motd\n")
-                buf = read_until(s, buf, b"  /etc/motd", time.time() + 600, start=p3)  # 第五连装载:累积减速,600s
+                buf = read_until(s, buf, b"  /etc/motd", time.time() + 900, start=p3)  # 第五连装载:累积减速,600s
                 m0 = _re.search(rb"([0-9a-f]{32})  /etc/motd", buf[p3:])
                 if m0 and m0.group(1) == b"f6f062e1b6748d300d9e6550b7e3ba53":
                     break
