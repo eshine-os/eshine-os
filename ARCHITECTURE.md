@@ -656,6 +656,15 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
 亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
 真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
+**站52 ham 健康面 v0（[149-151]——参考实现 ham 白描的最小站内形,批次 A 末站）**：
+心跳实体（名+期望拍距+最近拍）+missed 条件（2 周期无拍=>MISSED 态+
+log 动作[elog 环入卷+控制台+站 50 持久化审计]）+恢复拍=>HEALTHY
+（recovered 动作=记录）；动作五型取 log 型，command/signal/message/
+wait 型+raise 型条件+自愈守护=后弧记档。hamsrv 内核任务 1s 扫描拍
+（站 17 睡客机器复用）；与治理面（站 51）互为表里——治理面管怎么起,
+健康面管活着没。ham add/hambeat/ham ls 三命令（demo 蹦床,重名=复用
+重整）。
+
 **站51 driver_manager 治理面 v0（[146-148]——参考实现白描:JSON 服务清单+
 有序拉起+就绪门+waitpid 监控+重启上限;RPC 注册面 v0 不立,批次 A 第三站）**：
 治理域=inittab 基流之外的服务域（inittab 判据行是门锚,不动）。
@@ -726,7 +735,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-148 步手动走查清单。
+151 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

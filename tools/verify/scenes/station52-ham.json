@@ -1,0 +1,18 @@
+[
+ {"expect": "eshine> "},
+ {"send": "vmcreate 0", "expect": "vm0: CREATED"},
+ {"send": "vmrun 0", "expect": "rtos: up (eshine-rtos"},
+ {"expect": "srv: pm bound stdio", "timeout": 90, "fail_if": "pm stdio bind failed"},
+ {"expect": "cpu1: online (rtos psci)", "timeout": 90},
+ {"send": "vmconsole 0", "expect": "console -> vm"},
+ {"send": "", "expect": "rtos> "},
+ {"send": "ham add hb1 100", "expect": "ham: added", "timeout": 60},
+ {"send": "hambeat hb1", "expect": "ham: beat", "timeout": 60},
+ {"send": "ham ls", "expect": "hb1: HEALTHY", "timeout": 60},
+ {"send": "sleep 4", "expect": "ham: hb1 MISSED", "timeout": 90},
+ {"send": "ham ls", "expect": "hb1: MISSED", "timeout": 60},
+ {"send": "hambeat hb1", "expect": "ham: hb1 recovered", "timeout": 60},
+ {"send": "ham ls", "expect": "hb1: HEALTHY", "timeout": 60},
+ {"send": "logctrl flush", "expect": "logctrl: flushed", "timeout": 60},
+ {"send": "run /bin/busybox cat /var/log/slog", "expect": "ham hb1 missed", "timeout": 270}
+]

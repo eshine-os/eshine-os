@@ -2307,6 +2307,48 @@ static void shell_line(char *line)
         cmd_mprtdemo();
     } else if (streq(line, "parts")) {
         sys2(ES_NR_demo, RT_U_PARTS, 0);
+    } else if (starts(line, "ham add ")) {
+        /* ham add <name> <period-ticks>:心跳实体注册(tick=10ms) */
+        const char *p = line + 8;
+        char nm[12];
+        u32 n = 0, per = 0;
+
+        while (*p == ' ')
+            p++;
+        while (p[n] && p[n] != ' ' && n < sizeof(nm) - 1)
+            n++;
+        if (!n)
+            goto ham_usage;
+        {
+            u32 i;
+
+            for (i = 0; i < n; i++)
+                nm[i] = p[i];
+            nm[n] = '\0';
+        }
+        p += n;
+        while (*p == ' ')
+            p++;
+        while (*p >= '0' && *p <= '9')
+            per = per * 10 + (u32)(*p++ - '0');
+        if (!per) {
+ham_usage:
+            sys_puts("usage: ham add <name> <period-ticks> | hambeat <name> | ham ls\n");
+            return;
+        }
+        {
+            long r = sys3(ES_NR_demo, RT_U_HAM_ADD, (long)nm, (long)per);
+
+            if (r)
+                sys_puts("ham: add failed\n");
+            else
+                sys_puts("ham: added\n");
+        }
+    } else if (starts(line, "hambeat ")) {
+        sys_puts(sys3(ES_NR_demo, RT_U_HAM_BEAT, (long)(line + 8), 0)
+                 ? "ham: no such entity\n" : "ham: beat\n");
+    } else if (streq(line, "ham ls")) {
+        sys2(ES_NR_demo, RT_U_HAM_LS, 0);
     } else if (streq(line, "svcdemo")) {
         svc_govern();                /* 站51:治理面交互复跑(门禁锚) */
     } else if (streq(line, "health")) {

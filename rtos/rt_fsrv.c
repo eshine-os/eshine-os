@@ -1149,4 +1149,5 @@ void rt_srv_boot(rt_task_t *shell)
     rt_rng_boot();                   /* 站40:rngsrv(第五,/dev/random) */
     rt_procfs_boot();                /* 站40:procsrv(第六,/proc) */
     rt_slog_boot();                  /* 站40:slogsrv(第七,/dev/slog) */
+    rt_ham_boot();                   /* 站52:hamsrv(健康扫描,静默) */
 }

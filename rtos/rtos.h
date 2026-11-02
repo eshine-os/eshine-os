@@ -416,6 +416,7 @@ enum {
     RT_U_PARTS, RT_U_CRASHINFO, RT_U_XVM, RT_U_HEALTH,
     RT_U_LOGDEMO, RT_U_LOGLEVEL, RT_U_LOGMODS, RT_U_LOGDUMP,
     RT_U_LOGCTRL,
+    RT_U_HAM_ADD, RT_U_HAM_BEAT, RT_U_HAM_LS,
 };
 
 /* 站49:eshine_log 契约控制面(体在 rt_log_be.c 内核语境;sys_demo
@@ -425,6 +426,12 @@ void k_loglevel_args(const char *uargs); /* 用户窗直读,界内拷贝 */
 void k_logmods(void);
 void k_logdump(void);
 unsigned int rt_log_mod_count(void);    /* 注册模块计数(boot 自证) */
+
+/* 站52:ham 健康面(体在 rt_ham.c;心跳实体+missed 条件-log 动作) */
+long k_ham_add(const char *uname, u32 period);   /* 重名=复用重整 */
+long k_ham_beat(const char *uname);              /* -2=未注册 */
+void k_ham_ls(void);
+void rt_ham_boot(void);
 
 /* 站50:slog 持久化控制面(体在 rt_slog.c;flush/stat/echo 三脸) */
 void k_logctrl(const char *uargs);      /* 用户窗直读,界内拷贝 */
