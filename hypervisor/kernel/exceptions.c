@@ -221,6 +221,7 @@ void resume_or_preempt(struct vcpu *v)
     if (v->slice_left == 0UL) {
         v->exit_reason = VCPU_PREEMPT;
         sched_preempts++;
+        vm_preempt_tick((u32)vm_of_vcpu(v)->vmid);   /* 站56 */
         vcpu_exit();
     }
     trap_resume(v);

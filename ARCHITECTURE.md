@@ -656,6 +656,16 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
 亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
 真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
+**站56 DFX 收口（[162-164]——迹环过滤查询+per-VM 抢占会计+同病自审定谳,批次 B 末站）**：
+vmtrail 查询面（`vmtrail [N] [cpu0-3]`——CPU 过滤=vm 过滤的拓扑近似
+[cpu1/2=vm2、cpu3=vm0.v1 专泵,cpu0 双客混载]）;per-VM 抢占会计
+（vm_preempts,双扳机点[量子耗尽泵侧+帧转写异常侧],vmstat 双会计行
+[vm-preempts+quanta]）。同病自审三件定谳（记档）:§C25 量子记账无
+cycle 补偿=granularity 即量子本身(1 tick/片,无累积损失路径,亚拍量
+子再议);§C23 CPU_ON 握手原子性=有界等待兜底(丢拍降级不挂死,真板
+event register 语义差异真板弧重审);§Q10 宿主侧 FP eager=TCG 非性能
+目标(RTOS 侧已 lazy 站19C;真板弧)。
+
 **站55 PSCI 补面+配额会计（[158-161]——参考实现 PSCI 面+实时配额调度 白描,批次 B 第三站）**：
 CPU_OFF（调用者帧泊停,核 0 恒在拒;wait 无源泊,SGI 再醒=记档）/
 AFFINITY_INFO（客视角 MPIDR 帧号→0=ON/DENIED）/**SYSTEM_OFF**（干净
@@ -767,7 +777,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-161 步手动走查清单。
+164 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

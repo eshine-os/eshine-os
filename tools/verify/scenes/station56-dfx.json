@@ -1,0 +1,12 @@
+[
+ {"expect": "eshine> "},
+ {"send": "vmcreate 0", "expect": "vm0: CREATED"},
+ {"send": "vmrun 0", "expect": "rtos: up (eshine-rtos"},
+ {"expect": "srv: pm bound stdio", "timeout": 90, "fail_if": "pm stdio bind failed"},
+ {"expect": "cpu1: online (rtos psci)", "timeout": 90},
+ {"expect": "init: inittab processed", "timeout": 90},
+ {"send": "vmstat", "expect": "vm-preempts: vm0=", "timeout": 60},
+ {"expect": "quanta: vm0=", "timeout": 60},
+ {"send": "vmtrail 8 cpu0", "expect": "cpu0", "timeout": 60},
+ {"send": "vmtrail 8 cpu3", "expect": "cpu3", "timeout": 60}
+]

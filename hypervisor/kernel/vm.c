@@ -23,6 +23,7 @@ static u8 xvm_acl[ESHINE_MAX_VMS] = { 1, 1, 0 };
  * + per-VM 配额会计(泵量子计数;实时配额调度 BUDGET/USED 白描的会计面) */
 static u8 vm_reset_req[ESHINE_MAX_VMS];
 static u64 vm_quanta[ESHINE_MAX_VMS];
+static u64 vm_preempts[ESHINE_MAX_VMS];   /* 站56:per-VM 抢占会计 */
 
 void vm_request_reset(u32 id)
 {
@@ -33,6 +34,17 @@ void vm_request_reset(u32 id)
 u64 vm_quanta_of(u32 id)
 {
     return id < ESHINE_MAX_VMS ? vm_quanta[id] : 0;
+}
+
+u64 vm_preempts_of(u32 id)
+{
+    return id < ESHINE_MAX_VMS ? vm_preempts[id] : 0;
+}
+
+void vm_preempt_tick(u32 id)
+{
+    if (id < ESHINE_MAX_VMS)
+        vm_preempts[id]++;
 }
 
 /* 预定义配置(第十四站几何表化):RAM 窗口不重叠 —— VM0 0x50000000/16MB,
@@ -584,7 +596,7 @@ void trail_add(u32 ev, u64 a, u64 b)
     trail_unlock();
 }
 
-void vm_trail_dump(u32 n)
+void vm_trail_dump(u32 n, int cpu_f)
 {
     u32 i, start, h;
 
@@ -612,6 +624,10 @@ void vm_trail_dump(u32 n)
     for (i = start; i < h; i++) {
         struct trail_slot *s = &trail[i % TRAIL_N];
 
+        if (cpu_f >= 0 && s->cpu != (u32)cpu_f)
+            continue;                 /* 站56:查询面按 CPU 过滤(拓扑
+                                       * 上 cpu1/2=vm2、cpu3=vm0.v1 专泵,
+                                       * cpu0 双客混载=vm 过滤的近似) */
         console_lock();
         console_puts("  #");
         util_putdec(i);
@@ -866,6 +882,7 @@ static bool pump_run_vcpu(u32 id, u32 vi)
                                       * 计入 guest 量子(27 分支已独立查) */
     if (reason == VCPU_PREEMPT) {
         sched_preempts++;             /* 量子耗尽:出口已转写帧,下一 VM */
+        vm_preempt_tick(id);         /* 站56:per-VM 抢占会计 */
     } else if (reason == VCPU_WAIT) {
         v->pc += 4;                   /* WFI 不 retire:代完成,醒后自查 */
         v->wait_state = 1UL;

@@ -71,10 +71,13 @@ void vm_list(void);
 void vm_dbg_dump(void);
 int vm_xvm_acl(u32 id, u32 on);
 void vm_request_reset(u32 id);       /* 站55:PSCI SYSTEM_RESET 复位旗 */
-u64 vm_quanta_of(u32 id);            /* 站55:per-VM 泵量子会计 */       /* 站54:safeshm 窗 fail-closed 门 */             /* 站53:per-VM mdscr 槽倾倒(隔离判据) */
+u64 vm_quanta_of(u32 id);            /* 站55:per-VM 泵量子会计 */
+u64 vm_preempts_of(u32 id);          /* 站56:per-VM 抢占会计 */
+void vm_preempt_tick(u32 id);        /* 站56:抢占点计数(两扳机点) */
+void vm_trail_dump(u32 n, int cpu_f); /* 站56:n 条+可选 cpu 过滤 */       /* 站54:safeshm 窗 fail-closed 门 */             /* 站53:per-VM mdscr 槽倾倒(隔离判据) */
 u32 vm_vcpu_count(u32 id);           /* 站二十:槽位真实 vCPU 数(泵/扫描 vi 封界) */
 void vm_rx_dump(void);
-void vm_trail_dump(u32 n);         /* 站20 立案/站25C 带参:事件迹环
+void vm_trail_dump(u32 n, int cpu_f);   /* 站56:n 条+可选 cpu 过滤 */         /* 站20 立案/站25C 带参:事件迹环
                                       * 最后 n 条(0=全量;[41] 探针) */
 void trail_add(u32 ev, u64 a, u64 b);              /* 站20:RX 链两域现场(取证) */
 
