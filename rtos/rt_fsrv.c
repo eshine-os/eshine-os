@@ -39,7 +39,7 @@
 
 /* ---- 通用小件(freestanding,无 libc) ---- */
 
-static void fd_zero(void *dst, u32 n)
+void fd_zero(void *dst, u32 n)     /* 站57 起跨文件共享(rt_sock.c 同吃) */
 {
     char *d = dst;
 
@@ -693,7 +693,7 @@ static void srv_pm(void *arg)
 
 /* ---- fd 层(内核语境客户端;调用者=EL0 syscall 包装或 PM) ---- */
 
-static int fd_slot_ok(struct rt_proc *p, int fd)
+int fd_slot_ok(struct rt_proc *p, int fd)   /* 站57 起跨文件共享 */
 {
     return p && fd >= 0 && (u32)fd < RT_FD_MAX && p->fds[fd].used;
 }
@@ -707,7 +707,7 @@ static int vfs_check(struct rt_proc *p)
 }
 
 /* rlimit:fd 槽满额判定(自降单向,默认 RT_FD_MAX) */
-static u32 fd_used_count(struct rt_proc *p)
+u32 fd_used_count(struct rt_proc *p)   /* 站57 起跨文件共享 */
 {
     u32 i, n = 0;
 
@@ -1150,4 +1150,6 @@ void rt_srv_boot(rt_task_t *shell)
     rt_procfs_boot();                /* 站40:procsrv(第六,/proc) */
     rt_slog_boot();                  /* 站40:slogsrv(第七,/dev/slog) */
     rt_ham_boot();                   /* 站52:hamsrv(健康扫描,静默) */
+    rt_sock_boot();                  /* 站57:socksrv(第九,/dev/sock;
+                                      * 静默零 boot 期往返——站 50 纪律) */
 }

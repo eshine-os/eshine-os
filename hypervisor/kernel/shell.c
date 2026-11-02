@@ -29,7 +29,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (164 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (167 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -154,6 +154,9 @@ static void cmd_help(void)
     console_puts("  vmstat(抢占/量子)      -> per-VM 双会计面       [162]\n");
     console_puts("  vmtrail N cpu3         -> 迹环 CPU 过滤查询     [163]\n");
     console_puts("  vmtrail N cpu0         -> 过滤反证(无泄漏)     [164]\n");
+    console_puts("  (vm0) run /bin/sockdemo -> AF_UNIX 八门真号往返 [165]\n");
+    console_puts("  (vm0) sockdemo 重跑     -> socket 对象回收复用   [166]\n");
+    console_puts("  (vm0) run /bin/hello    -> fd 层共存无回归       [167]\n");
 }
 
 static void cmd_version(void)

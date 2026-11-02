@@ -673,7 +673,23 @@ VM_DEAD 无 fault 行）/**SYSTEM_RESET**（复位旗+泵出口复位链:teardow
 后 vm_create+vm_start 重建重启——console owner 释放,复活后重接管）。
 per-VM 泵量子会计（vm_quanta,vmstat quanta 行;实时配额调度 BUDGET/USED
 白描的会计面,强制执行=消费者召唤后弧）。pscidemo/pscireset/pscioff
-三命令(EL1 hvc 直调,psci_rtos_cpu_on 同 conduit)。
+三命令(EL1 hvc 直调,psci_rtos_cpu_on 同 conduit）。
+
+**站57 AF_UNIX sock（[165-167]——参考实现 unix_sock 服务白描,批次 C 首站）**：
+socksrv=第九内核服务器（own channel+/dev/sock 元名;boot 链尾静默起=
+站 50 零 boot 期往返纪律）。**真号八门**（aarch64 asm-generic 号:socket
+198/bind 200/listen 201/accept 202/connect 203/sendto 206/recvfrom 207/
+shutdown 210;站 42 定号纪律——musl 直连零 patch）;sendto/recvfrom=
+fd≥3 读写面路由（数据面零新 wire op,骑站 31 READ/WRITE）;控制面新
+wire ops 12-17。语义:bind=对象挂路径（服务器内表）;**connect=即建对**
+（accepted socket 预入听者 accept 队=backlog 语义,数据在 accept 前
+即可流）;空读/空 accept/满环=-110 有界窗面（pipesrv v0 同形,POSIX
+无限阻塞=后弧）;shutdown/close=断对+对端 EOF 面（READ 恒 0）;DUP=
+refs 引用计数（fork 继承镜像,pipe 同款——子进程退出 CLOSE 不误收
+对象）。fd 辅助三件共享化（fd_zero/fd_slot_ok/fd_used_count,rt_fsrv.c
+出+rt_sock.c 吃）。消费者:tools/ramfs-sockdemo.c（单进程回环序,
+connect 先于 accept+send 先于 recv=零重试环零时序,冒烟确定性优先;
+printf 收口="sockdemo: echo ok <ESHINE57>"）。
 
 **站54 跨域 fail-closed 门（[155-157]——safeshm 窗 ACL+运行时 stage-2 改表,批次 B 第二站）**：
 xvmacl 授权表（默认 vm0/vm1 授权=站 47 几何保位,vm2 不授）+运行时

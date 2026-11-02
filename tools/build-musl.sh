@@ -66,3 +66,11 @@ for prog in initmark beat; do
         -o "tools/ramfs/bin/$prog" "tools/ramfs-$prog.c" -lc
 done
 echo "== 产物: tools/ramfs/bin/{initmark,beat} =="
+
+echo "== 链接 sockdemo(站57:AF_UNIX 八门真号判据件)=="
+${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
+    -isystem "$WORK/inst/include" \
+    -specs "$WORK/inst/lib/musl-gcc.specs" \
+    -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code \
+    -o tools/ramfs/bin/sockdemo tools/ramfs-sockdemo.c -lc
+echo "== 产物: tools/ramfs/bin/sockdemo =="

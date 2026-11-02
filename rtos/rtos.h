@@ -263,6 +263,13 @@ extern char rt_shell_ustack[16384];    /* 站28:壳用户栈(.user 段) */
 #define RT_FDOP_READDIR 9u     /* 站39:a=游标,data=[d_type][名],status=下一游标(0=末) */
 #define RT_FDOP_STAT   10u     /* 站40:data=路径,回执=status=(mode<<32)|size */
 #define RT_FDOP_POLL   11u     /* 站43:可读查询;回执 status=1 可读/0 无/负=err */
+/* 站57:AF_UNIX sock 控制面(数据面骑 READ/WRITE 既有 op) */
+#define RT_FDOP_SOCKET 12u     /* 建 socket;回执=status=ocb(sock_id+1) */
+#define RT_FDOP_BIND   13u     /* data=路径;对象挂名(听者) */
+#define RT_FDOP_LISTEN 14u     /* 状态->listening(accept 队 v0 恒深 2) */
+#define RT_FDOP_ACCEPT 15u     /* 听者出队;回执=status=accepted ocb;空队=-110 */
+#define RT_FDOP_CONNECT 16u    /* data=路径;寻听者即建对(accepted 预入队) */
+#define RT_FDOP_SHUTDOWN 17u   /* 断对(对端 EOF 面:READ 回 0) */
 
 /* 站43:阻塞对象归属(参考实现 GET_TASK_BLOCK_INFO 白描的最小站内形)。
  * 语义=最近一次阻塞原语(醒后不清=ps 排障语义:"卡在哪")。 */
@@ -353,8 +360,32 @@ struct rt_fdreq {
 #define ES_NR_cap_get    581   /* 自查位图 */
 #define ES_NR_uuid_get   582   /* 自查身份 */
 #define ES_NR_rlimit_self 583  /* 自降 max_fd/max_child(单向) */
-#define ES_EPERM          1
-#define ES_EMFILE         24
+/* ---- 站五十七:AF_UNIX sock 真号面(aarch64 asm-generic 号;musl
+ * 直连零 patch=站 42 定号纪律)。sendto/recvfrom=读写面(fd>=3
+ * 路由同 read/write,addr/flags v0 不读)。 ---- */
+#define ES_NR_socket      198  /* (domain,type,proto)->fd */
+#define ES_NR_bind        200  /* (fd,sockaddr*,len) */
+#define ES_NR_listen      201  /* (fd,backlog) */
+#define ES_NR_accept      202  /* (fd)->fd(accepted) */
+#define ES_NR_connect     203  /* (fd,sockaddr*,len) */
+#define ES_NR_sendto      206  /* (fd,buf,len,...)=write 面 */
+#define ES_NR_recvfrom    207  /* (fd,buf,len,...)=read 面 */
+#define ES_NR_shutdown    210  /* (fd,how):断对(对端 EOF) */
+#define ES_EAFNOSUPPORT  97
+#define ES_EPIPE         32
+#define ES_EPFNOSUPPORT  96
+#define ES_EPROTONOSUPPORT 93
+#define ES_ENOENT         2
+#define ES_EAGAIN        11
+#define ES_ETIMEDOUT    110
+#define ES_EBADF          9
+#define ES_ENOMEM        12
+#define ES_ENOTSOCK      88
+#define ES_EWOULDBLOCK ES_EAGAIN
+#define ES_ENOTCONN    107
+#define ES_EFAULT        14    /* 站57 补(旧面原用裸号,sock 面起定名) */
+#define ES_ENAMETOOLONG  36
+#define ES_EPERM          1    /* 复立(站41 原有,站57 块重排曾误删) */
 #define CAP_VFS    0x1ULL     /* fd 六门:open/create/unlink/dir/dents/stat */
 #define CAP_SPAWN  0x2ULL     /* fork/clone */
 #define CAP_KILL   0x4ULL     /* kill/sigqueue */
@@ -679,6 +710,20 @@ long rt_proc_child_alive(struct rt_proc *p, int pid);   /* WNOHANG 判活 */
 u32  rt_proc_child_count(struct rt_proc *p);  /* 站41:rlimit fork 面 */
 int  rt_ptimer_in_pool(void *tm);     /* 站42:tp 守卫第二驻地谓词 */
 void rt_srv_boot(rt_task_t *shell);   /* 固定序列 spawn(boot 链面) */
+/* fd 辅助三件(站57 起跨文件共享:rt_fsrv.c 出,rt_sock.c 吃) */
+void fd_zero(void *dst, u32 n);
+int  fd_slot_ok(struct rt_proc *p, int fd);
+u32  fd_used_count(struct rt_proc *p);
+/* 站五十七:AF_UNIX sock 层(rt_sock.c;真号 198/200-203/206/207/210
+ * 的内核客户端面)。socket=建对象换 ocb;bind/connect=路径挂;accept=
+ * 出队换新 fd;sendto/recvfrom 骑既有 fd WRITE/READ 数据面。 */
+int  rt_fd_socket(struct rt_proc *p);
+long rt_fd_bind(struct rt_proc *p, int fd, const char *upath);
+long rt_fd_listen(struct rt_proc *p, int fd, long backlog);
+int  rt_fd_accept(struct rt_proc *p, int fd);
+long rt_fd_connect(struct rt_proc *p, int fd, const char *upath);
+long rt_fd_shutdown(struct rt_proc *p, int fd, long how);
+void rt_sock_boot(void);              /* socksrv(第九服务器,boot 链尾) */
 
 /* ---- 站三十二:signal+futex(rt_sig.c;参考实现 §10 站内收编) ----
  * futex=musl 锁原语底座:WAIT=值校验+站 21 单窗阻塞+四路分诊

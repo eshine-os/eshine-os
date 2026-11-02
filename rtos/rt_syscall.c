@@ -1972,6 +1972,111 @@ static long sys_ppoll(u64 *frame)
     }
 }
 
+/* ---- 站五十七:AF_UNIX sock 真号面(aarch64 asm-generic 号面;musl
+ * 直连零 patch)。控制面四门走 rt_sock 客户端层;sendto/recvfrom=
+ * fd>=3 读写面路由同 read/write(addr/flags v0 不读)。 ---- */
+
+static long sys_socket(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (FR(0) != 1)                   /* AF_UNIX=1(v0 唯一域) */
+        return -ES_EAFNOSUPPORT;
+    if (FR(1) != 1)                   /* SOCK_STREAM=1(v0 唯一型) */
+        return -ES_EPROTONOSUPPORT;
+    return rt_fd_socket(rt_cur->proc);
+}
+
+static long sys_sockpath(u64 *frame, int connect)   /* bind/connect 共面 */
+{
+    /* sockaddr_un 布局:sun_family(2B)+sun_path(108B);路径偏移 2 */
+    const char *uaddr = (const char *)FR(1);
+    char kpath[26];
+    u32 i;
+
+    if (!access_ok(uaddr, 2 + 1))
+        return -ES_EFAULT;
+    for (i = 0; i < sizeof(kpath) - 1; i++) {
+        if (!access_ok(uaddr + 2 + i, 1))
+            return -ES_EFAULT;
+        kpath[i] = uaddr[2 + i];
+        if (!kpath[i])
+            return connect ? rt_fd_connect(rt_cur->proc, (int)FR(0), kpath)
+                           : rt_fd_bind(rt_cur->proc, (int)FR(0), kpath);
+    }
+    return -ES_ENAMETOOLONG;          /* v0:路径窗 25 截界 */
+}
+
+static long sys_bind(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return sys_sockpath(frame, 0);
+}
+
+static long sys_listen(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_fd_listen(rt_cur->proc, (int)FR(0), (long)FR(1));
+}
+
+static long sys_accept(u64 *frame)
+{
+    (void)frame;                      /* addr/addrlen v0 不回填 */
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_fd_accept(rt_cur->proc, (int)FR(0));
+}
+
+static long sys_connect(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return sys_sockpath(frame, 1);
+}
+
+static long sys_sendto(u64 *frame)
+{
+    const char *ub = (const char *)FR(1);
+    u64 len = FR(2);
+    char kbuf[64];
+
+    if (len > sizeof(kbuf))
+        len = sizeof(kbuf);
+    if (len && !access_ok(ub, (u32)len))
+        return -ES_EFAULT;
+    for (u64 i = 0; i < len; i++)
+        kbuf[i] = ub[i];
+    return rt_fd_write(rt_cur->proc, (int)FR(0), kbuf, (u32)len);
+}
+
+static long sys_recvfrom(u64 *frame)
+{
+    char *ub = (char *)FR(1);
+    u64 len = FR(2);
+    char kbuf[64];
+    long r;
+
+    if (len > sizeof(kbuf))
+        len = sizeof(kbuf);
+    if (!access_ok(ub, (u32)len))
+        return -ES_EFAULT;
+    r = rt_fd_read(rt_cur->proc, (int)FR(0), kbuf, (u32)len);
+    if (r <= 0)
+        return r;
+    for (long i = 0; i < r; i++)
+        ub[i] = kbuf[i];
+    return r;
+}
+
+static long sys_shutdown(u64 *frame)
+{
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    return rt_fd_shutdown(rt_cur->proc, (int)FR(0), (long)FR(1));
+}
+
 void rt_syscall_init(void)
 {
     rt_task_pool_init();              /* 站35:素槽 RT_FREE 清池 */
@@ -2092,6 +2197,15 @@ void rt_syscall_init(void)
     table[ES_NR_timer_delete]    = sys_timer_delete;
     table[ES_NR_getitimer]       = sys_getitimer;
     table[ES_NR_setitimer]       = sys_setitimer;
+    /* 站57:AF_UNIX sock 真号面(musl 直连) */
+    table[ES_NR_socket]          = sys_socket;
+    table[ES_NR_bind]            = sys_bind;
+    table[ES_NR_listen]          = sys_listen;
+    table[ES_NR_accept]          = sys_accept;
+    table[ES_NR_connect]          = sys_connect;
+    table[ES_NR_sendto]          = sys_sendto;
+    table[ES_NR_recvfrom]        = sys_recvfrom;
+    table[ES_NR_shutdown]        = sys_shutdown;
 }
 
 void rt_syscall_dispatch(u64 *frame)
