@@ -29,7 +29,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (151 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (154 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -141,6 +141,9 @@ static void cmd_help(void)
     console_puts("  (vm0) ham add/beat/ls  -> 心跳实体 HEALTHY      [149]\n");
     console_puts("  (vm0) sleep4+beat      -> MISSED->recovered   [150]\n");
     console_puts("  (vm0) cat /var/log     -> ham warn 入卷审计    [151]\n");
+    console_puts("  (vm0) dbgdemo          -> debug/PMU 平台探针    [152]\n");
+    console_puts("  vmdbg                 -> per-VM mdscr 槽倾倒    [153]\n");
+    console_puts("  (vm1) mdscr probe      -> 第二客视图(TCG 存根)  [154]\n");
 }
 
 static void cmd_version(void)
@@ -333,6 +336,8 @@ static void dispatch(char *line)
         }
     } else if (strncmp(line, "vmstat", 64) == 0) {
         cmd_vmstat();
+    } else if (strncmp(line, "vmdbg", 64) == 0) {
+        vm_dbg_dump();                /* 站53:per-VM mdscr 槽倾倒 */
     } else if (strncmp(line, "logdemo", 64) == 0) {
         elog_logdemo();
     } else if (strncmp(line, "loglevel", 64) == 0) {

@@ -156,6 +156,10 @@ def run_scene(name, steps):
         finally:
             log.close()
             s.close()
+            # 取证:整 buf 落盘(read_until/banner 吞掉的字节也可见)
+            with open(LOG, "ab") as f:
+                f.write(b"\n==== full buf ====\n")
+                f.write(buf)
         return passed, len(steps)
     finally:
         qemu.terminate()

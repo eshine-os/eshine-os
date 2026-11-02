@@ -1,5 +1,5 @@
 {"services":[
-{"name":"marker","path":"/bin/initmark","mode":"once"},
+{"name":"marker","path":"/bin/hello","mode":"once"},
 {"name":"gated","path":"/bin/hello","mode":"once","wait":"/tmp/init40"},
 {"name":"beater","path":"/bin/hello","mode":"respawn","max_restarts":2}
 ]}

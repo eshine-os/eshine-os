@@ -656,6 +656,19 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
 亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
 真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
+**站53 debug/PMU 隔离面（[152-154]——reference-audit 审计"两仓同病"项,批次 B 首站）**：
+MDCR_EL2.TDA（bit9）guest 进场置/宿主还场清（真硬件机制：EL1 的
+MDSCR_EL1 等 debug 寄存器访问陷阱化，EC 0x18 收口——MDSCR per-VM
+代访（帧新增 mdscr 槽）+debug 族（crn 0-2）/PMU 族（op0=3,op1=3,
+crn 9/14）RAZ/WI（Linux hw_breakpoint 探测见 0=优雅降级）。**QEMU
+TCG 平台实证（站 53 插桩定谳）：不实现 MDCR_EL2 陷阱 enforcement
+（handler 零触发），MDSCR=惰性存根（写弃读 0）、PMCR=ID 真值可读
+计数惰性=平台级无泄漏；机制为真板弧就绪**。**参考实现头标 TPM=bit0/
+TPMCR=bit1 与 HPMN[4:0] 撞位记档（实证：0x203 写入把 HPMN 改 3
+=QEMU 客进程挂死毒源；TPM 位号存疑真板重核）**。dbgdemo 探针
+（平台事实报告：trapped/quiescent+raz/id 双形态）+vmdbg 槽倾倒+
+vm1 boot 探针（guest/main.c）。
+
 **站52 ham 健康面 v0（[149-151]——参考实现 ham 白描的最小站内形,批次 A 末站）**：
 心跳实体（名+期望拍距+最近拍）+missed 条件（2 周期无拍=>MISSED 态+
 log 动作[elog 环入卷+控制台+站 50 持久化审计]）+恢复拍=>HEALTHY
@@ -735,7 +748,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-151 步手动走查清单。
+154 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

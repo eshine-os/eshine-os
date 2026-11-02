@@ -381,6 +381,29 @@ void el1_sync(struct vcpu *v)
             v->pc += 4UL;                    /* MSR 型写:代 retire 续跑 */
             resume_or_preempt(v);
         }
+        /* 站53:MDSCR_EL1(sysreg 2,0,c1,c3,2)——MDCR_EL2.TDA 陷阱下
+         * 的 per-VM 代访:读还本 VM 槽/写存本 VM 槽(debug 族跨 VM
+         * 隔离核心件);debug 族其余(crn 0-2:DBGIDR/DBGBCR/BVR/
+         * WVR/WCR/OSLAR...)+PMU 族(op0=3,op1=3,crn 9/14,TPM 陷阱)
+         * =RAZ/WI(读 0/写弃:Linux hw_breakpoint 探测见 0=优雅
+         * 降级,计数互漏根除)。 */
+        if (op0 == 2u && op1 == 0u && crn == 1u && crm == 3u && op2 == 2u) {
+            if ((iss & 1u) || rt == 31u) {   /* 读:还本 VM 槽(xzr 不回) */
+                if (rt != 31u)
+                    v->gprs[rt] = v->mdscr;
+            } else {
+                v->mdscr = v->gprs[rt];      /* 写:存本 VM 槽 */
+            }
+            v->pc += 4UL;
+            resume_or_preempt(v);
+        }
+        if ((op0 == 2u && op1 == 0u && crn <= 2u) ||
+            (op0 == 3u && op1 == 3u && (crn == 9u || crn == 14u))) {
+            if ((iss & 1u) && rt != 31u)
+                v->gprs[rt] = 0UL;           /* RAZ:读 0(WI 写弃) */
+            v->pc += 4UL;
+            resume_or_preempt(v);
+        }
         guest_fault(v, esr);                 /* 其余系统寄存器:默认拒绝 */
     } else if (ec == 0x24) {               /* data abort(EL1):仿真窗口分发 */
         mmio_dispatch(v, esr);             /* 命中 EMULATED 设备则仿真续跑,

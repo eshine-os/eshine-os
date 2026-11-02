@@ -221,6 +221,7 @@ int vm_create(u32 id)
              * 出旧值(wait_state 残 1 则新客永不被泵,潜在雷实测前修) */
             v->vtimer_ctl = 0UL;
             v->vtimer_cval = 0UL;
+            v->mdscr = 0UL;         /* 站53:debug ctrl 槽清零起步 */
             v->sp_el0 = 0UL;        /* 站十四:guest current 槽清零起步
                                       * (Linux primary 早期 init_cpu_task
                                       * 自会写入 init_task) */
@@ -1055,6 +1056,32 @@ int vm_kill(u32 id)
     vm_id_label(id);
     console_puts("killed (host authority)\n");
     return 0;
+}
+
+/* 站53:per-VM mdscr 槽倾倒——跨 VM 隔离判据(宿主查槽:vm0 写 0x1234
+ * 与 vm1 写 0x5678 并存=陷阱代访真身;物理寄存器容不下两个值)。 */
+void vm_dbg_dump(void)
+{
+    u32 id, vi;
+
+    for (id = 0; id < ESHINE_MAX_VMS; id++) {
+        struct eshine_vm *vm = &vm_table[id];
+
+        for (vi = 0; vi < ESHINE_MAX_VCPUS; vi++) {
+            char c[3];
+
+            c[0] = (char)('0' + id);
+            c[1] = (char)('0' + vi);
+            c[2] = '\0';
+            console_puts("vm");
+            console_putc(c[0]);
+            console_puts(".v");
+            console_putc(c[1]);
+            console_puts(": mdscr=0x");
+            console_puthex(vm->vcpus[vi].mdscr);
+            console_puts("\n");
+        }
+    }
 }
 
 void vm_list(void)

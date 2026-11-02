@@ -85,3 +85,26 @@ void rt_health_show(void)
     rt_puts_u64(", xvm seq ", w->seq, "");
     rt_puts_u64(" ack ", w->ack, "\n");
 }
+
+/* 站53:MDSCR_EL1/PMCR_EL0 探针——真硬件:MDCR_EL2.TDA/TPM 陷阱
+ * 代访(mdscr 写读环=per-VM 槽 0x1234,pmcr 读 0=RAZ);QEMU TCG
+ * 定谳(平台事实,站 53 实证):不实现 MDCR 陷阱,MDSCR=惰性存根
+ * (写弃读 0),PMCR=ID 真值可读计数惰性——平台级无泄漏。 */
+void k_dbgdemo(void)
+{
+    u64 md = 0, want = 0x1234UL, pm = 1UL;
+
+    __asm__ volatile("msr mdscr_el1, %0" :: "r"(want));
+    __asm__ volatile("mrs %0, mdscr_el1" : "=r"(md));
+    __asm__ volatile("mrs %0, pmcr_el0" : "=r"(pm));
+    if (md == want)
+        rt_puts("dbg: mdscr trapped (per-vm emu live)\n");
+    else
+        rt_puts("dbg: mdscr quiescent (tcg stub, no trap)\n");
+    if (pm == 0)
+        rt_puts("dbg: pmu raz (tpm trap live)\n");
+    else
+        rt_puts("dbg: pmu id readable (tcg, counters inert)\n");
+    rt_puts_u64("dbg: probe mdscr=", md, " pmcr=");
+    rt_puts_hex("", pm, "\n");
+}

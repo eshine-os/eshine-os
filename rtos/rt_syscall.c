@@ -1321,6 +1321,7 @@ static long sys_demo(u64 *frame)
     case RT_U_HAM_ADD:    k_ham_add((const char *)FR(1), (u32)FR(2)); break;
     case RT_U_HAM_BEAT:    k_ham_beat((const char *)FR(1)); break;
     case RT_U_HAM_LS:      k_ham_ls();    break;
+    case RT_U_DBGDEMO:     k_dbgdemo();   break;
     case RT_U_PARTS:
         rt_cpart_show();                /* k_aps_show 镜像(参考实现白描) */
         rt_mpart_show();

@@ -2349,6 +2349,8 @@ ham_usage:
                  ? "ham: no such entity\n" : "ham: beat\n");
     } else if (streq(line, "ham ls")) {
         sys2(ES_NR_demo, RT_U_HAM_LS, 0);
+    } else if (streq(line, "dbgdemo")) {
+        sys2(ES_NR_demo, RT_U_DBGDEMO, 0);   /* 站53:陷阱代访自证 */
     } else if (streq(line, "svcdemo")) {
         svc_govern();                /* 站51:治理面交互复跑(门禁锚) */
     } else if (streq(line, "health")) {

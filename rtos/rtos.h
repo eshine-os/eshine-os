@@ -417,6 +417,7 @@ enum {
     RT_U_LOGDEMO, RT_U_LOGLEVEL, RT_U_LOGMODS, RT_U_LOGDUMP,
     RT_U_LOGCTRL,
     RT_U_HAM_ADD, RT_U_HAM_BEAT, RT_U_HAM_LS,
+    RT_U_DBGDEMO,
 };
 
 /* 站49:eshine_log 契约控制面(体在 rt_log_be.c 内核语境;sys_demo
@@ -431,6 +432,7 @@ unsigned int rt_log_mod_count(void);    /* 注册模块计数(boot 自证) */
 long k_ham_add(const char *uname, u32 period);   /* 重名=复用重整 */
 long k_ham_beat(const char *uname);              /* -2=未注册 */
 void k_ham_ls(void);
+void k_dbgdemo(void);                /* 站53:MDSCR 写读环+PMU RAZ 自证 */
 void rt_ham_boot(void);
 
 /* 站50:slog 持久化控制面(体在 rt_slog.c;flush/stat/echo 三脸) */

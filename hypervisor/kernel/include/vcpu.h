@@ -30,6 +30,8 @@ struct vcpu {
                                  * 陷阱位(guest 直写物理),泵切出存/切入还 */
     u64 vtimer_cval;
     u64 sp_el0;                 /* guest SP_EL0(arm64 内核 current;第十四站) */
+    u64 mdscr;                  /* 站53:per-VM MDSCR_EL1(MDCR_EL2.TDA 陷阱,
+                                 * EC 0x18 代访;debug 族跨 VM 隔离) */
     /* SIMD per-VM 帧(第十六站):Q0-Q31 + FPCR/FPSR。宿主零 FP
      * (-mgeneral-regs-only),泵在 vcpu_run 前装/后存(站七 vtimer
      * 同形),guest FP 现场跨客切换无损。16B 对齐(stp q 对要求);

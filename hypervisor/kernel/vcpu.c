@@ -30,6 +30,16 @@ u64 excp_stacks[4][512] __attribute__((aligned(16)));   /* 站20 扩四核 */
  * | TWI(WFI 陷阱化 -> VCPU_WAIT);IMO 位见 gicv3.h HCR_EL2_HOST 注 */
 #define HCR_GUEST 0x80002031UL
 
+/* 站53:MDCR_EL2(guest 进场)——TDA(bit9:外部 debug 寄存器陷阱,
+ * MDSCR_EL1 含)。注意:**参考实现头标 TPM=bit0/TPMCR=bit1 与 HPMN[4:0]
+ * 撞位(实证:0x203 写入把 HPMN 改 3=QEMU 客进程挂死毒源,TPM 陷阱
+ * 亦零生效)**——TPM 位号按 HPMN[4:0] 记档存疑,真板弧重核;TDA=9
+ * 与 ARM ARM 一致,QEMU TCG 不实现陷阱 enforcement(插桩实证零
+ * 触发)=惰性,真板生效。陷阱收口=EC 0x18:MDSCR per-VM 代访,
+ * debug/PMU 族 RAZ/WI(读 0/写弃)——跨 VM 断点/计数互漏根除;
+ * 宿主还场 MDCR=0(宿主零 debug)。 */
+#define MDCR_GUEST 0x200UL
+
 void vcpu_init(void)
 {
     /* 站十四后无事可做:宿主 C 世界已驻 SP_EL2(start.S),异常入 EL2
@@ -66,6 +76,7 @@ u64 vcpu_run(struct vcpu *v, u64 vttbr)
      * guest、vtimer 归 guest,CPACR 也归 guest。已知限制:SIMD per-VM
      * ctx 不保存,多 FP guest 并跑会串台(当前唯一 FP 用户是 Linux 槽)。 */
     __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_GUEST));
+    __asm__ volatile("msr mdcr_el2, %0" :: "r"(MDCR_GUEST));   /* 站53 */
     /* 站24C:进场全量 tlbi 幸存者退役——站十九只门了 vttbr 侧那发,
      * hcr 写后这发(hcr 不涉翻译缓存,isb 即可)以每进场一发活到
      * 今天。判负实验诚实入档:曾假设它是 Linux shell 卡顿总根源,
@@ -84,6 +95,7 @@ u64 vcpu_run(struct vcpu *v, u64 vttbr)
 void vcpu_exit(void)
 {
     __asm__ volatile("msr hcr_el2, %0" :: "r"(HCR_EL2_HOST));   /* 宿主态可收 IRQ */
+    __asm__ volatile("msr mdcr_el2, xzr");   /* 站53:宿主零 debug 陷阱 */
     __asm__ volatile("msr vttbr_el2, xzr");   /* break 标记;TLBI 不在此发——
                                                * 换表的熄旧表收编到进场侧
                                                * (last_vttbr 对比),同 VM

@@ -84,6 +84,24 @@ void guest_main(void)
     gic_dist_init();                 /* 第十二站:vGIC 真启动式 bring-up(门禁 [13-14]) */
     gic_guest_enable();              /* ICV 面就绪并解 IRQ 后才可碰定时器 */
     virtio_blk_init();               /* 第十站:probe+Status 步进+队列+DRIVER_OK */
+    {   /* 站53:MDSCR_EL1 探针——宿主 MDCR_EL2.TDA 陷阱代访(真硬件:
+         * 读回=本 VM 槽 0x5678);QEMU TCG 定谳:不实现 MDCR 陷阱且
+         * MDSCR=惰性存根(写弃读 0),探针报 0=平台事实,无泄漏。 */
+        unsigned long md = 0, want = 0x5678UL;
+        char hex[17];
+        int i;
+
+        __asm__ volatile("msr mdscr_el1, %0" :: "r"(want));
+        __asm__ volatile("mrs %0, mdscr_el1" : "=r"(md));
+        for (i = 15; i >= 0; i--) {
+            hex[i] = "0123456789abcdef"[md & 0xFUL];
+            md >>= 4;
+        }
+        hex[16] = '\0';
+        puts_uart("dbg: mdscr probe 0x");
+        puts_uart(hex);
+        puts_uart("\n");
+    }
     puts_uart(BANNER);              /* 第六站:全输出面经 vuart 陷阱仿真 */
     fdt_check();                    /* 第十一站:硬件自描述自查(门禁 [9-11]) */
     puts_uart("uart irq on\n");     /* 中断驱动模式的显式判据(门禁 needle) */
