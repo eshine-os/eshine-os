@@ -125,6 +125,14 @@ int rt_cpart_tick(rt_task_t *t)
     }
     id = t->cpart;
     cp = &cparts[id];
+    /* 站48 批验收定谳:分区 0=system 不记账不节流——它是余量池
+     * (budget=剩余 100%),节流它没有"要保护的他者";且节流会
+     * 制造"全员睡"窗(壳/服务器/装载子全挂边界,RTOS 空转 WFI
+     * 驻车),vgic/vtimer 注入在驻车窗偶发丢拍(站 16/25 记档
+     * 脆弱面)=全机永眠,r17 法医全核 wfe+装载区六轮四死定谳。
+     * demoA(非 0)全机制不变:记账/节流/偷闲/账本判据照旧。 */
+    if (id == 0)
+        return 0;
     cp->credit--;
     if (cp->credit >= 0)
         return 0;
