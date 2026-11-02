@@ -108,3 +108,44 @@ void k_dbgdemo(void)
     rt_puts_u64("dbg: probe mdscr=", md, " pmcr=");
     rt_puts_hex("", pm, "\n");
 }
+
+/* ---- 站55:PSCI 补面(hvc #0 直调;psci_rtos_cpu_on 同 conduit) ---- */
+static u64 psci_call(u64 fn, u64 a1)
+{
+    register u64 x0 __asm__("x0") = fn;
+    register u64 x1 __asm__("x1") = a1;
+
+    __asm__ volatile("hvc #0"
+                     : "+r"(x0)
+                     : "r"(x1)
+                     : "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9",
+                       "x10", "x11", "x12", "x13", "x14", "x15", "x16",
+                       "x17", "memory");
+    return x0;
+}
+
+void k_pscidemo(void)
+{
+    u64 r0, r1, rbad;
+
+    r0 = psci_call(0x84000004UL, 0x80000000UL);   /* AFFINITY_INFO vcpu0 */
+    r1 = psci_call(0x84000004UL, 0x80000001UL);   /* vcpu1 */
+    rbad = psci_call(0x84000004UL, 0x8000000FUL); /* 无效帧 */
+    rt_puts_u64("psci: aff vcpu0=", r0, " vcpu1=");
+    rt_puts_u64("", r1, " invalid=");
+    rt_puts_u64("", rbad, "\n");
+}
+
+void k_pscioff(void)
+{
+    rt_puts("psci: powering off\n");
+    psci_call(0x84000008UL, 0);       /* SYSTEM_OFF:noreturn(VM 干净死) */
+    rt_puts("psci: off returned?!\n"); /* 不可达(诚实面) */
+}
+
+void k_pscireset(void)
+{
+    rt_puts("psci: resetting\n");
+    psci_call(0x84000009UL, 0);       /* SYSTEM_RESET:重建+重启 */
+    rt_puts("psci: reset returned?!\n");
+}

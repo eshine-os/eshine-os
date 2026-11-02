@@ -29,7 +29,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (157 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (161 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -147,6 +147,10 @@ static void cmd_help(void)
     console_puts("  xvmacl 1 off+xvm      -> 窗撤销=fault 隔离死   [155]\n");
     console_puts("  xvmacl 1 on+vmcreate   -> 授权复活链          [156]\n");
     console_puts("  xvmacl 开关收口        -> ACL 状态机完整      [157]\n");
+    console_puts("  (vm0) pscidemo         -> AFFINITY_INFO 三脸    [158]\n");
+    console_puts("  vmstat(quanta)         -> per-VM 泵量子会计    [159]\n");
+    console_puts("  (vm0) pscireset        -> 复位链(重建+重启)   [160]\n");
+    console_puts("  (vm0) pscioff          -> 干净关机(无 fault)   [161]\n");
 }
 
 static void cmd_version(void)
@@ -184,6 +188,12 @@ static void cmd_vmstat(void)
     util_putdec((u32)sched_preempts);
     console_puts("  ticks: ");
     util_putdec((u32)timer_ticks());
+    console_puts("\nquanta: vm0=");
+    util_putdec((u32)vm_quanta_of(0));
+    console_puts(" vm1=");
+    util_putdec((u32)vm_quanta_of(1));
+    console_puts(" vm2=");
+    util_putdec((u32)vm_quanta_of(2));
     console_puts("\n");
 }
 

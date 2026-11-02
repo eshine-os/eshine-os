@@ -2349,6 +2349,12 @@ ham_usage:
                  ? "ham: no such entity\n" : "ham: beat\n");
     } else if (streq(line, "ham ls")) {
         sys2(ES_NR_demo, RT_U_HAM_LS, 0);
+    } else if (streq(line, "pscidemo")) {
+        sys2(ES_NR_demo, RT_U_PSCIDEMO, 0);  /* 站55:AFFINITY_INFO 三脸 */
+    } else if (streq(line, "pscioff")) {
+        sys2(ES_NR_demo, RT_U_PSCIOFF, 0);   /* 站55:SYSTEM_OFF(干净死) */
+    } else if (streq(line, "pscireset")) {
+        sys2(ES_NR_demo, RT_U_PSCIRESET, 0); /* 站55:SYSTEM_RESET(重启) */
     } else if (streq(line, "dbgdemo")) {
         sys2(ES_NR_demo, RT_U_DBGDEMO, 0);   /* 站53:陷阱代访自证 */
     } else if (streq(line, "svcdemo")) {

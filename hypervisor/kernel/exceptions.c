@@ -332,6 +332,44 @@ void el1_sync(struct vcpu *v)
                 v->gprs[0] = 0UL;              /* PSCI_SUCCESS */
                 sched_poke_cpu(vm_cpu_map[tvm->vmid][vi]);
             }
+        } else if (fn == 0x84000002UL) {  /* 站55 CPU_OFF:调用者帧泊停
+                                           * (次核下线,v0=wait 无源泊,SGI
+                                           * 到发可再醒=记档,真消费者
+                                           * 召唤再硬化);核 0 恒在拒 */
+            if (v->idx == 0UL) {
+                v->gprs[0] = 0xfffffffdUL;    /* DENIED */
+                resume_or_preempt(v);
+            }
+            v->wait_state = 1UL;
+            v->wait_reason = 0UL;
+            v->exit_reason = VCPU_WAIT;
+            vcpu_exit();
+        } else if (fn == 0x84000004UL) {  /* 站55 AFFINITY_INFO:x1=客视角
+                                           * MPIDR(0x80000000|idx)→0=ON */
+            struct eshine_vm *avm = vm_of_vcpu(v);
+            u32 vi = (u32)(v->gprs[1] & 0xffUL);
+
+            if (vi < vm_vcpu_count(avm->vmid))
+                v->gprs[0] = 0UL;          /* ON */
+            else
+                v->gprs[0] = 0xfffffffdUL; /* DENIED(无此帧) */
+        } else if (fn == 0x84000008UL) {  /* 站55 SYSTEM_OFF:干净关机
+                                           * (VM_DEAD 无 fault 行) */
+            console_puts("vm");
+            console_putc((char)('0' + vm_of_vcpu(v)->vmid));
+            console_puts(": system off (psci)\n");
+            v->exit_reason = VCPU_EXIT;
+            vcpu_exit();
+        } else if (fn == 0x84000009UL) {  /* 站55 SYSTEM_RESET:teardown+
+                                           * 重建+重启(泵出口复位链) */
+            u32 rid = vm_of_vcpu(v)->vmid;
+
+            vm_request_reset(rid);
+            console_puts("vm");
+            console_putc((char)('0' + rid));
+            console_puts(": system reset (psci)\n");
+            v->exit_reason = VCPU_EXIT;
+            vcpu_exit();
         } else if (fn == 0x84000010UL) {  /* PSCI_FEATURES:全不掲,按位
                                            * 探测降级(cpuidle 各态即哑) */
             v->gprs[0] = ~0UL;

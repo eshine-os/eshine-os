@@ -656,6 +656,15 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
 亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
 真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
+**站55 PSCI 补面+配额会计（[158-161]——参考实现 PSCI 面+实时配额调度 白描,批次 B 第三站）**：
+CPU_OFF（调用者帧泊停,核 0 恒在拒;wait 无源泊,SGI 再醒=记档）/
+AFFINITY_INFO（客视角 MPIDR 帧号→0=ON/DENIED）/**SYSTEM_OFF**（干净
+VM_DEAD 无 fault 行）/**SYSTEM_RESET**（复位旗+泵出口复位链:teardown
+后 vm_create+vm_start 重建重启——console owner 释放,复活后重接管）。
+per-VM 泵量子会计（vm_quanta,vmstat quanta 行;实时配额调度 BUDGET/USED
+白描的会计面,强制执行=消费者召唤后弧）。pscidemo/pscireset/pscioff
+三命令(EL1 hvc 直调,psci_rtos_cpu_on 同 conduit)。
+
 **站54 跨域 fail-closed 门（[155-157]——safeshm 窗 ACL+运行时 stage-2 改表,批次 B 第二站）**：
 xvmacl 授权表（默认 vm0/vm1 授权=站 47 几何保位,vm2 不授）+运行时
 开关=条目级 stage-2 改表（`stage2_window_toggle`:l2_ram 单块条目
@@ -758,7 +767,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-157 步手动走查清单。
+161 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

@@ -1,0 +1,111 @@
+[
+ {
+  "expect": "eshine> "
+ },
+ {
+  "send": "vmcreate 0",
+  "expect": "vm0: CREATED"
+ },
+ {
+  "send": "vmrun 0",
+  "expect": "rtos: up (eshine-rtos"
+ },
+ {
+  "expect": "srv: pm bound stdio",
+  "timeout": 90,
+  "fail_if": "pm stdio bind failed"
+ },
+ {
+  "expect": "cpu1: online (rtos psci)",
+  "timeout": 90
+ },
+ {
+  "expect": "init: inittab processed",
+  "timeout": 90
+ },
+ {
+  "send": "vmconsole 0",
+  "expect": "console -> vm"
+ },
+ {
+  "send": "",
+  "expect": "rtos> "
+ },
+ {
+  "send": "pscidemo",
+  "expect": "psci: aff vcpu0=0 vcpu1=0 invalid=4294967293",
+  "timeout": 60
+ },
+ {
+  "send": "\u001d",
+  "expect": "eshine> ",
+  "timeout": 90
+ },
+ {
+  "send": "vmstat",
+  "expect": "quanta: vm0=",
+  "timeout": 60
+ },
+ {
+  "send": "vmconsole 0",
+  "expect": "console -> vm"
+ },
+ {
+  "send": "",
+  "expect": "rtos> "
+ },
+ {
+  "send": "pscireset",
+  "expect": "psci: resetting",
+  "timeout": 60
+ },
+ {
+  "expect": "vm0: system reset (psci)",
+  "timeout": 90
+ },
+ {
+  "expect": "rtos: up (eshine-rtos",
+  "timeout": 90
+ },
+ {
+  "expect": "cpu1: online (rtos psci)",
+  "timeout": 90
+ },
+ {
+  "send": "vmconsole 0",
+  "expect": "console -> vm"
+ },
+ {
+  "send": "",
+  "expect": "rtos> ",
+  "timeout": 90
+ },
+ {
+  "send": "pscioff",
+  "expect": "psci: powering off",
+  "timeout": 60
+ },
+ {
+  "expect": "vm0: system off (psci)",
+  "timeout": 90
+ },
+ {
+  "send": "\u001d",
+  "expect": "eshine> ",
+  "timeout": 90
+ },
+ {
+  "send": "vmls",
+  "expect": "VM_DEAD",
+  "timeout": 60
+ },
+ {
+  "send": "vmcreate 0",
+  "expect": "vm0: CREATED"
+ },
+ {
+  "send": "vmrun 0",
+  "expect": "rtos: up (eshine-rtos",
+  "timeout": 90
+ }
+]

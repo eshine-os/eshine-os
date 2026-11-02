@@ -19,6 +19,22 @@ static struct eshine_vm vm_table[ESHINE_MAX_VMS];
  * DEAD/INIT 下次 vm_create 按新旗建表。 */
 static u8 xvm_acl[ESHINE_MAX_VMS] = { 1, 1, 0 };
 
+/* 站55:PSCI SYSTEM_RESET 复位旗(泵出口消费:teardown 后重建+重启)
+ * + per-VM 配额会计(泵量子计数;实时配额调度 BUDGET/USED 白描的会计面) */
+static u8 vm_reset_req[ESHINE_MAX_VMS];
+static u64 vm_quanta[ESHINE_MAX_VMS];
+
+void vm_request_reset(u32 id)
+{
+    if (id < ESHINE_MAX_VMS)
+        vm_reset_req[id] = 1;
+}
+
+u64 vm_quanta_of(u32 id)
+{
+    return id < ESHINE_MAX_VMS ? vm_quanta[id] : 0;
+}
+
 /* 预定义配置(第十四站几何表化):RAM 窗口不重叠 —— VM0 0x50000000/16MB,
  * VM1 0x51000000/16MB,VM2(Linux)0x58000000/128MB(恰占满 QEMU 512MB 顶,
  * 与 0/1 槽有安全距离);同 IPA 0x40000000 不同 PA,隔离由映射层保证
@@ -826,6 +842,7 @@ static bool pump_run_vcpu(u32 id, u32 vi)
     __asm__ volatile("msr cntv_cval_el0, %0" :: "r"(v->vtimer_cval));
     __asm__ volatile("msr cntv_ctl_el0, %0" :: "r"(v->vtimer_ctl));
     reason = vcpu_run(v, vm->space.vttbr);
+    vm_quanta[id]++;                    /* 站55:per-VM 量子会计 */
 
     /* 站十六出口序:DAIF 先屏,vtimer 最先存。vcpu_exit 已解 IRQ,
      * 这段保存窗若插进 el2_irq_host 的 27(vgic_wake_waiter 写
@@ -888,6 +905,14 @@ static bool pump_run_vcpu(u32 id, u32 vi)
         (void)0;
     } else {
         vm_finish(id, reason);        /* YIELD/EXIT/FAULT */
+        if (vm_reset_req[id]) {       /* 站55:SYSTEM_RESET 复位链——
+                                       * teardown 后按旗重建+重启(泵出口
+                                       * 语境=内核语境,vm_create/print
+                                       * 同锁安全) */
+            vm_reset_req[id] = 0;
+            vm_create(id);
+            vm_start(id);
+        }
     }
     return true;
 }
