@@ -1,0 +1,23 @@
+[
+ {"expect": "eshine> "},
+ {"send": "vmcreate 0", "expect": "vm0: CREATED"},
+ {"send": "vmrun 0", "expect": "rtos: up (eshine-rtos"},
+ {"expect": "srv: pm bound stdio", "timeout": 90, "fail_if": "pm stdio bind failed"},
+ {"expect": "cpu1: online (rtos psci)", "timeout": 90},
+ {"send": "vmconsole 0", "expect": "console -> vm"},
+ {"send": "", "expect": "rtos> "},
+ {"send": "\u001d", "expect": "eshine> ", "timeout": 90},
+ {"send": "vmcreate 1", "expect": "vm1: CREATED"},
+ {"send": "vmrun 1", "expect": "dbg: mdscr probe 0x0000000000000000", "timeout": 90},
+ {"send": "vmconsole 1", "expect": "console -> vm"},
+ {"send": "", "expect": "vm1> ", "timeout": 90},
+ {"send": "\u001d", "expect": "eshine> ", "timeout": 90},
+ {"send": "xvmacl 1 off", "expect": "xvm: window revoked", "timeout": 60},
+ {"send": "vmconsole 1", "expect": "console -> vm"},
+ {"send": "xvm", "expect": "fault:", "timeout": 90},
+ {"send": "\u001d", "expect": "eshine> ", "timeout": 90},
+ {"send": "vmls", "expect": "VM_DEAD", "timeout": 60},
+ {"send": "xvmacl 1 on", "expect": "xvm: window granted", "timeout": 60},
+ {"send": "vmcreate 1", "expect": "vm1: CREATED"},
+ {"send": "vmrun 1", "expect": "dbg: mdscr probe 0x0000000000000000", "timeout": 90}
+]

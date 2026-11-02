@@ -38,6 +38,8 @@ struct vm_space {
 };
 
 /* 从配置构建 per-VM 表;配置越界/不对齐返回 -1(调用方礼貌拒绝) */
+void stage2_window_toggle(struct vm_space *sp, u64 vmid, u64 ipa,
+                          u64 pa, u64 attr, int on);   /* 站54:运行时窗开关 */
 int stage2_build(struct vm_space *sp, u64 vmid,
                  const struct mem_region *mem, u32 n_mem,
                  const struct vm_device *dev, u32 n_dev);

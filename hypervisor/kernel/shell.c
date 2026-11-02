@@ -29,7 +29,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (154 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (157 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -144,6 +144,9 @@ static void cmd_help(void)
     console_puts("  (vm0) dbgdemo          -> debug/PMU 平台探针    [152]\n");
     console_puts("  vmdbg                 -> per-VM mdscr 槽倾倒    [153]\n");
     console_puts("  (vm1) mdscr probe      -> 第二客视图(TCG 存根)  [154]\n");
+    console_puts("  xvmacl 1 off+xvm      -> 窗撤销=fault 隔离死   [155]\n");
+    console_puts("  xvmacl 1 on+vmcreate   -> 授权复活链          [156]\n");
+    console_puts("  xvmacl 开关收口        -> ACL 状态机完整      [157]\n");
 }
 
 static void cmd_version(void)
@@ -336,6 +339,31 @@ static void dispatch(char *line)
         }
     } else if (strncmp(line, "vmstat", 64) == 0) {
         cmd_vmstat();
+    } else if (strncmp(line, "xvmacl", 6) == 0 && line[6] == '\0') {
+        /* 站54:xvmacl <id> <on|off>——safeshm 窗 fail-closed 门
+         * (parse_id 只吃单字符;自解析 id+词) */
+        const char *p = args;
+        u32 id;
+        int on = -1;
+
+        if (p[0] >= '0' && p[0] <= '9' && (p[1] == ' ' || p[1] == '\0')) {
+            id = (u32)(p[0] - '0');
+            p++;
+            while (*p == ' ')
+                p++;
+            if (p[0] == 'o' && p[1] == 'n' && (p[2] == '\0' || p[2] == ' '))
+                on = 1;
+            else if (p[0] == 'o' && p[1] == 'f' && p[2] == 'f'
+                     && (p[3] == '\0' || p[3] == ' '))
+                on = 0;
+        }
+        if (on >= 0 && id < ESHINE_MAX_VMS && (id == 0 || id == 1)) {
+            if (vm_xvm_acl(id, (u32)on) == 0)
+                console_puts(on ? "xvm: window granted\n"
+                                : "xvm: window revoked\n");
+        } else {
+            console_puts("usage: xvmacl <id> <on|off> (id 0|1)\n");
+        }
     } else if (strncmp(line, "vmdbg", 64) == 0) {
         vm_dbg_dump();                /* 站53:per-VM mdscr 槽倾倒 */
     } else if (strncmp(line, "logdemo", 64) == 0) {

@@ -656,6 +656,16 @@ dmb 再 bump;消费=ack==seq,任何时刻入场皆真）;**零拷**（参考实�
 后 `host` 交还=owner NULL=双 VM 并跑）。WFI 首版死于泵律（vtimer
 亦不注入未调度 vcpu）记档;apsdemo 偷闲判带随常驻任务放宽（40→20,
 真竞争者=真前提）。零新 HVC,doorbell vIRQ 后弧** →
+**站54 跨域 fail-closed 门（[155-157]——safeshm 窗 ACL+运行时 stage-2 改表,批次 B 第二站）**：
+xvmacl 授权表（默认 vm0/vm1 授权=站 47 几何保位,vm2 不授）+运行时
+开关=条目级 stage-2 改表（`stage2_window_toggle`:l2_ram 单块条目
+清/置+**运行改表三纪律**——dsb sy 前置→TLBI IPAS2E1IS（IPA[47:12]|
+VMID<<48,内广播跨核）→dsb sy+isb 收口=reference-audit §C2 改表守则的
+站内形,亦是 demand paging/balloon 的入场券）。revoke→客访问=翻译
+fault→隔离死（默认拒绝面不动）;re-grant→DEAD/INIT 下次 vm_create
+按新旗建表（授权跨槽位复用持久）;xvmacl 命令自解析 id+词
+（parse_id 单字符局限记档）。
+
 **站53 debug/PMU 隔离面（[152-154]——reference-audit 审计"两仓同病"项,批次 B 首站）**：
 MDCR_EL2.TDA（bit9）guest 进场置/宿主还场清（真硬件机制：EL1 的
 MDSCR_EL1 等 debug 寄存器访问陷阱化，EC 0x18 收口——MDSCR per-VM
@@ -748,7 +758,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-154 步手动走查清单。
+157 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

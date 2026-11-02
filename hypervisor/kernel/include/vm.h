@@ -68,7 +68,8 @@ struct vcpu *vm_vtimer_runnable_owner(u32 cpu); /* 站28:本核 vtimer 归属的
 u64 vm_ipa_to_pa(struct eshine_vm *vm, u64 ipa, u64 size);  /* 静态翻译(virtio/vuart 设备数据面) */
 int  vm_kill(u32 id);
 void vm_list(void);
-void vm_dbg_dump(void);             /* 站53:per-VM mdscr 槽倾倒(隔离判据) */
+void vm_dbg_dump(void);
+int vm_xvm_acl(u32 id, u32 on);       /* 站54:safeshm 窗 fail-closed 门 */             /* 站53:per-VM mdscr 槽倾倒(隔离判据) */
 u32 vm_vcpu_count(u32 id);           /* 站二十:槽位真实 vCPU 数(泵/扫描 vi 封界) */
 void vm_rx_dump(void);
 void vm_trail_dump(u32 n);         /* 站20 立案/站25C 带参:事件迹环

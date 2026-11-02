@@ -14,6 +14,11 @@
 
 static struct eshine_vm vm_table[ESHINE_MAX_VMS];
 
+/* 站54:safeshm 窗授权表(fail-closed 门)——默认 vm0/vm1 授权
+ * (站47 几何),xvmacl 运行时开关(条目级 stage-2 改表+TLBI);
+ * DEAD/INIT 下次 vm_create 按新旗建表。 */
+static u8 xvm_acl[ESHINE_MAX_VMS] = { 1, 1, 0 };
+
 /* 预定义配置(第十四站几何表化):RAM 窗口不重叠 —— VM0 0x50000000/16MB,
  * VM1 0x51000000/16MB,VM2(Linux)0x58000000/128MB(恰占满 QEMU 512MB 顶,
  * 与 0/1 槽有安全距离);同 IPA 0x40000000 不同 PA,隔离由映射层保证
@@ -135,8 +140,10 @@ int vm_create(u32 id)
     vm->mem[0].pa   = vm_geo[id].ram_pa;
     vm->mem[0].size = vm_geo[id].ram_size;
     vm->mem[0].attr = S2_ATTR_NORMAL;
-    if (id == 0 || id == 1) {
+    if ((id == 0 || id == 1) && xvm_acl[id]) {
         /* 站47:跨 VM 服务窗(safeshm)——2MB 双映 vm0/vm1
+         * 站54:ACL 门(fail-closed 授权表:默认 vm0/vm1 授权;
+         * xvmacl 命令运行时开关,条目级 stage-2 改表+TLBI)
          * @IPA 0x41200000(块 9)→PA 0x52000000(三客 RAM 之外
          * 空档,spec §3 定谳);配置权唯一属宿主=安全面所在。
          * 参考实现 xspace 全局窗白描的跨 VM 形;零拷(VM_SET 单拷
@@ -1060,6 +1067,24 @@ int vm_kill(u32 id)
 
 /* 站53:per-VM mdscr 槽倾倒——跨 VM 隔离判据(宿主查槽:vm0 写 0x1234
  * 与 vm1 写 0x5678 并存=陷阱代访真身;物理寄存器容不下两个值)。 */
+/* 站54:跨域 fail-closed 门——safeshm 窗授权(xvmacl 命令体;授权表
+ * 定义在 vm_create 之前)。 */
+int vm_xvm_acl(u32 id, u32 on)
+{
+    struct eshine_vm *vm = &vm_table[id];
+    int had, now;
+
+    if (id >= ESHINE_MAX_VMS || (id != 0 && id != 1))
+        return -1;                     /* 窗只属 vm0/vm1(站47 几何) */
+    had = xvm_acl[id];
+    now = on ? 1 : 0;
+    xvm_acl[id] = (u8)now;
+    if (had != now && vm->state != VM_INIT && vm->state != VM_DEAD)
+        stage2_window_toggle(&vm->space, vm->vmid, 0x41200000UL,
+                             0x52000000UL, S2_ATTR_NORMAL, now);
+    return 0;
+}
+
 void vm_dbg_dump(void)
 {
     u32 id, vi;

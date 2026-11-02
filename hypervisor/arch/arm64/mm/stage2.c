@@ -74,3 +74,21 @@ int stage2_build(struct vm_space *sp, u64 vmid,
     sp->vttbr = (u64)sp->pgd | ((vmid & 0xFFUL) << 48);
     return 0;
 }
+
+/* 站54:运行时窗开关——l2_ram 单块条目清/置 + 按 VMID 的 IPA TLB 失效。
+ * 运行改表三纪律(reference-audit §C2 改表守则的站内形):dsb sy 前置
+ * (写落地)->TLBI IPAS2E1IS(IPA[47:12]|VMID<<48,内广播跨核生效)
+ * ->dsb sy+isb 收口。窗=单 2MB 块条目(站47 几何)。 */
+void stage2_window_toggle(struct vm_space *sp, u64 vmid, u64 ipa,
+                          u64 pa, u64 attr, int on)
+{
+    u64 idx = (ipa - 0x40000000UL) >> 21;
+    u64 op;
+
+    sp->l2_ram[idx] = on ? DSC_MAP(pa, attr) : 0UL;
+    __asm__ volatile("dsb sy");
+    op = ((vmid & 0xFFUL) << 48) | (ipa & ~0xFFFUL);
+    __asm__ volatile("tlbi ipas2e1is, %0" :: "r"(op));
+    __asm__ volatile("dsb sy");
+    __asm__ volatile("isb");
+}
