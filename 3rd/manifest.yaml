@@ -1,0 +1,61 @@
+# eshine-os 外部件台账(站六十二:版本 pin+SBOM;站 59 LEDGER.md 的
+# 机器可读形)。纪律:一行一组件先于一个 tarball(append-only);GPL 仓外
+# 隔离(in-repo: false);sha256=in-repo 工件的钉死哈希。
+# 校验:tools/sbom-check.py(台账完整性脚本,门 [179])。
+
+components:
+  - name: musl
+    version: 1.2.5
+    license: MIT
+    source: https://musl.libc.org
+    in-repo: true
+    artifact: 3rd/musl-1.2.5.tar.gz
+
+  - name: busybox
+    version: 1.36.1
+    license: GPL-2.0
+    source: https://busybox.net
+    in-repo: false
+    note: GPL 仓外隔离(站 40 先例);构建配方 tools/build-busybox.sh 入仓
+
+  - name: cjson
+    version: 1.7.18
+    license: MIT
+    source: https://github.com/DaveGamble/cJSON
+    in-repo: true
+    artifact: 3rd/cjson-1.7.18.tar.gz
+
+  - name: zlib
+    version: 1.3.1
+    license: Zlib
+    source: https://zlib.net
+    in-repo: true
+    artifact: 3rd/zlib-1.3.1.tar.gz
+
+  - name: linux-image
+    version: 6.6
+    license: GPL-2.0
+    source: https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.6.tar.xz
+    in-repo: false
+    note: vm2 客内核(GPL 仓外隔离;构建配方 scripts/build-linux.sh 入仓)
+
+  - name: gcc
+    version: 13.3.0
+    license: GPL-3.0-with-GCC-exception
+    source: Ubuntu 24.04 (13.3.0-6ubuntu2~24.04.1)
+    in-repo: false
+    note: 宿主交叉工具链(aarch64-linux-gnu-);prebuilt 台账
+
+  - name: binutils
+    version: 2.42
+    license: GPL-3.0
+    source: Ubuntu 24.04
+    in-repo: false
+    note: 宿主交叉工具链(aarch64-linux-gnu-ld/objcopy/ar)
+
+  - name: qemu
+    version: 8.2.2
+    license: GPL-2.0
+    source: Debian 1:8.2.2+ds-0ubuntu1.18
+    in-repo: false
+    note: 验证平台(qemu-system-aarch64 -M virt)

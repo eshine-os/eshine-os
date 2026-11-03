@@ -743,6 +743,16 @@ inputdirs=WORKDIR/deploy-PN,outputdirs=DEPLOY_DIR_IMAGE——每配方 DEPLOYDIR
 （boot/ 四件+run.sh+manifest 在位+sha256 逐件核）;[178] run.sh 启动
 全链 musl hello——终装入口自靴=组装非拼盘）。
 
+**站62 版本 pin+SBOM 台账（[179]——外部件账本,批次 D 第三站）**：
+**3rd/manifest.yaml**（机器可读事实源;八组件:musl 1.2.5/cjson 1.7.18/
+zlib 1.3.1（in-repo,工件名含钉死版本）+busybox 1.36.1/linux-image 6.6
+（GPL 仓外隔离）/gcc 13.3.0/binutils 2.42/qemu 8.2.2（宿主 prebuilt
+台账）;站 59 LEDGER.md=人读面,manifest.yaml=机读面）。**NOTICE 聚合
+对照**（八组件名+许可全列;LICENSE=Apache-2.0 本体）。**tools/sbom-check.py
+完整性脚本**（门 [179] 消费者:字段齐/in-repo 工件在且名含 pin 版本/
+GPL 恒仓外/NOTICE 列全/许可证本体——五面全绿才 0 退;极简 YAML 子集
+解析器零依赖）。
+
 **站54 跨域 fail-closed 门（[155-157]——safeshm 窗 ACL+运行时 stage-2 改表,批次 B 第二站）**：
 xvmacl 授权表（默认 vm0/vm1 授权=站 47 几何保位,vm2 不授）+运行时
 开关=条目级 stage-2 改表（`stage2_window_toggle`:l2_ram 单块条目

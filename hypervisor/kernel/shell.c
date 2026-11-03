@@ -29,7 +29,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (178 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (179 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -168,6 +168,7 @@ static void cmd_help(void)
     console_puts("  基线账(宿主)          -> docs/benchmark 落盘   [176]\n");
     console_puts("  yocto 镜像聚合          -> boot/+run.sh+manifest [177]\n");
     console_puts("  镜像 run.sh 真靴        -> musl hello(终装产品) [178]\n");
+    console_puts("  sbom-check(宿主)       -> manifest+pin+NOTICE  [179]\n");
 }
 
 static void cmd_version(void)
