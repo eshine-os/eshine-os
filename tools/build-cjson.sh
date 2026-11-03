@@ -27,5 +27,8 @@ ${CROSS}gcc -O2 -c -I. \
     -specs "$MUSL/inst/lib/musl-gcc.specs" \
     -o "$WORK/cJSON.o" cJSON.c
 ${CROSS}ar rcs "$WORK/libcjson.a" "$WORK/cJSON.o"
-aarch64-linux-gnu-readelf -h "$WORK/cJSON.o" | grep -E "Machine|Type"
+# LC_ALL=C 钉 locale(站63 定谳):宿主 zh_CN 下 readelf 标签翻译为
+# "机器:"/"类别:",grep 'Machine|Type' 空匹配退 1=set -e 假死——构建
+# 脚本的输出解析必须环境不敏感(容器 POSIX 绿=增量遮罩)。
+LC_ALL=C aarch64-linux-gnu-readelf -h "$WORK/cJSON.o" | grep -E "Machine|Type"
 echo "== 产物: $WORK/libcjson.a =="

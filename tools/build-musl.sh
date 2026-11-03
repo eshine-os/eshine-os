@@ -30,8 +30,13 @@ if [ ! -d musl-1.2.5 ]; then
 fi
 cd musl-1.2.5
 if [ ! -f lib/libc.a ]; then
+    # --enable-wrapper=gcc(站63 定谳):wrapper 自动探测=host 编译
+    # 一个 #include <stdlib.h> 的探针——纯净环境(容器无 libc6-dev)
+    # 交叉编译器报错即探成 "none",TOOL_LIBS 清空,musl-gcc.specs
+    # 从不生成而链接面 -specs 硬依赖;显式置 gcc 免探测(宿主 libc-dev
+    # 在场时探测恒过=增量环境遮罩,容器才现形)。
     CC=${CROSS}gcc ./configure --target=aarch64 --disable-shared \
-        --prefix="$WORK/inst"
+        --prefix="$WORK/inst" --enable-wrapper=gcc
     sed -i "s|^AR = .*|AR = ${CROSS}ar|; s|^RANLIB = .*|RANLIB = ${CROSS}ranlib|" \
         config.mak
     make -j"$(nproc)"
@@ -45,7 +50,7 @@ ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
     -specs "$WORK/inst/lib/musl-gcc.specs" \
     -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code \
     -o tools/ramfs/bin/hello tools/ramfs-hello.c -lc
-aarch64-linux-gnu-readelf -lW tools/ramfs/bin/hello | head -12
+LC_ALL=C aarch64-linux-gnu-readelf -lW tools/ramfs/bin/hello | head -12
 echo "== 产物: tools/ramfs/bin/hello =="
 
 echo "== 链接 pt(站35 pthread demo,同窗口脚本)=="
@@ -55,7 +60,7 @@ ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
     -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments \
     -o tools/ramfs/bin/pt tools/ramfs-pt.c -lpthread -lc
 echo "== 产物: tools/ramfs/bin/pt =="
-aarch64-linux-gnu-readelf -lW tools/ramfs/bin/pt | grep -c LOAD
+LC_ALL=C aarch64-linux-gnu-readelf -lW tools/ramfs/bin/pt | grep -c LOAD
 
 echo "== 链接 initmark/beat(站40:inittab sysinit/respawn 活证件)=="
 for prog in initmark beat; do

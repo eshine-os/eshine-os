@@ -743,6 +743,19 @@ inputdirs=WORKDIR/deploy-PN,outputdirs=DEPLOY_DIR_IMAGE——每配方 DEPLOYDIR
 （boot/ 四件+run.sh+manifest 在位+sha256 逐件核）;[178] run.sh 启动
 全链 musl hello——终装入口自靴=组装非拼盘）。
 
+**站63 docker 弧（[180]——构建环境容器+发布镜像 tar,批次 E 首站）**：
+**docker/Dockerfile.build**（工具链运输形态:基座 ubuntu:24.04=宿主同源
+noble——apt 交付版本与 manifest.yaml prebuilt pin（gcc 13.3.0/binutils
+2.42/qemu 8.2.2）同源即同 pin;件面=cross 工具链+qemu+dtc+python3+make）。
+**scripts/docker-build.sh**（CI 容器化判据:镜像内重建全链——3rd 三件
++make demos+make -B+sbom-check 全绿;**版本对账=容器实采 vs pin 逐字相等**
+（pin 是对账出来的,不是注释出来的）;--user 降权跑=产物落宿主树 owner
+即宿主用户,镜像层零仓字节）。**scripts/make-release.sh**（发布镜像 tar:
+站 61 部署四件+run 入口（机器定义镜像面）+manifest.json 工件账+LICENSE/
+NOTICE 合规面 → release/eshine-os-\<ver\>.tar.gz;**发布=可解包即靴**——
+脚本尾自靴判据:解包临时目录现场重演 musl hello 全链）。门 [180]=文件面
++语法面+指令面（docker build 实跑=站级冒烟,门禁不嵌重构建=时间预算律）。
+
 **站62 版本 pin+SBOM 台账（[179]——外部件账本,批次 D 第三站）**：
 **3rd/manifest.yaml**（机器可读事实源;八组件:musl 1.2.5/cjson 1.7.18/
 zlib 1.3.1（in-repo,工件名含钉死版本）+busybox 1.36.1/linux-image 6.6
@@ -855,7 +868,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-164 步手动走查清单。
+180 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

@@ -94,7 +94,7 @@ make ARCH=arm64 CROSS_COMPILE="$CROSS" CC="$CCFLAGS" \
 
 cp busybox_unstripped busybox
 ${CROSS}strip busybox
-aarch64-linux-gnu-readelf -lW busybox | grep -E "LOAD|Entry" | head -8
+LC_ALL=C aarch64-linux-gnu-readelf -lW busybox | grep -E "LOAD|Entry" | head -8
 sz=$(stat -c %s busybox)
 echo "size: $sz bytes"
 if [ "$sz" -gt 1500000 ]; then
