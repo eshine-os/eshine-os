@@ -319,6 +319,9 @@ struct rt_fdreq {
  * loader 段定位;exit_group 94 与 exit 93 同面直挂) */
 #define ES_NR_ioctl         29
 #define ES_NR_lseek         62
+#define ES_NR_readv         65    /* 站59:musl stdio 读面(__stdio_read
+                                   * 双 iov:载荷窗+缓冲尾);裸 read 不经
+                                   * 此(busybox cat 活=假阴性遮了此洞) */
 #define ES_NR_writev        66
 #define ES_NR_exit_group    94
 #define ES_NR_set_tid_address 96
@@ -342,6 +345,11 @@ struct rt_fdreq {
 #define ES_NR_setgid         106
 #define ES_NR_clock_gettime  113   /* REAL/MONO;real=BOOT_EPOCH+cnt */
 #define ES_NR_clock_getres   114
+#define ES_NR_nanosleep      101   /* 站60:ts->rt_sleep_ticks(POSIX 至少
+                                    * 语义=ceil+1 拍界,tick 超睡记档)。
+                                    * 号面纠偏:首版臆 35=x86_64 号,
+                                    * asm-generic(=musl aarch64 头)真号
+                                    * 101——站 42 定号纪律重犯,头为准 */
 #define ES_NR_gettimeofday   169
 #define ES_NR_getuid         174   /* uid 族全 0 */
 #define ES_NR_geteuid        175

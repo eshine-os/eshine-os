@@ -717,6 +717,18 @@ deflate /var/log/slog→/tmp/slog.z→读回 inflate 逐字节校验;缺 slog �
 services.json）。**3rd/LEDGER.md 台账起步**（§62 SBOM 前置事实源:名/
 版/许可/形态/源/用途六列;GPL 仓外隔离=busybox 先例;append-only 纪律）。
 
+**站60 benchmark 延迟基线（[175-176]——cyclictest 形,批次 D 首站）**：
+**nanosleep 真号 101**（号面纠偏:首版臆 35=x86_64 号,asm-generic/musl
+aarch64 头真号 101——站 42 定号纪律重犯,头为准）;**POSIX 至少语义**=
+ceil+1 拍界（拍界醒最短 (k-1)T+拍内相位,+1 拍界才保证 ≥ns;代价=最多
+超睡一拍 10ms=tick 量子的诚实超睡记档）。消费者=/bin/cyclictest（200 环,
+10ms=1 拍周期,超额入 1ms 桶 0-10/>10）。**基线定谳**（docs/benchmark/
+wake-latency-baseline.md 落盘）:主簇 9-10ms=恰一拍超睡（相位锁定 ≈30µs,
+200 环 149/50/1 分布）;">10ms 尾 25%=相位游走偶越拍界（≤20ms 双拍超睡）;
+亚拍面恒零（tick 量子调度器无亚拍唤醒——hrtimer/oneshot=后弧）。趋势门
+（数值非硬门）:直方图形状+max≤3 拍界+基线文档在位;后续站（真板/中断
+接管/优先级面）重跑对照主簇位移。
+
 **站54 跨域 fail-closed 门（[155-157]——safeshm 窗 ACL+运行时 stage-2 改表,批次 B 第二站）**：
 xvmacl 授权表（默认 vm0/vm1 授权=站 47 几何保位,vm2 不授）+运行时
 开关=条目级 stage-2 改表（`stage2_window_toggle`:l2_ram 单块条目

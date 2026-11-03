@@ -760,11 +760,55 @@ static long sys_rt_sigreturn(u64 *frame)
 }
 
 /* 站三十三:musl 薄面(启动期实测需求;全真 Linux 号)。 */
+/* 站59:readv(真号 65)——musl stdio 读面(fread/fscanf 等全走此)。
+ * iov 逐项读:64B 内核窗分块(fd 层 wire 契约),短读=EOF/窗尽照实返。 */
+static long sys_readv(u64 *frame)
+{
+    const u64 *iov = (const u64 *)FR(1);
+    u64 cnt = FR(2);
+    long total = 0;
+    u32 i;
+
+    if (!rt_cur->proc)
+        return -ES_EINVAL;
+    if (cnt > 8)
+        return -ES_EINVAL;
+    if (cnt && !access_ok(iov, cnt * 16))
+        return -ES_EFAULT;
+    for (i = 0; i < (u32)cnt; i++) {
+        char *ub = (char *)iov[i * 2];
+        u64 len = iov[i * 2 + 1];
+        char kbuf[64];
+
+        if (len == 0UL)
+            continue;
+        if (!access_ok(ub, len))
+            return -ES_EFAULT;
+        for (u64 off = 0; off < len; off += sizeof(kbuf)) {
+            u64 m = len - off > sizeof(kbuf) ? sizeof(kbuf) : len - off;
+            long r = rt_fd_read(rt_cur->proc, (int)FR(0), kbuf, (u32)m);
+
+            if (r < 0)
+                return total > 0 ? total : r;   /* 首项即错照传 errno */
+            if (r == 0)
+                return total;                   /* EOF */
+            for (long k = 0; k < r; k++)
+                ub[off + k] = kbuf[k];
+            total += r;
+            if ((u64)r < m)
+                return total;      /* 短读:窗尽 */
+        }
+    }
+    return total;
+}
+
 static long sys_writev(u64 *frame)
 {
     /* musl stdio __stdout_write 走 writev(iov 链)=printf 真通路。
      * fd 1/2 走原始行打印面(与 sys_write 同律;fd 表的 resmgr
-     * stdio=并发面,musl stdout 直挂原始面确定性优先)。 */
+     * stdio=并发面,musl stdout 直挂原始面确定性优先)。
+     * 站59:fd>=3 路由同 read/write 律(ztest 定谳:fwrite 落文件走
+     * writev,首版无路由=文件数据进串口)。 */
     const u64 *iov = (const u64 *)FR(1);
     u64 cnt = FR(2);
     long total = 0;
@@ -785,9 +829,21 @@ static long sys_writev(u64 *frame)
             return -ES_EFAULT;
         for (u64 k = 0; k < len; k++)
             kbuf[k] = ub[k];
-        if (len)
-            rt_puts_n(kbuf, (u32)len);
-        total += (long)len;
+        if (len) {
+            if ((long)FR(0) >= 3) {    /* 站59:真 fd 写(同 sys_write 律) */
+                long r = rt_fd_write(rt_cur->proc, (int)FR(0), kbuf,
+                                      (u32)len);
+
+                if (r < 0)
+                    return total > 0 ? total : r;
+                total += r;
+                if ((u32)r < (u32)len)
+                    return total;      /* 短写:窗尽 */
+            } else {
+                rt_puts_n(kbuf, (u32)len);
+                total += (long)len;
+            }
+        }
     }
     return total;
 }
@@ -935,12 +991,21 @@ static long sys_rlimit_self(u64 *frame)
 static long sys_openat(u64 *frame)
 {
     char kpath[48];
+    long r;
 
     if (!rt_cur->proc)
         return -ES_EINVAL;
     if (copy_in_str(kpath, FR(1), sizeof(kpath)) < 0)
-        return -ES_EFAULT;             /* dirfd/flags v0 不读(AT_FDCWD) */
-    return rt_fd_open(rt_cur->proc, kpath);   /* 目录回退在 fd 层 */
+        return -ES_EFAULT;             /* dirfd v0 不读(AT_FDCWD) */
+    r = rt_fd_open(rt_cur->proc, kpath);   /* 目录回退在 fd 层 */
+    /* 站59:musl 建文件面(fopen(w)/touch/重定向)全走 O_CREAT=0x40
+     * (ztest 定谳:纯 open 对新文件 -ENOENT);v0 语义=open 失败即
+     * create(create 即开);O_EXCL/O_TRUNC 旗语不读(ramfs 现有面
+     * 记边界)。 */
+    if (r == -2 && (FR(2) & 0x40)) {
+        r = rt_fd_create(rt_cur->proc, kpath);
+    }
+    return r;
 }
 
 static long sys_close(u64 *frame)
@@ -1036,13 +1101,30 @@ static long sys_clock_gettime(u64 *frame)
 static long sys_clock_getres(u64 *frame)
 {
     u64 *ts = (u64 *)FR(1);
-
     if (FR(0) > 1u)
         return -ES_EINVAL;
     if (!access_ok(ts, 16))
         return -ES_EFAULT;
     ts[0] = 0;
     ts[1] = 1;                          /* 1ns(计数器面) */
+    return 0;
+}
+
+/* 站60:nanosleep(真号 35)——EL0 周期睡眠面(cyclictest 消费者)。
+ * POSIX 至少语义:醒拍界=ceil(ns/T)+1(拍界醒来最短 (k-1)T+拍内相位,
+ * +1 拍界才保证 ≥ns);代价=最多超睡一拍(10ms,tick 量子的诚实超睡,
+ * cyclictest 基线直方图的分布本源;hrtimer 亚拍精度=后弧)。 */
+static long sys_nanosleep(u64 *frame)
+{
+    u64 *ts = (u64 *)FR(0);
+    u64 ns, period = 1000000000ULL / RT_HZ;
+
+    if (!access_ok(ts, 16))
+        return -ES_EFAULT;
+    ns = ts[0] * 1000000000ULL + ts[1];
+    if (ns == 0)
+        return 0;
+    rt_sleep_ticks((ns + period - 1) / period + 1);
     return 0;
 }
 
@@ -2133,6 +2215,7 @@ void rt_syscall_init(void)
     table[ES_NR_rt_sigtimedwait] = sys_sigtimedwait;
     table[ES_NR_rt_sigqueueinfo] = sys_sigqueueinfo;
     /* 站33:musl 薄面(exit_group 与 exit 同路=帧判据共面) */
+    table[ES_NR_readv]           = sys_readv;    /* 站59:musl stdio 读面 */
     table[ES_NR_writev]          = sys_writev;
     table[ES_NR_ioctl]           = sys_ioctl;
     table[ES_NR_exit_group]      = sys_exit;
@@ -2152,6 +2235,7 @@ void rt_syscall_init(void)
     table[ES_NR_setuid]          = sys_uid0;
     table[ES_NR_setgid]          = sys_uid0;
     table[ES_NR_clock_gettime]   = sys_clock_gettime;
+    table[ES_NR_nanosleep]       = sys_nanosleep;   /* 站60:cyclictest 面 */
     table[ES_NR_clock_getres]    = sys_clock_getres;
     table[ES_NR_gettimeofday]    = sys_gettimeofday;
     table[ES_NR_getuid]          = sys_uid0;
