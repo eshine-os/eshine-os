@@ -1765,7 +1765,15 @@ def main():
             # ls/getdents64)。"同字节双世界"改由:vm2 运行时 md5
             # /bin/busybox == 构建期哈希(qemu-user 静测值,判据
             # 常量)+motd 双翼同哈希(跨 OS 同工具同输入同摘要)。
-            BB_BUILD_HASH = b"5b2fcc55a5e86b538648ede473301148"
+            # 站64 修订:构建期哈希从 baked 常量改为宿主树实算——
+            # busybox 昨夜战役站重构建后 hash 漂移(同版本源码,
+            # busybox 构建非确定性),baked 常量过期(门级抓获)。
+            # 判据本义="vm2 的 busybox=我们树里那颗"(同字节双
+            # 世界),宿主实算锚定随树而真。
+            import hashlib
+            with open(os.path.join(REPO, "tools/ramfs/bin/busybox"),
+                      "rb") as _bf:
+                BB_BUILD_HASH = hashlib.md5(_bf.read()).hexdigest().encode()
             pos2 = len(buf)
             s.sendall(b"\x1e2")            # 热键切 vm2(busybox Linux)
             buf = read_until(s, buf, b"console -> vm", time.time() + 30, start=pos2)

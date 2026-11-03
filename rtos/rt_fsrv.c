@@ -169,7 +169,12 @@ static void srv_tty(void *arg)
 extern const char rt_ramfs_start[];    /* rtos/ramfs.S(.incbin) */
 extern const char rt_ramfs_end[];
 
-#define RF_NODE_MAX 16u
+#define RF_NODE_MAX 24u     /* 站64 算账放宽(站31 ocb 池同律):boot 14
+                             * +core.<pid>(崩溃落盘;同 pid 覆写复用,
+                             * 门禁全跑=crashdemo/sigq 两 pid 面)+
+                             * 服务文件(slog.z/wrdemo create);16 恰满
+                             * 把 wrdemo 顶成 create FAIL(冒烟电池门级
+                             * 抓获)。 */
 
 struct rf_node {
     char path[48];                      /* 挂名形(含前导 '/') */
