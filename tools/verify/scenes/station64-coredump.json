@@ -1,0 +1,17 @@
+[
+ {"expect": "eshine> "},
+ {"send": "vmcreate 0", "expect": "vm0: CREATED"},
+ {"send": "vmrun 0", "expect": "rtos: up (eshine-rtos"},
+ {"expect": "srv: pm bound stdio", "timeout": 90, "fail_if": "pm stdio bind failed"},
+ {"expect": "init: inittab processed", "timeout": 90},
+ {"send": "vmconsole 0", "expect": "console -> vm"},
+ {"send": "", "expect": "rtos> ", "timeout": 240},
+ {"send": "crashdemo", "expect": "crash: core dumped /var/core/core.2", "timeout": 120},
+ {"expect": "crash: reaped code=139 ok", "timeout": 60},
+ {"expect": "crashdemo: done", "timeout": 60},
+ {"send": "gcore /var/core/core.2", "expect": "gcore: done", "timeout": 60},
+ {"send": "run /bin/coreparse /var/core/core.2", "expect": "coredump: pid=2 cursig=11", "timeout": 60},
+ {"expect": "coredump: esr=0x", "timeout": 30},
+ {"expect": "coredump: frames=", "timeout": 30},
+ {"expect": "rtos> ", "timeout": 60}
+]

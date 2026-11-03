@@ -838,6 +838,10 @@ void rt_crash_record(struct rt_proc *p, u64 *frame,
                      u64 esr, u64 elr, u64 far, u32 code);
 void rt_crash_show(void);
 
+/* ---- 站六十四:ELF core(rt_crash.c 序列化+rt_fsrv.c 内核侧
+ *      直写):crash 语境落盘 binfmt_elf 形 ---- */
+int rt_ramfs_core_store(const char *path, const void *buf, u32 len);
+
 /* ---- 站四十七:跨 VM 服务面(rt_xvm.c)——safeshm 窗+vm0
  *      设备后端(参考实现 xspace/VM_SET 白描) ---- */
 void rt_xvm_boot(void);               /* 开机生产者任务 */

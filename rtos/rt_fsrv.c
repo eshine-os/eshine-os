@@ -1132,6 +1132,50 @@ long rt_fd_dup3(struct rt_proc *p, int oldfd, int newfd)
     return newfd;
 }
 
+/* ---- 站64:内核侧直写(崩溃取证面) ----
+ * coredump=系统取证行为:crash 语境(死者本人,EL1 内核态,页表在役,
+ * 紧跟 sys_exit)一次直写,零消息往返——消息面=活任务的活路,取证面=
+ * 死者最短路径。用户服务的三段消息面不动(文件内容仍只经消息送达
+ * 用户);不挂名(open 走站 40 元名回退路由,rf_find 按表查即中——
+ * CREATE 的 name_attach 是服务器语境的活,取证语境不走)。
+ * 单核调度=写者独占(CREATE 同序:字段先填,rf_nnode++ 殿后=半节点
+ * 不可见);一页上限与站 39 COW 同律。 */
+int rt_ramfs_core_store(const char *path, const void *buf, u32 len)
+{
+    struct rf_node *nd;
+    u64 pg = 0;
+    u32 i;
+    int idx = rf_find(path);
+
+    if (len > 4096u)
+        return -12;                    /* 一页/文件(站39 COW 同律) */
+    if (idx < 0) {
+        if (rf_nnode >= RF_NODE_MAX)
+            return -12;
+        idx = (int)rf_nnode++;
+        nd = &rf_nodes[idx];
+        for (i = 0; path[i] && i + 1 < sizeof(nd->path); i++)
+            nd->path[i] = path[i];
+        nd->path[i] = '\0';
+        nd->off = 0;
+        nd->size = 0;
+        nd->cow = 0;
+    }
+    nd = &rf_nodes[idx];
+    if (!nd->cow) {
+        pg = rt_as_page_alloc();
+        if (!pg)
+            return -12;
+        nd->cow = (u32)pg;
+        for (i = 0; i < 4096u; i++)
+            ((char *)(unsigned long)pg)[i] = 0;
+    }
+    for (i = 0; i < len; i++)
+        ((char *)(unsigned long)nd->cow)[i] = ((const char *)buf)[i];
+    nd->size = len;
+    return 0;
+}
+
 /* ---- 开机链(固定序列;sys_exit 的 fd 关闭在 rt_syscall.c) ---- */
 
 void rt_srv_boot(rt_task_t *shell)

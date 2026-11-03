@@ -159,6 +159,18 @@ static void sys_put_dec(u64 v)
     sys_puts(digits + i);           /* 就地起:digits+i 处已组好串 */
 }
 
+/* 站64 上移:hex 两位定宽(gcore 转储面与站40 rngdemo 同吃) */
+static const char hexdig[] = "0123456789abcdef";
+
+static void put_hex2(u8 v)
+{
+    char c[2];
+
+    c[0] = hexdig[v >> 4];
+    c[1] = hexdig[v & 15];
+    sys3(ES_NR_write, 1, (long)c, 2);
+}
+
 /* ---- utest:EL0 syscall 面一门全验 ---- */
 
 static void cmd_utest(void)
@@ -1563,6 +1575,44 @@ static void fd_dump(const char *path, const char *tag)
     sys_puts(" bytes\n");
 }
 
+/* 站64:core 文件 hex 转储(宿主重组判据面)——门禁收集串口行重组
+ * ELF 文件,python 独立解析(与 EL0 coreparse 互为双解析器对照=binfmt
+ * 形的独立验证)。行形:"gcore: <off>: hh hh ..."。 */
+static void cmd_gcore(const char *path)
+{
+    char buf[32];
+    long fd, n;
+    u32 off = 0, i;
+
+    if (!path || !path[0]) {
+        sys_puts("gcore: usage: gcore <path>\n");
+        return;
+    }
+    fd = sys1(ES_NR_fdopen, (long)path);
+    if (fd < 0) {
+        sys_puts("gcore: open failed\n");
+        return;
+    }
+    for (;;) {
+        n = sys3(ES_NR_fdread, fd, (long)buf, sizeof(buf));
+        if (n <= 0)
+            break;                    /* 0=EOF;负=趟输错:收卷 */
+        sys_puts("gcore: ");
+        sys_put_dec((u64)off);
+        sys_puts(":");
+        for (i = 0; i < (u32)n; i++) {
+            sys_puts(" ");
+            put_hex2((u8)buf[i]);
+        }
+        sys_puts("\n");
+        off += (u32)n;
+    }
+    sys1(ES_NR_fdclose, fd);
+    sys_puts("gcore: done ");
+    sys_put_dec((u64)off);
+    sys_puts(" bytes\n");
+}
+
 static void cmd_fddemo(void)
 {
     long n;
@@ -2048,17 +2098,6 @@ static void cmd_unamedemo(void)
 
 /* ---- 站40:服务收编四 demo(判据面) ---- */
 
-static const char hexdig[] = "0123456789abcdef";
-
-static void put_hex2(u8 v)
-{
-    char c[2];
-
-    c[0] = hexdig[v >> 4];
-    c[1] = hexdig[v & 15];
-    sys3(ES_NR_write, 1, (long)c, 2);
-}
-
 static void cmd_rngdemo(void)
 {
     char b1[16], b2[16];
@@ -2396,6 +2435,8 @@ ham_usage:
         cmd_crashdemo();
     } else if (streq(line, "crashinfo")) {
         sys2(ES_NR_demo, RT_U_CRASHINFO, 0);
+    } else if (starts(line, "gcore ")) {
+        cmd_gcore(line + 6);          /* 站64:core 文件 hex 转储 */
     } else if (streq(line, "futexdemo")) {
         cmd_futexdemo();
     } else if (streq(line, "sigdemo")) {

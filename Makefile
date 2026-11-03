@@ -118,13 +118,16 @@ EL0FLAGS := -static -O2 -fno-asynchronous-unwind-tables \
 	-T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code
 
 .PHONY: demos
-demos: tools/ramfs/bin/jsontest tools/ramfs/bin/ztest tools/ramfs/bin/cyclictest
+demos: tools/ramfs/bin/jsontest tools/ramfs/bin/ztest tools/ramfs/bin/cyclictest \
+       tools/ramfs/bin/coreparse
 
 tools/ramfs/bin/jsontest: tools/ramfs-jsontest.c $(CJSONDIR)/libcjson.a
 	$(CROSS)gcc $(EL0FLAGS) -I$(CJSONDIR)/cJSON-1.7.18 -o $@ $< $(CJSONDIR)/libcjson.a -lc
 tools/ramfs/bin/ztest: tools/ramfs-ztest.c $(ZLIBDIR)/libz.a
 	$(CROSS)gcc $(EL0FLAGS) -I$(ZLIBDIR)/zlib-1.3.1 -o $@ $< $(ZLIBDIR)/libz.a -lc
 tools/ramfs/bin/cyclictest: tools/ramfs-cyclictest.c
+	$(CROSS)gcc $(EL0FLAGS) -o $@ $< -lc
+tools/ramfs/bin/coreparse: tools/ramfs-coreparse.c     # 站64:ELF core 离线解析件
 	$(CROSS)gcc $(EL0FLAGS) -o $@ $< -lc
 
 .PHONY: all run verify clean demos

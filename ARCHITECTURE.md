@@ -743,6 +743,24 @@ inputdirs=WORKDIR/deploy-PN,outputdirs=DEPLOY_DIR_IMAGE——每配方 DEPLOYDIR
 （boot/ 四件+run.sh+manifest 在位+sha256 逐件核）;[178] run.sh 启动
 全链 musl hello——终装入口自靴=组装非拼盘）。
 
+**站64 ELF core 文件（[181-182]——批次 E 深水终站;站 46 "核文件
+不可为"翻案）**：**rt_ramfs_core_store**（rt_fsrv.c 内核侧直写:crash
+语境=死者本人 EL1,一次直写零消息往返——消息面=活任务的活路,取证面=
+死者最短路径;ramfs 站 39 COW 页承载——只读 rodata 的"不可为"前提
+被站 39 拆除,站 64 只是消费;CREATE 同序:字段先填 rf_nnode++ 殿后=
+半节点不可见;不挂名,open 走站 40 元名回退路由）。**ELF core 序列化**
+（rt_crash.c:ET_CORE+EM_AARCH64+单 Phdr PT_NOTE+双 note——NT_PRSTATUS
+标准 desc=elf_prstatus 最小形(siginfo+cursig+pid 四元+time 四元 0 面+
+gregset 272B=死者帧全寄存器 x0-x30+sp+pc,gdb/readelf 语义可读)+
+NT_ESHINE 自定扩展（code/tick/esr/elr/far+用户帧链;type 高区记档）;
+600B/核,一页 COW 上限内）。**EL0 coreparse 工具**（tools/ramfs-coreparse.c
+musl:open/read 循环+Ehdr 校验+note 走查,打印 pid/cursig/pc/sp/esr/
+far/frames）。**gcore 命令**（EL0 壳:core 文件 hex 行转储串口——
+宿主重组判据面）。**双解析器对照**（门 [181]=EL0 coreparse 消费面;
+门 [182]=宿主 python 重组+独立解析 Ehdr/PT_NOTE/NT_PRSTATUS/sig/pid
+逐项对齐——binfmt_elf 形的独立验证,readelf 可替换面）。野访终态与
+信号默认动作两路崩溃链同收（rt_crash_record 尾部单挂点）。
+
 **站63 docker 弧（[180]——构建环境容器+发布镜像 tar,批次 E 首站）**：
 **docker/Dockerfile.build**（工具链运输形态:基座 ubuntu:24.04=宿主同源
 noble——apt 交付版本与 manifest.yaml prebuilt pin（gcc 13.3.0/binutils
@@ -868,7 +886,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-180 步手动走查清单。
+182 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；
