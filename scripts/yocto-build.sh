@@ -34,3 +34,16 @@ if [ -z "$DEPLOY" ] || [ ! -f "$DEPLOY/rtos.bin" ]; then
     exit 3
 fi
 echo "DEPLOY=$DEPLOY"
+
+# 站61:镜像聚合(终装)——eshine-image.bb:boot/ 四件+run.sh+
+# manifest.json;MACHINE=目标机(启动参数单一事实源)。
+MACHINE=eshine-qemu-a57-type1 bitbake eshine-image > /dev/null
+IMAGE_DEPLOY="$(MACHINE=eshine-qemu-a57-type1 bitbake -e eshine-image \
+    | sed -n 's/^DEPLOYDIR="\(.*\)"/\1/p')"
+IMG="$IMAGE_DEPLOY/eshine-image"
+if [ ! -f "$IMG/run.sh" ] || [ ! -f "$IMG/manifest.json" ] || \
+   [ ! -f "$IMG/boot/eshine.elf" ]; then
+    echo "image assembly missing (IMG='$IMG')" >&2
+    exit 4
+fi
+echo "IMAGE=$IMG"

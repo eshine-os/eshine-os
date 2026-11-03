@@ -34,9 +34,10 @@ BBLAYERS ?= " \\
 BBLAYERS_CONF_VERSION = "2"
 EOF
 cat > "$BUILD/conf/local.conf" <<EOF
-# 站34:部署配方不进 qemu 机器面(MACHINE=qemuarm64=位面占位,
-# INHIBIT_DEFAULT_DEPS 下无拉起)
-MACHINE = "qemuarm64"
+# 站61:目标机=eshine-qemu-a57-type1(meta-eshine machine conf;
+# 镜像配方读其 ESHINE_QEMU_* 面生成 run.sh=启动参数单一事实源。
+# 站34 时代 qemuarm64 位面占位退役)
+MACHINE = "eshine-qemu-a57-type1"
 DL_DIR = "$BUILD/downloads"
 SSTATE_DIR = "$BUILD/sstate"
 TMPDIR = "$BUILD/tmp"

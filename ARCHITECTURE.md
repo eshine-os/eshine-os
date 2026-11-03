@@ -729,6 +729,20 @@ wake-latency-baseline.md 落盘）:主簇 9-10ms=恰一拍超睡（相位锁定 
 （数值非硬门）:直方图形状+max≤3 拍界+基线文档在位;后续站（真板/中断
 接管/优先级面）重跑对照主簇位移。
 
+**站61 yocto 镜像聚合（[177-178]——终装,批次 D 第二站）**：
+**machine conf**（meta-eshine/conf/machine/eshine-qemu-a57-type1.conf:
+QEMU virt a57 type-1 目标机;ESHINE_QEMU_* 面六变量=run.sh 启动参数的单一
+事实源,非散落脚本;站 34 的 qemuarm64 位面占位退役——local.conf 硬设盖
+环境变量的坑记档:改 setup-yocto.sh 生成面+存量 build 一并打补丁）。
+**eshine-image.bb**（deploy-only 终装:do_deploy[depends]=eshine-rtos:do_deploy
+→**读 deploy 类的 sstate 镜像面** ${DEPLOY_DIR_IMAGE}（deploy.bbclass:
+inputdirs=WORKDIR/deploy-PN,outputdirs=DEPLOY_DIR_IMAGE——每配方 DEPLOYDIR
+独立,共享面在 sstate 输出）→boot/ 四件+manifest.json（版本+机器+sha256
+工件账）+run.sh（终装入口:机器定义生成,串口 socket 可入参））。
+**判据=镜像产品真实可靴**（站 34 同型第二台 QEMU:[177] 聚合完整性
+（boot/ 四件+run.sh+manifest 在位+sha256 逐件核）;[178] run.sh 启动
+全链 musl hello——终装入口自靴=组装非拼盘）。
+
 **站54 跨域 fail-closed 门（[155-157]——safeshm 窗 ACL+运行时 stage-2 改表,批次 B 第二站）**：
 xvmacl 授权表（默认 vm0/vm1 授权=站 47 几何保位,vm2 不授）+运行时
 开关=条目级 stage-2 改表（`stage2_window_toggle`:l2_ram 单块条目
