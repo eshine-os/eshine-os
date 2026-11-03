@@ -74,3 +74,24 @@ ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
     -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code \
     -o tools/ramfs/bin/sockdemo tools/ramfs-sockdemo.c -lc
 echo "== 产物: tools/ramfs/bin/sockdemo =="
+
+echo "== 链接 jsontest/ztest(站59:生态件消费者;cJSON+zlib 静态链)=="
+CJSON="$(cd "$(dirname "$0")" && pwd)/build-cjson.sh"
+ZLIB="$(cd "$(dirname "$0")" && pwd)/build-zlib.sh"
+bash "$CJSON" >/dev/null
+bash "$ZLIB" >/dev/null
+${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
+    -isystem "$WORK/inst/include" \
+    -I"${CJSON_BUILD_DIR:-/tmp/cjson-build}/cJSON-1.7.18" \
+    -specs "$WORK/inst/lib/musl-gcc.specs" \
+    -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code \
+    -o tools/ramfs/bin/jsontest tools/ramfs-jsontest.c \
+    "${CJSON_BUILD_DIR:-/tmp/cjson-build}/libcjson.a" -lc
+${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
+    -isystem "$WORK/inst/include" \
+    -I"${ZLIB_BUILD_DIR:-/tmp/zlib-build}/zlib-1.3.1" \
+    -specs "$WORK/inst/lib/musl-gcc.specs" \
+    -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code \
+    -o tools/ramfs/bin/ztest tools/ramfs-ztest.c \
+    "${ZLIB_BUILD_DIR:-/tmp/zlib-build}/libz.a" -lc
+echo "== 产物: tools/ramfs/bin/{jsontest,ztest} =="

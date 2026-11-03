@@ -107,7 +107,27 @@ clean:
 	rm -f $(OBJS) $(TARGET) $(OBJS:.o=.d) $(GOBJS) guest/*.d guest1.elf guest2.elf guest1.bin guest2.bin \
 	       $(RTOBJS) rtos/*.d rtos.elf rtos.bin rtos/ramfs.cpio
 
-.PHONY: all run verify clean
+# 站59:EL0 生态件 demo 链接(cJSON/zlib 静态链;先跑 tools/build-musl.sh
+# +build-cjson.sh+build-zlib.sh 备 /tmp 三件)。内核目标与 EL0 目标分立。
+MUSLDIR := /tmp/musl-build
+CJSONDIR := /tmp/cjson-build
+ZLIBDIR := /tmp/zlib-build
+EL0FLAGS := -static -O2 -fno-asynchronous-unwind-tables \
+	-isystem $(MUSLDIR)/inst/include \
+	-specs $(MUSLDIR)/inst/lib/musl-gcc.specs \
+	-T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code
+
+.PHONY: demos
+demos: tools/ramfs/bin/jsontest tools/ramfs/bin/ztest tools/ramfs/bin/cyclictest
+
+tools/ramfs/bin/jsontest: tools/ramfs-jsontest.c $(CJSONDIR)/libcjson.a
+	$(CROSS)gcc $(EL0FLAGS) -I$(CJSONDIR)/cJSON-1.7.18 -o $@ $< $(CJSONDIR)/libcjson.a -lc
+tools/ramfs/bin/ztest: tools/ramfs-ztest.c $(ZLIBDIR)/libz.a
+	$(CROSS)gcc $(EL0FLAGS) -I$(ZLIBDIR)/zlib-1.3.1 -o $@ $< $(ZLIBDIR)/libz.a -lc
+tools/ramfs/bin/cyclictest: tools/ramfs-cyclictest.c
+	$(CROSS)gcc $(EL0FLAGS) -o $@ $< -lc
+
+.PHONY: all run verify clean demos
 
 # 头文件自动依赖(-MMD -MP),头文件改动触发重编
 -include $(OBJS:.o=.d) $(GOBJS:.o=.d) $(RTOBJS:.o=.d)

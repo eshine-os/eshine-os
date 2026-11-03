@@ -707,6 +707,16 @@ v0 丢弃 ARP 回声（真实 NIC 不收自家出向广播,回环回声本就病
 证明走原路设计:宿主侧 QEMU -netdev 桥接弧）。**gdump 宿主取证命令**（客 RAM
 十六进制倾倒;EL2_sync 加 ELR+EC 解码——LR4 定谳即其产物）。
 
+**站59 生态件入仓（[172-174]——cJSON/zlib 构建配方+demo 消费者+3rd 台账,批次 C 第三站）**：
+cJSON 1.7.18（上游 MIT,tarball 入仓 3rd/;单文件库直编免 configure）;zlib
+1.3.1（上游 Zlib 许可;核心源直编 libz.a——CHOST configure 对 musl specs
+语境不友好,记档）。**消费者=EL0 demo**（musl 窗口语境）:jsontest（解析
+治理面真清单 /etc/services.json——cJSON 全功能走查,输出确定性;RTOS
+内核自研最小 JSON 不动,站 51 决策）;ztest（**slog 压缩落盘**:
+deflate /var/log/slog→/tmp/slog.z→读回 inflate 逐字节校验;缺 slog 回退
+services.json）。**3rd/LEDGER.md 台账起步**（§62 SBOM 前置事实源:名/
+版/许可/形态/源/用途六列;GPL 仓外隔离=busybox 先例;append-only 纪律）。
+
 **站54 跨域 fail-closed 门（[155-157]——safeshm 窗 ACL+运行时 stage-2 改表,批次 B 第二站）**：
 xvmacl 授权表（默认 vm0/vm1 授权=站 47 几何保位,vm2 不授）+运行时
 开关=条目级 stage-2 改表（`stage2_window_toggle`:l2_ram 单块条目
