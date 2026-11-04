@@ -1548,25 +1548,62 @@ static void cmd_run(const char *args)
     cmd_run_args((char *const *)argv, argc);
 }
 
-/* 站六十五:bsh=busybox ash 子壳(rtos> 主壳的并排共存面)。
+/* 站六十五/六十六:bsh=busybox ash 子壳(rtos> 主壳的并排共存面)。
  * bsh <cmd...> -> sh -c 一次性子壳(判据面=ash 内建+applet);
- * 无参交互 stdin 流模式=深水挂账(v0):ash 无参 fork 孙后 vm0 定格
- * (tick 断+宿主泵活——孙交互/tick 链双深水,gdb 定格取证记档
- * devlog,专站收);外部命令 execve=ENOSYS 记档(exec=用户态
- * loader 红线,ash 不识)。 */
+ * bsh 无参 -> 行 REPL(站66 定稿):壳父自读行(主循环同款字符面,
+ * 几十站门禁验证的稳定输入面)+每行一个 sh -c——绕开 ash 常驻
+ * 进程的 stdin 中断链(宿主 owner/33 注入的非确定竞态=58 族深水,
+ * 全案取证记档 devlog)。空行=exit 回 rtos>。
+ * 语义边界记档:变量不跨行(每行新 sh);外部命令 execve=ENOSYS
+ * (exec=用户态 loader 红线,ash 不识,127);printf=applet 同上。 */
 static void cmd_bsh(const char *args)
 {
+    char line[80];
     char *argv[5];
-    int argc = 0;
 
-    argv[argc++] = (char *)"/bin/busybox";
-    argv[argc++] = (char *)"sh";
     if (args && args[0]) {
-        argv[argc++] = (char *)"-c";
-        argv[argc++] = (char *)args;
+        argv[0] = (char *)"/bin/busybox";
+        argv[1] = (char *)"sh";
+        argv[2] = (char *)"-c";
+        argv[3] = (char *)args;
+        argv[4] = NULL;
+        cmd_run_args(argv, 4);
+        return;
     }
-    argv[argc] = NULL;
-    cmd_run_args(argv, argc);
+    sys_puts("bsh: busybox ash line REPL (empty line = exit)\n");
+    for (;;) {
+        char c;
+        unsigned int idx = 0;
+
+        sys_puts("ash> ");
+        for (;;) {
+            if (sys3(ES_NR_read, 0, (long)&c, 1) != 1)
+                continue;
+            if (c == '\r' || c == '\n') {
+                sys3(ES_NR_write, 1, (long)"\n", 1);
+                break;
+            }
+            if ((c == 0x7f || c == '\b') && idx > 0) {
+                idx--;
+                sys3(ES_NR_write, 1, (long)"\b \b", 3);
+                continue;
+            }
+            if (idx < sizeof(line) - 1 && c >= 0x20 && c < 0x7f) {
+                line[idx++] = c;
+                sys3(ES_NR_write, 1, (long)&c, 1);
+            }
+        }
+        line[idx] = '\0';
+        if (!line[0])
+            break;                     /* 空行=exit REPL */
+        argv[0] = (char *)"/bin/busybox";
+        argv[1] = (char *)"sh";
+        argv[2] = (char *)"-c";
+        argv[3] = line;
+        argv[4] = NULL;
+        cmd_run_args(argv, 4);         /* 每行一个 sh -c(fork+wait) */
+    }
+    sys_puts("bsh: exit REPL\n");
 }
 
 /* 站31:fd=通道三元组走查——open/read/close 全走 resmgr 服务器

@@ -2827,18 +2827,14 @@ def main():
                   "independent ELF parse (ET_CORE/EM_AARCH64/PT_NOTE/"
                   "NT_PRSTATUS, pid match) — batch E deep-water station")
 
-            # ---- 站65:bsh 子壳(busybox ash 经 sh -c;rtos> 主壳的
-            #      并排共存面)。musl fork 契约(aarch64 无 __NR_fork,
-            #      musl fork/vfork=clone(SIGCHLD,0))在 sys_clone 转发
-            #      sys_fork 兑现;孙继承父 tpidr(站35 线程面的 fork 缺角,
-            #      busybox=首个真用 TLS 的 musl 进程,__pthread_self
-            #      =tpidr-0xA4 野访由站64 core 上门讨)。
-            p3 = len(buf)
-            s.sendall(b"bsh\n")
-            buf = read_until(s, buf,
-                             b"bsh: usage: bsh <cmd...> (interactive: pending arc)",
-                             time.time() + 30, start=p3)
-            buf = read_until(s, buf, b"rtos> ", time.time() + 30, start=p3)
+            # ---- 站65/66:bsh 子壳(busybox ash;rtos> 主壳的并排共存
+            #      面)。musl fork 契约(aarch64 无 __NR_fork,musl
+            #      fork/vfork=clone(SIGCHLD,0))在 sys_clone 转发
+            #      sys_fork 兑现;孙继承父 tpidr(站35 线程面的 fork
+            #      缺角,busybox=首个真用 TLS 的 musl 进程,
+            #      __pthread_self=tpidr-0xA4 野访由站64 core 上门讨)。
+            #      站66:bsh 无参=行 REPL(壳父自读行+每行一个 sh -c,
+            #      稳定输入面绕开常驻 ash 的非确定 stdin 竞态)。
             p3 = len(buf)
             send_guest(s, b"bsh echo bsh65-ok\n")
             buf = read_until(s, buf, b"bsh65-ok", time.time() + 90, start=p3)
@@ -2847,9 +2843,24 @@ def main():
             send_guest(s, b"bsh V=eshine-sub; echo $V\n")
             buf = read_until(s, buf, b"eshine-sub", time.time() + 90, start=p3)
             buf = read_until(s, buf, b"rtos> ", time.time() + 60, start=p3)
-            print("  [183/183] bsh: busybox ash subshell via sh -c "
-                  "(musl fork contract + child tpidr inheritance; "
-                  "variable expansion in ash parser)")
+            p3 = len(buf)
+            send_guest(s, b"bsh\n")
+            buf = read_until(s, buf,
+                             b"line REPL (empty line = exit)",
+                             time.time() + 30, start=p3)
+            send_guest(s, b"echo repl66-ok\n")
+            buf = read_until(s, buf, b"repl66-ok", time.time() + 90, start=p3)
+            buf = read_until(s, buf, b"ash> ", time.time() + 30, start=p3)
+            send_guest(s, b"W=repl-world; echo $W\n")
+            buf = read_until(s, buf, b"repl-world", time.time() + 90, start=p3)
+            buf = read_until(s, buf, b"ash> ", time.time() + 30, start=p3)
+            send_guest(s, b"\n")
+            buf = read_until(s, buf, b"bsh: exit REPL", time.time() + 30,
+                             start=p3)
+            buf = read_until(s, buf, b"rtos> ", time.time() + 30, start=p3)
+            print("  [183/183] bsh: busybox ash subshell + line REPL "
+                  "(musl fork contract + tpidr inheritance; sh -c rows "
+                  "with echo/var expansion; empty line exits)")
             print("RESULT PASS")
             return 0
         finally:

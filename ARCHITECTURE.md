@@ -743,24 +743,27 @@ inputdirs=WORKDIR/deploy-PN,outputdirs=DEPLOY_DIR_IMAGE——每配方 DEPLOYDIR
 （boot/ 四件+run.sh+manifest 在位+sha256 逐件核）;[178] run.sh 启动
 全链 musl hello——终装入口自靴=组装非拼盘）。
 
-**站66 bsh 无参交互（[183 面]——泵 RX 注入门修真;交互非确定竞态
-挂 58 族账）**：用户令"务必实现无参交互"（rtos> 主壳旁 bsh 直进
-busybox ash）。全案取证（gdb-multiarch 源级直读=第四镜:eshine.elf
-符号直读 vm/vcpu/任务池/调度队列/客 RAM;HMP xp 读 MMIO=假象对照
-定谳弃用）——**bsh 无参定格的观感 90% 是设计**（站 24A 心跳门:壳
-非 SLEEP 态静默;vm0 实况:tick 100Hz 活/心跳醒睡循环活[wake_tick 与
-rt_ticks 同步推进]/ash BLOCK RX_BIT 睡 stdin 合法/字符进宿主 vuart
-环+vm0 内核 rrx 环）;**真断=33 注入链**（泵行 730 的
-`wr==TIMER && owner==v`——非 owner TIMER 泊不注入 RX,站 24B 设计
-排除面挡了 ash 的唤醒;owner=NULL 非确定读数+watchpoint 未抓到）。
-**修真**:泵注入门放宽——非 owner 的 TIMER 泊若 RX 环真有可取数据
-（RXIM+RIS 过站 24B 同款门控）亦醒（vm.c;空环不醒,站 20 热自旋
-教训保全）;修后交互链曾活（"sh: selftest: not found"=ash 吃行铁证）
-但**非确定**（1/4 活率;宿主负载窗 7+ 时更低）——**竞态与 58 挂脸族
-（未定谳,boot 20-75% 挂）纠缠,交互可靠化=58 族专场的前置**。
-**交付面**:bsh 无参=直进交互 ash（用户可试）;**场景/门禁全走
-确定性 sh -c 面**（[183]:bsh echo+变量展开,11/11 绿）;
-exit 内建回 rtos>。printf 等 applet=execve ENOSYS 记档不变。
+**站66 bsh 无参交互（[183 面]——行 REPL 定稿+泵 RX 注入门修真;
+常驻 ash 竞态挂 58 族账）**：用户令"务必实现无参交互"。全案取证
+（gdb-multiarch 源级直读=第四镜:eshine.elf 符号直读 vm/vcpu/任务池/
+调度队列/客 RAM;HMP xp 读 MMIO=假象对照定谳弃用）——**bsh 无参
+定格的观感 90% 是设计**（站 24A 心跳门:壳非 SLEEP 态静默;vm0 实况:
+tick 100Hz 活/心跳醒睡循环活/ash BLOCK RX_BIT 睡 stdin 合法/字符进
+宿主 vuart 环+vm0 内核 rrx 环）;**真断=33 注入链**（泵行 730 的
+`wr==TIMER && owner==v`,站 24B 设计排除面+owner=NULL 非确定读数
+[watchpoint 未抓到]+33 使能位疑清）。**泵注入门修真**:非 owner
+TIMER 泊若 RX 环真有可取数据（过站 24B 同款门控）亦醒（空环不醒,
+站 20 热自旋教训保全）——常驻 ash 交互链曾点亮（"sh: selftest:
+not found"=ash 吃行铁证）但**非确定**（1/4 活率,与 58 挂脸族[未定谳,
+boot 20-75% 挂]纠缠）。**站 66 定稿=行 REPL**:bsh 无参→壳父自读行
+（主循环同款 sys_read 字符面=几十站门禁验证的稳定输入面,带回显+
+退格）+每行一个 sh -c（确定性 fork+wait 面,11/11 基础上）→空行
+exit 回 rtos>——**绕开常驻 ash 的非确定 stdin 中断链,活率 3/4**
+（唯余 58 族挂脸靴,全局问题非 REPL 面）。**语义边界记档**:变量
+不跨行（每行新 sh）;busybox applet 内联活（NOFORK:echo/ls/cat/
+变量展开）,非 busybox 命令 execve=ENOSYS 127（exec=用户态 loader
+红线）。场景 18/18 绿（sh -c×2+REPL 全链）;[183] 判据=sh -c+REPL。
+**常驻 ash 交互可靠化=58 族专场前置**（下一站首选）。
 
 **站65 bsh 子壳（[183]——busybox ash 并排共存面;两个 musl 契约缺口
 由 busybox 上门讨）**：**musl fork 契约**（aarch64 号面无 __NR_fork

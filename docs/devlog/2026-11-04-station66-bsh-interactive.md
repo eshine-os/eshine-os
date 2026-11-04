@@ -37,13 +37,20 @@ vm.c 泵扫的设备事件复查门加第三支:**非 owner 的 TIMER 泊若 RX 
   回显断/dispatch 断多形态),与 58 族的 hello 死 printf 同族画像
 - **修的语义保全**:空环不醒(站 20"客无 RXIM 热自旋"教训的门控不变)
 
-## 2. 判据与交付
+## 2. 定稿:行 REPL(站 66 收口方案)
 
-- **交付面**:bsh 无参=直进交互 ash(用户可试;exit 回 rtos>);
-  **场景/门禁全走确定性 sh -c 面**(station65-bsh.json 11/11 PASS;
-  门 [183]=bsh echo+变量展开)——非确定交互不做门禁判据(挂脸族
-  污染,判据不可重复)
-- **交互可靠化=58 族专场前置**:boot 挂脸族(58 引入)不定谳,一切
-  非确定竞态探针都不可重复;建议下一站=58 族专场取证(58 时代二分
-  基线已有:57 态 5/5 净 vs 58 态 1/5 挂)
-- make 零警告;help [183] 行更新(bsh [cmd]);ARCHITECTURE 站 66 段
+常驻 ash 的 stdin 中断链非确定(1/4 活率,owner/33 注入竞态与 58 族
+纠缠)——**站 66 定稿=行 REPL**:
+
+- bsh 无参→壳父自读行(sys_read 单字符面=主循环同款,几十站门禁
+  验证的稳定输入面;带回显+退格)+每行一个 sh -c(fork+wait,
+  确定性面)+空行 exit 回 rtos>
+- **绕开常驻 ash 的非确定链,活率 3/4**(唯余 58 族挂脸靴=全局
+  问题,非 REPL 面);REPL 探针 5 靴:3 FULL-PASS+1 PARTIAL(挂脸
+  窗某步超时)+1 FAIL:prompt(58 族)
+- 语义边界:变量不跨行(每行新 sh);busybox applet 内联活
+  (NOFORK:echo/ls/cat/变量展开——"ls /etc" 出 inittab 实证);
+  非 busybox 命令 execve=ENOSYS 127 记档
+- 场景 station65-bsh.json 18/18 PASS(sh -c×2+REPL 全链);
+  门 [183]=sh -c+REPL 判据;help [183] 行=bsh [cmd]
+- **常驻 ash 交互可靠化(持久 shell 会话)=58 族专场前置**

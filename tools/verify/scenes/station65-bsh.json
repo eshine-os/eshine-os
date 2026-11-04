@@ -9,5 +9,12 @@
  {"send": "bsh echo bsh65-ok", "expect": "bsh65-ok", "timeout": 90},
  {"expect": "rtos> ", "timeout": 60},
  {"send": "bsh V=eshine-sub; echo $V", "expect": "eshine-sub", "timeout": 90},
- {"expect": "rtos> ", "timeout": 60}
+ {"expect": "rtos> ", "timeout": 60},
+ {"send": "bsh", "expect": "line REPL (empty line = exit)", "timeout": 30},
+ {"send": "echo repl66-ok", "expect": "repl66-ok", "timeout": 90},
+ {"expect": "ash> ", "timeout": 30},
+ {"send": "W=repl-world; echo $W", "expect": "repl-world", "timeout": 90},
+ {"expect": "ash> ", "timeout": 30},
+ {"send": "", "expect": "bsh: exit REPL", "timeout": 30},
+ {"expect": "rtos> ", "timeout": 30}
 ]
