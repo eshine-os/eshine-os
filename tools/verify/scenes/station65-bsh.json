@@ -6,8 +6,6 @@
  {"expect": "svc: governed", "timeout": 200},
  {"send": "vmconsole 0", "expect": "console -> vm"},
  {"send": "", "expect": "rtos> ", "timeout": 120},
- {"send": "bsh", "expect": "bsh: usage: bsh <cmd...> (interactive: pending arc)", "timeout": 30},
- {"expect": "rtos> ", "timeout": 30},
  {"send": "bsh echo bsh65-ok", "expect": "bsh65-ok", "timeout": 90},
  {"expect": "rtos> ", "timeout": 60},
  {"send": "bsh V=eshine-sub; echo $V", "expect": "eshine-sub", "timeout": 90},

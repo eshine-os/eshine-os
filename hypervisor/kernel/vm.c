@@ -726,9 +726,16 @@ static bool pump_run_vcpu(u32 id, u32 vi)
              * 站24B 评审收口:owner 帧放开 TIMER 排除——输入⇒runnable
              * 不变量在三处唤醒位(推环/泊位复查/泵入口网)全对齐,
              * owner 的 TIMER 泊(真 Linux 恒 armed)亦可被环内待取
-             * 事件再唤醒;非 owner 帧维持 TIMER 排除不动。 */
+             * 事件再唤醒;非 owner 帧维持 TIMER 排除不动。
+             * 站66 修真:非 owner 的 TIMER 泊若 RX 环真有可取数据
+             * (RXIM 使能+RIS 置位=过站 24B 同款门控)亦醒——bsh
+             * 交互(ash 子壳睡 stdin)时 owner 面缺席的靴型,RX
+             * 注入断=子壳永睡;真有事件才醒,空环不醒,站 20"客无
+             * RXIM 热自旋"教训同款门控保全。 */
             (vi == 0 && (v->wait_reason != VCPU_WAIT_TIMER ||
-                         sched_console_owner == v) &&
+                         sched_console_owner == v ||
+                         (vuart_rx_irq_ready(&vm->vu) &&
+                          vgic_spi_enabled(&vm->vgic, GIC_SPI_UART))) &&
              ((vuart_rx_irq_ready(&vm->vu) &&
                vgic_spi_enabled(&vm->vgic, GIC_SPI_UART)) ||
               (virtio_irq_ready(vm) &&

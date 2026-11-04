@@ -1559,14 +1559,12 @@ static void cmd_bsh(const char *args)
     char *argv[5];
     int argc = 0;
 
-    if (!args || !args[0]) {
-        sys_puts("bsh: usage: bsh <cmd...> (interactive: pending arc)\n");
-        return;
-    }
     argv[argc++] = (char *)"/bin/busybox";
     argv[argc++] = (char *)"sh";
-    argv[argc++] = (char *)"-c";
-    argv[argc++] = (char *)args;
+    if (args && args[0]) {
+        argv[argc++] = (char *)"-c";
+        argv[argc++] = (char *)args;
+    }
     argv[argc] = NULL;
     cmd_run_args(argv, argc);
 }

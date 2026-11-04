@@ -743,6 +743,25 @@ inputdirs=WORKDIR/deploy-PN,outputdirs=DEPLOY_DIR_IMAGE——每配方 DEPLOYDIR
 （boot/ 四件+run.sh+manifest 在位+sha256 逐件核）;[178] run.sh 启动
 全链 musl hello——终装入口自靴=组装非拼盘）。
 
+**站66 bsh 无参交互（[183 面]——泵 RX 注入门修真;交互非确定竞态
+挂 58 族账）**：用户令"务必实现无参交互"（rtos> 主壳旁 bsh 直进
+busybox ash）。全案取证（gdb-multiarch 源级直读=第四镜:eshine.elf
+符号直读 vm/vcpu/任务池/调度队列/客 RAM;HMP xp 读 MMIO=假象对照
+定谳弃用）——**bsh 无参定格的观感 90% 是设计**（站 24A 心跳门:壳
+非 SLEEP 态静默;vm0 实况:tick 100Hz 活/心跳醒睡循环活[wake_tick 与
+rt_ticks 同步推进]/ash BLOCK RX_BIT 睡 stdin 合法/字符进宿主 vuart
+环+vm0 内核 rrx 环）;**真断=33 注入链**（泵行 730 的
+`wr==TIMER && owner==v`——非 owner TIMER 泊不注入 RX,站 24B 设计
+排除面挡了 ash 的唤醒;owner=NULL 非确定读数+watchpoint 未抓到）。
+**修真**:泵注入门放宽——非 owner 的 TIMER 泊若 RX 环真有可取数据
+（RXIM+RIS 过站 24B 同款门控）亦醒（vm.c;空环不醒,站 20 热自旋
+教训保全）;修后交互链曾活（"sh: selftest: not found"=ash 吃行铁证）
+但**非确定**（1/4 活率;宿主负载窗 7+ 时更低）——**竞态与 58 挂脸族
+（未定谳,boot 20-75% 挂）纠缠,交互可靠化=58 族专场的前置**。
+**交付面**:bsh 无参=直进交互 ash（用户可试）;**场景/门禁全走
+确定性 sh -c 面**（[183]:bsh echo+变量展开,11/11 绿）;
+exit 内建回 rtos>。printf 等 applet=execve ENOSYS 记档不变。
+
 **站65 bsh 子壳（[183]——busybox ash 并排共存面;两个 musl 契约缺口
 由 busybox 上门讨）**：**musl fork 契约**（aarch64 号面无 __NR_fork
 （asm-generic 64 位段）,musl 的 fork()/vfork() 都=clone(SIGCHLD,0)——

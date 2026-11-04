@@ -172,7 +172,7 @@ static void cmd_help(void)
     console_puts("  docker 弧(容器)       -> 钉链镜像+pin 对账    [180]\n");
     console_puts("  (vm0) crashdemo        -> ELF core 落盘+解析  [181]\n");
     console_puts("  (vm0) gcore+宿主重组   -> 双解析器对照        [182]\n");
-    console_puts("  (vm0) bsh <cmd>        -> busybox ash 子壳    [183]\n");
+    console_puts("  (vm0) bsh [cmd]         -> busybox ash 子壳    [183]\n");
 }
 
 static void cmd_version(void)
