@@ -346,6 +346,13 @@ static long sys_fork(u64 *frame)
         dst[2] = RT_FORK_MAGIC;          /* x0 槽@16 */
     }
     ct->usp = rt_cur->usp;
+    ct->tpidr_el0 = rt_cur->tpidr_el0;  /* 站65:子继承父 TLS 指针(fork
+                                      * 语义;站35 线程面 SETTLS 的
+                                      * fork 缺角——busybox ash fork 孙
+                                      * 不 exec 直跑 busybox 代码,孙
+                                      * 槽 0 → 切换载入 → __pthread_self
+                                      * =tpidr-0xA4 野访 [far=-0xA4],
+                                      * 站64 core 文件上门讨的号面) */
     ct->proc = cp;
     ct->ttbr = rt_proc_ttbr(cp);
     ct->tid = (u64)cp->pid;           /* 站35:leader tid=pid */
@@ -932,6 +939,15 @@ static long sys_clone(u64 *frame)
     if ((flags & RT_CLONE_SETTLS) && tls &&
         tls < 0x40200000UL)
         return -ES_EINVAL;             /* tp 须落用户窗(粗判) */
+    /* 站六十五:musl fork 契约——aarch64 号面无 __NR_fork(asm-generic
+     * 64 位段不定义),musl 的 fork() 与 vfork() 都=clone(SIGCHLD,0):
+     * 零线程旗=进程复制语义,转发 sys_fork(vfork 旗即便出现也不携
+     * VM 面则降级 fork 记档——musl 自身 vfork 即此形;真父挂起语义
+     * =后弧)。busybox ash=仓内首个 fork 的 musl 进程,号面缺口由
+     * 它上门讨(bsh 子壳,站 65)。 */
+    if (!(flags & RT_CLONE_THREAD) &&
+        !(flags & ~(RT_CLONE_VM | RT_CLONE_VFORK | 0xFFu)))
+        return sys_fork(frame);
     tid = sys_clone_impl(frame, flags, stack, ptid, tls, ctid);
     if (tid >= 0 && (flags & RT_CLONE_PARENT_SETTID) && ptid)
         *(u64 *)ptid = (u64)tid;

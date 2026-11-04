@@ -29,7 +29,7 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (182 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (183 步;与 make run 同一构建,可手动过;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -172,6 +172,7 @@ static void cmd_help(void)
     console_puts("  docker 弧(容器)       -> 钉链镜像+pin 对账    [180]\n");
     console_puts("  (vm0) crashdemo        -> ELF core 落盘+解析  [181]\n");
     console_puts("  (vm0) gcore+宿主重组   -> 双解析器对照        [182]\n");
+    console_puts("  (vm0) bsh <cmd>        -> busybox ash 子壳    [183]\n");
 }
 
 static void cmd_version(void)

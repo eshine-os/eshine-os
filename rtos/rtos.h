@@ -761,6 +761,8 @@ void rt_fp_trap_cur(void);   /* 站33:FP 陷阱体(EL0/EL1 共用) */
  * thread_list 锁释放面);SETTLS=新任务 tpidr 初值(簿记存还)。 */
 #define RT_CLONE_VM            0x100u
 #define RT_CLONE_FS            0x200u
+#define RT_CLONE_VFORK         0x4000u      /* 站65:musl fork 契约面
+                                             * (转发 sys_fork 降级记档) */
 #define RT_CLONE_FILES         0x400u
 #define RT_CLONE_SIGHAND       0x800u
 #define RT_CLONE_THREAD        0x10000u

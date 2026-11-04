@@ -743,6 +743,23 @@ inputdirs=WORKDIR/deploy-PN,outputdirs=DEPLOY_DIR_IMAGE——每配方 DEPLOYDIR
 （boot/ 四件+run.sh+manifest 在位+sha256 逐件核）;[178] run.sh 启动
 全链 musl hello——终装入口自靴=组装非拼盘）。
 
+**站65 bsh 子壳（[183]——busybox ash 并排共存面;两个 musl 契约缺口
+由 busybox 上门讨）**：**musl fork 契约**（aarch64 号面无 __NR_fork
+（asm-generic 64 位段）,musl 的 fork()/vfork() 都=clone(SIGCHLD,0)——
+sys_clone 零线程旗转发 sys_fork（进程复制语义）;站 42 的 clone 只认
+线程族（NEEDS=VM|THREAD）把 musl fork 全拒——busybox ash=仓内首个
+fork 的 musl 进程（hello/beat 全不 fork）,"sh: can't fork" 定谳）。
+**子继承父 tpidr**（站 35 线程面 SETTLS 的 fork 缺角:孙不 exec 直跑
+busybox 代码,__pthread_self=tpidr-0xA4,far=-0xA4 野访由站 64 core
+文件上门讨;修=sys_fork 拷父槽,vec.S 切换存还链既有）。**bsh 命令**
+（bsh <cmd...>=busybox sh -c 一次性子壳;判据面=ash 解析器内建:
+echo+变量赋值展开;printf=applet 走 execve=ENOSYS 127 记档（exec=
+用户态 loader 红线,ash 不识）;$((算术)) 构建禁用记档）;**无参交互
+stdin 流模式=深水挂账**（ash 无参 fork 孙后 vm0 全停:tick 断+宿主泵
+活（gdb 定格:PC=pump_run_vcpu+0x2a8 mrs cntvct_el0 前拍）+宿主热键
+不响应+QEMU 0% CPU=四核 wfi 中断全断——孙交互/tick 链双深水未定谳,
+专站收;参考实现基准无先例面）。
+
 **站64 ELF core 文件（[181-182]——批次 E 深水终站;站 46 "核文件
 不可为"翻案）**：**rt_ramfs_core_store**（rt_fsrv.c 内核侧直写:crash
 语境=死者本人 EL1,一次直写零消息往返——消息面=活任务的活路,取证面=
@@ -886,7 +903,7 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-182 步手动走查清单。
+183 步手动走查清单。
 **同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
 verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
 ——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；

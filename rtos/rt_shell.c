@@ -1548,6 +1548,29 @@ static void cmd_run(const char *args)
     cmd_run_args((char *const *)argv, argc);
 }
 
+/* 站六十五:bsh=busybox ash 子壳(rtos> 主壳的并排共存面)。
+ * bsh <cmd...> -> sh -c 一次性子壳(判据面=ash 内建+applet);
+ * 无参交互 stdin 流模式=深水挂账(v0):ash 无参 fork 孙后 vm0 定格
+ * (tick 断+宿主泵活——孙交互/tick 链双深水,gdb 定格取证记档
+ * devlog,专站收);外部命令 execve=ENOSYS 记档(exec=用户态
+ * loader 红线,ash 不识)。 */
+static void cmd_bsh(const char *args)
+{
+    char *argv[5];
+    int argc = 0;
+
+    if (!args || !args[0]) {
+        sys_puts("bsh: usage: bsh <cmd...> (interactive: pending arc)\n");
+        return;
+    }
+    argv[argc++] = (char *)"/bin/busybox";
+    argv[argc++] = (char *)"sh";
+    argv[argc++] = (char *)"-c";
+    argv[argc++] = (char *)args;
+    argv[argc] = NULL;
+    cmd_run_args(argv, argc);
+}
+
 /* 站31:fd=通道三元组走查——open/read/close 全走 resmgr 服务器
  * (fd 层->三段消息->ramfs);EOF(status=0)收口,字节数自证。 */
 static void fd_dump(const char *path, const char *tag)
@@ -2304,6 +2327,10 @@ static void shell_line(char *line)
         cmd_fddemo();
     } else if (starts(line, "run ")) {
         cmd_run(line + 4);            /* 站40:args... 直透 busybox */
+    } else if (streq(line, "bsh")) {
+        cmd_bsh(NULL);                /* 站65:busybox ash 子壳 */
+    } else if (starts(line, "bsh ")) {
+        cmd_bsh(line + 4);            /* 站65:bsh <cmd> = sh -c */
     } else if (streq(line, "rngdemo")) {
         cmd_rngdemo();
     } else if (streq(line, "clockdemo")) {
