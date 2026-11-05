@@ -293,11 +293,16 @@ struct rf_dir {
 };
 static struct rf_dir rf_dirs[RF_DIR_MAX];
 
-/* b 是否 pre[0..dl) 前缀下的名字(b[dl]=='/' 或 NUL) */
+/* b 是否 pre[0..dl) 前缀下的名字(b[dl]=='/' 或 NUL)。
+ * 站67 根特判:dl==1(pre="/")时一切挂名形路径都在根下——旧判
+ * b[dl]=='/' 对根恒不中("/bin/x" 的 b[1]='b'),根目录柄判死+
+ * 根枚举零项,`ls /` 报 ENOENT(用户实测报障)。 */
 static int rf_under(const char *b, const char *pre, u32 dl)
 {
     u32 j;
 
+    if (dl == 1u)
+        return b[0] == '/';
     for (j = 0; j < dl; j++)
         if (b[j] != pre[j])
             return 0;
@@ -565,9 +570,16 @@ static void srv_ramfs(void *arg)
                     const char *c;
                     u32 cl = 0, first = 1, i2;
 
-                    if (!b[0] || !rf_under(b, dir->prefix, dl) || b[dl] != '/')
-                        continue;
-                    c = b + dl + 1;
+                    if (!b[0] || !rf_under(b, dir->prefix, dl) ||
+                        (dl > 1u && b[dl] != '/'))
+                        continue;   /* 站67:根(dl==1)的 b[1] 是名首
+                                      * 字非 '/',深判豁免 */
+                    c = b + (dl == 1u ? 1u : dl + 1u);
+                                 /* 站67:根前缀 "/" 已含斜杠,名起点
+                                  * =b+1;子目录前缀("/etc")的名起点
+                                  * =b+dl+1(越过末斜杠)。旧统一 +1
+                                  * 把根项名截首字(("/tc"=etc 丢 e,
+                                  * 用户 ls / 报障定谳)。 */
                     while (c[cl] && c[cl] != '/')
                         cl++;
                     for (i2 = 0; i2 < i; i2++) {   /* 首现去重 */
@@ -576,9 +588,9 @@ static void srv_ramfs(void *arg)
                         u32 ol = 0, m;
 
                         if (!o[0] || !rf_under(o, dir->prefix, dl) ||
-                            o[dl] != '/')
-                            continue;
-                        c2 = o + dl + 1;
+                            (dl > 1u && o[dl] != '/'))
+                            continue;   /* 站67:根深判豁免同过滤处 */
+                        c2 = o + (dl == 1u ? 1u : dl + 1u);
                         while (c2[ol] && c2[ol] != '/')
                             ol++;
                         if (ol != cl)

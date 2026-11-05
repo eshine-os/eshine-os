@@ -2854,13 +2854,18 @@ def main():
             send_guest(s, b"W=repl-world; echo $W\n")
             buf = read_until(s, buf, b"repl-world", time.time() + 90, start=p3)
             buf = read_until(s, buf, b"ash> ", time.time() + 30, start=p3)
+            send_guest(s, b"ls /\n")
+            buf = read_until(s, buf, b"bin", time.time() + 90, start=p3)
+            buf = read_until(s, buf, b"etc", time.time() + 30, start=p3)
+            buf = read_until(s, buf, b"ash> ", time.time() + 30, start=p3)
             send_guest(s, b"\n")
             buf = read_until(s, buf, b"bsh: exit REPL", time.time() + 30,
                              start=p3)
             buf = read_until(s, buf, b"rtos> ", time.time() + 30, start=p3)
             print("  [183/183] bsh: busybox ash subshell + line REPL "
                   "(musl fork contract + tpidr inheritance; sh -c rows "
-                  "with echo/var expansion; empty line exits)")
+                  "with echo/var expansion + root dir listing; empty "
+                  "line exits)")
             print("RESULT PASS")
             return 0
         finally:
