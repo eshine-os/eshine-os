@@ -137,7 +137,34 @@ idle 结构为笔野喷——rdy_tail 野化后 `tail->next=t` 写进 BSS
 - **判据**:58 族 root-a 定谳+修真+证效;root-b/c 仪器就位,
   案发即指认——下一站(68B)以守卫四元为判据续侦。
 
-## 8. 教训
+## 8. 用户实测捕获(收口后追加,68B 续侦的开案证物)
+
+用户 make run 实测,两例实弹捕获(守卫在野履职——同样的死法
+过去是无声冻结,如今是带全证的案发现场标签):
+
+**例一(shell sp 毒,交互窗,tick 0x1b4=436)**:
+`task: shell slot 0 st 0x3(BLOCK) el0 1,
+sp 0x40187ed0 dom 0x40173fc0-0x40174fc0 ksp 0x40174fc0(正确),
+cur0 0x40188620(ttysrv 在跑)`——提示符后等输入的 RX 阻塞切换
+时刻,sp 字段=蹦床域帧地址(**与三例标本同值,跨靴确定性**),
+ksp 无恙。cur0=ttysrv=控制台路径答中在场。幸存根定名 root-d:
+rt_cur/切换簿记失同步(pt36 家族),壳的内核态 SP 在 governed
+churn 中迁移至蹦床顶并滞留。
+
+**例二(fork 子孤儿,beater 窗,tick 0x35=53)**:
+`task: child slot 5 st 0x0(READY) el0 1,
+sp 0x40179be0(域内,全净) dom … ksp 正确,
+cur0 0x40188c40(ramfs 在跑)`——beater 首个 hello 的 loader
+fdread 阻塞窗,READY 而队链不可达(孤儿谓词),审计四类全净=
+链无环/无幽灵/尾不脱链而孩子不在任何层。cur0=ramfs=回执路
+径答中在场(与冒烟两例同指纹,孤儿三例咬合)。root-b 的窗收
+紧至:回执唤醒邻域或 pt36 反式窗。
+
+两例 + 静态走查把孤儿窗的初等竞态全部排除(pick 三站点皆
+RUN-标或回流令牌,IRQ 语境硬件掩无嵌套窗;迟来扫描/迟来回执
+的状态门已互锁)——嫌疑收敛至 rt_cur 失同步的连带形态。
+
+## 9. 教训
 
 1. **probe 脚本的 gdb 解析曾三度全灭**(regex 行首裸 hex 无
    0x 前缀;monitor 走 stderr;TIME_WAIT 端口)——先验管道再

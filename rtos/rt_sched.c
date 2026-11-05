@@ -96,7 +96,7 @@ unsigned long rt_ipi_rx(u32 cpu)
     return ipi_rx_count[cpu];
 }
 
-static void rdy_enqueue(rt_task_t *t)
+static void rdy_enqueue_core(rt_task_t *t, int set_ready)
 {
     u32 c = t->cpu;
     u32 p = t->prio;
@@ -112,11 +112,19 @@ static void rdy_enqueue(rt_task_t *t)
      * 复合帧 x30=&pool[5] 劫持→guest_park 静默楔/rt_sync_fault
      * panic/孤儿 child/REPL 挂/洪水全家桶。硬门=单窒息点,现役
      * 两个调用面(IRQ 出口/sched 抢占)与未来调用面一并覆盖;
-     * idle 上下文仍经 idle->sp 帧机器存还(切换簿记不动此径)。 */
+     * idle 上下文仍经 idle->sp 帧机器存还(切换簿记不动此径)。
+     * 站68B:set_ready=状态写并入队同锁窗——旧形 rt_ready_push
+     * 的 state=READY 在 enqueue 之外裸写,wake_all 自任务语境
+     * (sys_exit 收尸广播等,IRQ 开)调用时,tick 恰落两句之间=
+     * 守卫见"READY 而未入队"瞬态=自造孤儿假阳性且 panic 杀好
+     * 靴(冒烟 0/3 定谳);原子化后内核不变量同固:任务永无
+     * READY-未入队瞬态。令牌路(requeue)不碰状态,纪律仍旧。 */
     if (!rt_task_in_pool(t)) {
         rt_spin_unlock(&rdy_lk[c], d);
         return;
     }
+    if (set_ready)
+        t->state = RT_READY;
     t->next = NULL;
     if (!rdy_head[c][p])
         rdy_head[c][p] = t;
@@ -127,10 +135,14 @@ static void rdy_enqueue(rt_task_t *t)
     rt_spin_unlock(&rdy_lk[c], d);
 }
 
+static void rdy_enqueue(rt_task_t *t)
+{
+    rdy_enqueue_core(t, 0);
+}
+
 void rt_ready_push(rt_task_t *t)
 {
-    t->state = RT_READY;
-    rdy_enqueue(t);
+    rdy_enqueue_core(t, 1);         /* 站68B:状态写与入队同锁窗 */
     if (t->cpu != rt_cpu_id())
         rt_ipi(t->cpu);             /* 跨核:目标核队里有了新活 */
 }
