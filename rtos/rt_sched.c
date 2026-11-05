@@ -165,6 +165,13 @@ rt_task_t *rt_pick_ready(void)
         rdy_tail[c][p] = NULL;
         rdy_map[c] &= ~(1u << p);
     }
+    /* 站68D:摘链+置 RUN 同锁窗(68B 入队侧 state+link 原子的对称
+     * 补角)。旧码摘链在锁内而 state=RUN 由调用方在锁外后写,留
+     * "已摘链/仍 READY"窗——tick 无锁扫描(rt_rdy_find)落窗即假
+     * 孤儿(谓词③ noreturn panic 反杀健康靴;fork 子 prio=父+1
+     * 入队即被 pick,实测每 ~3/8 靴预 governed 毒发)。锁内置 RUN
+     * 后,出队任务恒 RUN,READY 不变量(READY⇔在队)恢复。 */
+    t->state = RT_RUN;
     rt_spin_unlock(&rdy_lk[c], d);
     return t;
 }

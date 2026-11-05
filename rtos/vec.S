@@ -105,7 +105,20 @@ guest_park:
     ldr     x1, =rt_cur_arr
     ldr     x2, [x1, x9, lsl #3]   /* x2 = 旧任务(本核 cur) */
     mov     x3, sp
-    str     x3, [x2]               /* 旧->sp = 帧顶(sp 偏移 0 契约) */
+    /* 站68C:簿记域检——将存入 old->sp 的值(x3)必须落在 old 的
+     * 内核栈域 [ksp-4096, ksp)。越域=交叉存/蹦床帧实锤,走
+     * .Lbk_viol 桩换引导栈调 C 打印器(x4=adr 取本展开点,三展开
+     * 各唯一)。x4/x11/x12 帧已压栈皆死寄存器;ksp=0(idle 伪任务
+     * 未设)放行。 */
+    ldr     x11, [x2, #RT_KSTK_OFF]
+    cbz     x11, 9f
+    sub     x12, x11, #4096
+    cmp     x3, x12
+    adr     x4, 9f
+    b.lo    .Lbk_viol
+    cmp     x3, x11
+    b.hs    .Lbk_viol
+9:  str     x3, [x2]               /* 旧->sp = 帧顶(sp 偏移 0 契约) */
     /* 站35:TPIDR_EL0 随任务走(用户 TLS 契约,musl 主线程自写、
      * pthread 线程=clone SETTLS 初值;EL1 可读写 EL0 寄存器)。
      * 存还配对同帧手术纪律:@736 亦在 272B 帧外,不清点即失明。 */
@@ -147,6 +160,18 @@ guest_park:
     msr     ttbr0_el1, x3
     isb
 .endm
+
+/* 站68C:簿记域检违例桩(三展开点共用)。x2=old 任务,x3=毒 sp,
+ * x11=ksp,x4=案发展开点。当前 sp=毒值(蹦床域)不可用,换引导栈
+ * 调 C 打印器;noreturn(打印+park)。 */
+.Lbk_viol:
+    mov     x0, x2                 /* old 任务 */
+    mov     x1, x3                 /* 毒 sp */
+    mov     x2, x11                /* ksp */
+    mov     x3, x4                 /* 案发展开点 */
+    ldr     x12, =__stack_top
+    mov     sp, x12
+    bl      rt_bookkeep_violation
 
 guest_irq:
     RT_PUSH_GPRS

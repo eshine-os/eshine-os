@@ -44,7 +44,7 @@ static u8 task_stacks[RT_POOL_MAX][4368] __attribute__((aligned(16)));
                                                 * 0xA5 水位模式/代码字节撞车 */
 static rt_task_t idle_task;
 
-rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
+static rt_task_t *task_alloc_kernel(const char *name, void (*entry)(void *),
                              void *arg, u32 prio, u32 cpu)
 {
     unsigned int i, slot;
@@ -104,7 +104,16 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
     t->arg = arg;
     t->prio = prio < RT_NPRIO ? prio : RT_NPRIO - 1;
     t->base_prio = t->prio;          /* 站十八B:PI 基准 */
-    t->state = RT_READY;
+    /* 站68D:创建窗孤儿假阳性根除。旧码在此急置 RT_READY,而原子
+     * 入队(rt_ready_push→rdy_enqueue_core 状态+入队同锁窗)远在
+     * frame_init 之后(本函数末)——syscall 语境 DAIF 开(站28),
+     * tick 扫描落"READY 已置/尚未入队"窗即见 READY 孤儿(谓词③),
+     * noreturn panic 反杀健康靴(实测 fork 子 child slot5 每 3/8 靴
+     * 预 governed 毒发,ticks 11-50)。修=创建窗内恒置 RT_FREE
+     * (TASK_LIVE 假→扫描全谓词跳过;分配判 FREE/DEAD 故不双认领,
+     * 创建实序贯无双认领面),READY 唯一由末尾 rt_ready_push 原子
+     * 置+入队——状态可见即可达,孤儿窗彻底闭合(68B 同律上移创建面)。 */
+    t->state = RT_FREE;
     t->wait_mask = 0;
     t->wq_next = NULL;            /* 站十七:同步队列链,复用槽必清 */
     t->wake_tick = 0;
@@ -135,7 +144,23 @@ rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
                                    /* 站二十:建核即亲和(不迁移,YAGNI);
                                     * smpdemo/ipidemo/fpsmp 显式指定对核 */
     rt_frame_init(t, task_stacks[slot] + sizeof(task_stacks[slot]), entry, arg);
-    rt_ready_push(t);
+    return t;        /* 站68E:不入队——调用方完全设置后才 rt_ready_push */
+}
+
+/* 站68E:内核任务创建=分配+建帧(task_alloc_kernel,留 RT_FREE 不入队)
+ * 后立即入队。EL0 任务走 rt_task_create_el0(先建 EL0 帧+置 el0 旗
+ * 再入队)。旧 create_el0 先调 create_cpu(已入队 READY/内核帧/el0=0)
+ * 再改 el0+重建 EL0 帧——留"已入队 READY 但 el0=1/sp 指内核栈/ksp=0"
+ * 半创建窗:tick 扫描落窗即谓词① 假阳(实测 fork 子 child slot5
+ * sp 越 rt_kstacks 域+ksp=0,ticks 2 预 governed 毒发)。入队移至
+ * 全部设置之后,半创建态恒 RT_FREE(扫描不可见)→窗彻底闭合。 */
+rt_task_t *rt_task_create_cpu(const char *name, void (*entry)(void *),
+                              void *arg, u32 prio, u32 cpu)
+{
+    rt_task_t *t = task_alloc_kernel(name, entry, arg, prio, cpu);
+
+    if (t)
+        rt_ready_push(t);
     return t;
 }
 
@@ -170,7 +195,7 @@ u64 rt_pid_of(rt_task_t *t)
 rt_task_t *rt_task_create_el0(const char *name, void (*entry)(void *),
                               void *arg, u32 prio, void *ustack_top)
 {
-    rt_task_t *t = rt_task_create_cpu(name, entry, arg, prio, rt_cpu_id());
+    rt_task_t *t = task_alloc_kernel(name, entry, arg, prio, rt_cpu_id());
 
     if (!t)
         return NULL;
@@ -197,6 +222,8 @@ rt_task_t *rt_task_create_el0(const char *name, void (*entry)(void *),
                              : "x30", "memory");
         }
     }
+    rt_ready_push(t);   /* 站68E:EL0 帧+el0 旗全就位后才入队(消灭
+                         * 半创建窗:入队即可调度/可扫描,故必待帧成) */
     return t;
 }
 
@@ -346,8 +373,14 @@ void rt_task_wake_sleepers(void)
              * 正身:child 被醒(READY)而队链丢失,调度永不再选,
              * 内核健康空转到地老天荒。孤儿=队操作在 fork/exec churn
              * 下丢链的直接证词。 */
-            if (t->state == RT_READY && !rt_rdy_find(t))
-                rt_stack_poison(i, t, lo, hi);
+            if (t->state == RT_READY && !rt_rdy_find(t)) {
+                /* 站68D:跨核陈旧读复检——他核 pick 可能在初读 READY
+                 * 之后摘链置 RUN(rt_pick_ready 锁内原子),find 失败仅
+                 * 证明"走链瞬间不在队",不足以定孤儿;复读 state 仍
+                 * READY 才是真孤儿(volatile 防编译器缓存初读)。 */
+                if (*(volatile u32 *)&t->state == RT_READY)
+                    rt_stack_poison(i, t, lo, hi);
+            }
         }
     }
 }
@@ -433,6 +466,33 @@ static void rt_queue_poison(int c, int p, unsigned long v1,
         rt_puts_hex(" v2 0x", v2, "");
         rt_puts_hex(" pool 0x", (u64)rt_pool_base(), "");
         rt_puts_hex("-0x", (u64)rt_pool_base() + RT_POOL_MAX, "\n");
+        rt_puts_hex("cur0 0x", (u64)rt_cur_arr[0], "");
+        rt_puts_hex(" cur1 0x", (u64)rt_cur_arr[1], "");
+        rt_puts_hex(" ticks ", rt_ticks, "\n");
+    }
+    panic_park();
+}
+
+/* 站68C:簿记域检违例——交叉存/蹦床帧当场实锤。域检在
+ * RT_SWITCH_BOOKKEEP 的 asm 内(str x3,[x2] 前查 x3∈[ksp-4096,ksp)),
+ * 违例换引导栈调本打印器。site=案发展开点(adr 取自违例展开的
+ * 合法续跑址,三展开各唯一;对 objdump/map 即指认 rt_switch_to /
+ * guest_irq / guest_el0_irq 中哪一个在交叉存)。纪律同上:全掩+
+ * 单次+裸 uart+park。 */
+void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site)
+{
+    if (!panic_done) {
+        panic_done = 1;
+        __asm__ volatile("msr daifset, #0xf");
+        puts_uart("rtos panic: bookkeep violation (station 68C guard)\n");
+        puts_uart("old: ");
+        puts_uart(old->name);
+        rt_puts_hex(" st 0x", old->state, "");
+        rt_puts_hex(" el0 ", old->el0, "\n");
+        rt_puts_hex("site 0x", site, "\n");
+        rt_puts_hex("sp 0x", poison_sp, "");
+        rt_puts_hex(" dom 0x", ksp - 4096, "-0x");
+        rt_puts_hex("", ksp, "\n");
         rt_puts_hex("cur0 0x", (u64)rt_cur_arr[0], "");
         rt_puts_hex(" cur1 0x", (u64)rt_cur_arr[1], "");
         rt_puts_hex(" ticks ", rt_ticks, "\n");
