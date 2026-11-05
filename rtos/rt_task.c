@@ -273,10 +273,28 @@ void rt_task_wake_all(u32 mask)
     }
 }
 
+void rt_task_wake_sleepers(void);
+static void rt_stack_poison(unsigned int i, rt_task_t *t, u64 lo, u64 hi)
+    __attribute__((noreturn));
+static void rt_queue_poison(int c, int p, unsigned long v1,
+                            unsigned long v2)
+    __attribute__((noreturn));
+
 void rt_task_wake_sleepers(void)
 {
     unsigned int i;
 
+    /* 站68:队链全审计先于槽检(每拍一次)——孤儿谓词(第③)只
+     * 说"不可达",审计四元先开口:链野/幽灵/环/尾脱链各归其
+     * 类+层号+双值(尾脱链的 v1=登记尾 v2=实走尾=两任尾主,
+     * 写手侧写在值里)。 */
+    {
+        int gc, gp;
+        unsigned long v1, v2;
+
+        if (rt_rdy_audit(&gc, &gp, &v1, &v2))
+            rt_queue_poison(gc, gp, v1, v2);
+    }
     for (i = 0; i < RT_POOL_MAX; i++) {
         rt_task_t *t = &pool[i];
 
@@ -301,6 +319,36 @@ void rt_task_wake_sleepers(void)
         if (TASK_LIVE(t) &&
             *(volatile u64 *)&task_stacks[i][STK_MAGIC_OFF] != RT_STACK_MAGIC)
             rt_panic("stack overflow", i);
+        /* 站68:栈域双守卫(58 挂脸族全案取证的仪器面)。活体标本
+         * 三脸解剖定谳:壳 slot 的 sp 字段落 idle 引导栈+蹦床 scratch
+         * 域(交叉污染帧:x30 槽被 scratch 任务指针毒化,恢复即 ret
+         * 进池数据执行——SP0 同步槽=guest_park 静默楔/SP_ELx 槽=
+         * rt_sync_fault panic 两脸一dễ;fork/exec 子的 ksp 毒化则令
+         * RT_EL0_ENTER 把 272B 帧推到蹦床域,scratch stp 再覆帧尾
+         * x27/x29/x30 三槽),主核楔死=vtimer 停走=rt_ticks 冻结=
+         * 一切 sleep_ticks 永睡=boot 无声死/交互死全族。守卫谓词:
+         * ① sp 必落自身栈域(EL0=本槽内核栈 4KB;内核=本槽栈行)
+         * ② EL0 子的 ksp 必恰等于本槽内核栈顶(创建时一次性写入,
+         * 变值即毒)。案发 tick 级指认:受害者名/sp/ksp/期望域 +
+         * 双核 cur——越域值落谁家即污染者线索。同栈哨兵语境:扫描
+         * 面无寄存器行;panic 纪律(全掩+单次+裸 uart)沿用。 */
+        if (TASK_LIVE(t)) {
+            u64 lo = t->el0 ? (u64)&rt_kstacks[i][0]
+                            : (u64)&task_stacks[i][0];
+            u64 hi = lo + (t->el0 ? sizeof(rt_kstacks[i])
+                                  : sizeof(task_stacks[i]));
+
+            if (t->sp < lo || t->sp >= hi ||
+                (t->el0 && t->ksp != (u64)&rt_kstacks[i][0] +
+                                         sizeof(rt_kstacks[i])))
+                rt_stack_poison(i, t, lo, hi);
+            /* 站68 第三谓词:READY 必达其队(孤儿守卫)——beater 脸
+             * 正身:child 被醒(READY)而队链丢失,调度永不再选,
+             * 内核健康空转到地老天荒。孤儿=队操作在 fork/exec churn
+             * 下丢链的直接证词。 */
+            if (t->state == RT_READY && !rt_rdy_find(t))
+                rt_stack_poison(i, t, lo, hi);
+        }
     }
 }
 
@@ -341,6 +389,53 @@ void rt_panic(const char *why, unsigned int slot)
         puts_uart(" (cur ");
         puts_uart(rt_cur->name);
         rt_puts_hex(", cpu 0x", rt_cpu_id(), ")\ncontext: tick scan\n");
+    }
+    panic_park();
+}
+
+/* 站68:守卫 panic——证据面:受害者五元(slot/名/态/el0/sp/ksp/
+ * 期望域)+双核 cur+ticks。毒值越谁的域=污染者在谁家语境,当场
+ * 指认。纪律同 rt_panic:全掩+单次+裸 uart+park。 */
+static void rt_stack_poison(unsigned int i, rt_task_t *t, u64 lo, u64 hi)
+{
+    if (!panic_done) {
+        panic_done = 1;
+        __asm__ volatile("msr daifset, #0xf");
+        puts_uart("rtos panic: stack poison (station 68 guard)\n");
+        puts_uart("task: ");
+        puts_uart(t->name);
+        rt_puts_hex(" slot ", i, "");
+        rt_puts_hex(" st 0x", t->state, "");
+        rt_puts_hex(" el0 ", t->el0, "\n");
+        rt_puts_hex("sp 0x", t->sp, "");
+        rt_puts_hex(" dom 0x", lo, "");
+        rt_puts_hex("-0x", hi, "");
+        rt_puts_hex(" ksp 0x", t->ksp, "\n");
+        rt_puts_hex("cur0 0x", (u64)rt_cur_arr[0], "");
+        rt_puts_hex(" cur1 0x", (u64)rt_cur_arr[1], "");
+        rt_puts_hex(" ticks ", rt_ticks, "\n");
+    }
+    panic_park();
+}
+
+/* 站68:队列毒 panic——泼溅源头在场者(第四谓词的收口面):毒值
+ * 落哪一层(c/p)、值本身=谁家地址(写手侧写)。纪律同上。 */
+static void rt_queue_poison(int c, int p, unsigned long v1,
+                            unsigned long v2)
+{
+    if (!panic_done) {
+        panic_done = 1;
+        __asm__ volatile("msr daifset, #0xf");
+        puts_uart("rtos panic: queue poison (station 68 guard)\n");
+        rt_puts_hex("cpu ", (u64)c, "");
+        rt_puts_hex(" prio ", (u64)p, "");
+        rt_puts_hex(" v1 0x", v1, "");
+        rt_puts_hex(" v2 0x", v2, "");
+        rt_puts_hex(" pool 0x", (u64)rt_pool_base(), "");
+        rt_puts_hex("-0x", (u64)rt_pool_base() + RT_POOL_MAX, "\n");
+        rt_puts_hex("cur0 0x", (u64)rt_cur_arr[0], "");
+        rt_puts_hex(" cur1 0x", (u64)rt_cur_arr[1], "");
+        rt_puts_hex(" ticks ", rt_ticks, "\n");
     }
     panic_park();
 }

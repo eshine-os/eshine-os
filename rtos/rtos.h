@@ -878,6 +878,8 @@ void rt_ready_push(rt_task_t *t);
 void rt_ready_requeue(rt_task_t *t); /* 自拣回流令牌:只回队不碰状态(站19) */
 void rt_preempt_requeue(rt_task_t *t); /* 抢占回队恒单份:先清残令牌(站19) */
 void rdy_remove(rt_task_t *t);   /* 站十八B:PI 降级摘除;站19 起兼清自拣令牌 */
+int  rt_rdy_find(rt_task_t *t);  /* 站68:READY 可达性谓词(孤儿守卫面) */
+int  rt_rdy_audit(int *c, int *p, unsigned long *v1, unsigned long *v2); /* 站68:队链全审计(泼溅源+尾脱链+环+幽灵) */
 void rt_wake_rx(void);
 void rt_tick_bookkeep(void);     /* tick ISR:唤醒/轮转/切判 */
 int  rt_need_switch(void);

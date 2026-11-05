@@ -102,6 +102,21 @@ static void rdy_enqueue(rt_task_t *t)
     u32 p = t->prio;
     u64 d = rt_spin_lock(&rdy_lk[c]);
 
+    /* 站68 修真(58 挂脸族定谳):池外伪任务(idle/idle1=引导语境
+     * 就地转正,不占池)永不得入队。案发链:rt_irq_dispatch 出口
+     * 对 rt_cur=引导期 idle 照走 rt_preempt_requeue→idle 入
+     * prio31 队(每靴 tick1-2 必现,守卫 2/2 实证)→空队 pick 恒
+     * 回 idle→调度器把 idle 当真任务切进(eret 陈旧引导帧)、
+     * idle->next 落自家 q[] FP 区→链写泼溅(rdy_tail 野化→
+     * tail->next 写进 BSS:rt_cur_arr/rt_ticks/壳 sp 全中)→
+     * 复合帧 x30=&pool[5] 劫持→guest_park 静默楔/rt_sync_fault
+     * panic/孤儿 child/REPL 挂/洪水全家桶。硬门=单窒息点,现役
+     * 两个调用面(IRQ 出口/sched 抢占)与未来调用面一并覆盖;
+     * idle 上下文仍经 idle->sp 帧机器存还(切换簿记不动此径)。 */
+    if (!rt_task_in_pool(t)) {
+        rt_spin_unlock(&rdy_lk[c], d);
+        return;
+    }
     t->next = NULL;
     if (!rdy_head[c][p])
         rdy_head[c][p] = t;
@@ -178,6 +193,92 @@ void rdy_remove(rt_task_t *t)
         }
     }
     rt_spin_unlock(&rdy_lk[c], d);
+}
+
+/* 站68:队列可达性谓词(孤儿守卫的只读访问器)。READY 不变量:
+ * 每个 READY 任务必可在其亲和层链上走达(队链丢失=READY 孤儿,
+ * 调度器永不再选——beater 脸活体解剖定谳:child READY+陈 pd 挂
+ * 在队外,idle 空转而内核 48 万拍全健康,全家桶无声楔的正身)。
+ * 只读不锁(守卫在 tick 语境,同核序贯;violation 由守卫 panic
+ * 单次收口,判据面允许瞬态模糊零容忍不适用——孤儿即孤儿)。 */
+int rt_rdy_find(rt_task_t *t)
+{
+    rt_task_t *cur = rdy_head[t->cpu][t->prio];
+
+    while (cur) {
+        if (cur == t)
+            return 1;
+        cur = cur->next;
+    }
+    return 0;
+}
+
+/* 站68:队链全审计(第五仪器,root-b 孤儿案)。谓词族:
+ * ① head/tail 必落池域或 NULL(泼溅源守卫,root-a 定谳日启用);
+ * ② 链必在 RT_POOL_MAX 步内到 NULL(环即爆,含自环);
+ * ③ 链实际末元必恰等于 rdy_tail(尾脱链=stale-tail:后续
+ *    enqueue 会把新任务链接到已出链的旧尾上=孤儿制造机,
+ *    守卫标本三号:child READY 而 find() 不可达,sp/ksp 全净);
+ * ④ 链上每员必落池域且态 ∈ {READY, RUN}(RUN=回流令牌,
+ *    站19 契约;SLEEP/BLOCK/FREE/DEAD 在链=幽灵)。
+ * 违规返回证据四元(c/p/v1 违规值/v2 副证),0=净。 */
+int rt_rdy_audit(int *c_out, int *p_out, unsigned long *v1,
+                 unsigned long *v2)
+{
+    rt_task_t *pool_lo = rt_pool_base();
+    rt_task_t *pool_hi = pool_lo + RT_POOL_MAX;
+    u32 c, p;
+
+    for (c = 0; c < RT_NCPU; c++)
+        for (p = 0; p < RT_NPRIO; p++) {
+            rt_task_t *h = rdy_head[c][p];
+            rt_task_t *cur, *prev = NULL;
+            u32 steps = 0;
+
+            if (h && (h < pool_lo || h >= pool_hi)) {
+                *c_out = (int)c; *p_out = (int)p;
+                *v1 = (unsigned long)h; *v2 = 0;
+                return 1;
+            }
+            if (!h) {
+                if (rdy_tail[c][p]) {   /* 头空尾非空=残迹 */
+                    *c_out = (int)c; *p_out = (int)p;
+                    *v1 = (unsigned long)rdy_tail[c][p]; *v2 = 0;
+                    return 2;
+                }
+                continue;
+            }
+            for (cur = h; cur; cur = cur->next) {
+                if (cur < pool_lo || cur >= pool_hi) {
+                    *c_out = (int)c; *p_out = (int)p;
+                    *v1 = (unsigned long)cur; *v2 = (unsigned long)prev;
+                    return 3;           /* 链走野 */
+                }
+                if (cur->state != RT_READY && cur->state != RT_RUN &&
+                    cur->state != RT_DEAD) {   /* DEAD=exit 瞬态窗:
+                                               * state=DEAD→rdy_remove 之间
+                                               * tick 可落窗(合法),恒续
+                                               * 则由 exit 本身收尾 */
+                    *c_out = (int)c; *p_out = (int)p;
+                    *v1 = (unsigned long)cur;
+                    *v2 = (u64)cur->state;
+                    return 4;           /* 幽灵在链 */
+                }
+                prev = cur;
+                if (++steps > RT_POOL_MAX + 1) {
+                    *c_out = (int)c; *p_out = (int)p;
+                    *v1 = (unsigned long)cur; *v2 = steps;
+                    return 5;           /* 环 */
+                }
+            }
+            if (prev != rdy_tail[c][p]) {
+                *c_out = (int)c; *p_out = (int)p;
+                *v1 = (unsigned long)rdy_tail[c][p];
+                *v2 = (unsigned long)prev;
+                return 6;               /* 尾脱链(stale-tail) */
+            }
+        }
+    return 0;
 }
 
 /* 回流令牌:令牌回队但不碰状态(运行中任务不得被改 READY——rt_ready_push

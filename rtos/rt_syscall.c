@@ -830,6 +830,28 @@ static long sys_writev(u64 *frame)
         u64 len = iov[i * 2 + 1];
         char kbuf[256];
 
+        /* 站68:洪水绊线(58 族洪水脸仪器)——musl __stdio_write 走飞
+         * 的签名=iov 巨型化(rem 下溢后 base 恒进、len 恒巨,每次
+         * writev 请求 64KB+;活体解剖:洪水始于 gated hello 首个
+         * printf 的 "pid=" 处,8.4MB 纯 0x20 以 128B 周期经 vuart,
+         * guest 活环,无任务字段中毒=独立于帧毒脸的第二分支)。
+         * 合法写从不过 64KB(demo 面最大=busybox 8KB 档):首发
+         * 即打证(fd/base/len+任务名+pid),续发静默——绊线不改
+         * 语义(照旧 256 钳),洪水续流证在前台。 */
+        if (len > 65536UL) {
+            static int said;
+
+            if (!said) {
+                said = 1;
+                rt_puts("wvtrip: huge iov\n");
+                rt_puts_hex("  fd ", (u64)FR(0), "");
+                rt_puts_hex(" base 0x", (u64)ub, "");
+                rt_puts_hex(" len 0x", len, "\n");
+                rt_puts("  task ");
+                rt_puts(rt_cur->name);
+                rt_puts_hex(" pid ", (u64)rt_cur->tid, "\n");
+            }
+        }
         if (len > sizeof(kbuf))
             len = sizeof(kbuf);
         if (len && !access_ok(ub, len))

@@ -813,6 +813,27 @@ NOTICE 合规面 → release/eshine-os-\<ver\>.tar.gz;**发布=可解包即靴**
 脚本尾自靴判据:解包临时目录现场重演 musl hello 全链）。门 [180]=文件面
 +语法面+指令面（docker build 实跑=站级冒烟,门禁不嵌重构建=时间预算律）。
 
+**站68 58 挂脸族全案取证（取证专站:五守卫+四把钥匙+root-a 修真;门禁步
+数不变）**：boot 20-75% 挂三脸（静默楔/panic ELR=&pool[5] 池数据当代码
+/8.4MB 精确 128B 周期空格洪水）+REPL 残面,四镜钥匙三把（QEMU gdbstub
+VA 读走当前 CPU 翻译体制=EL2 语境客户内存读空→`monitor xp` 物理读;monitor
+输出在 stderr;每靴 gdb 端口轮换防 TIME_WAIT 假象）。**tick 扫描守卫族**
+（rt_task.c/rt_sched.c:sp 栈域+ksp 恰等+READY 队列可达（孤儿谓词）+
+队链全审计（链野/幽灵/环/尾脱链四类,v1/v2 双值证据）+writev 巨 iov 绊线
+（musl rem 下溢签名=64KB+ 请求）——案发 ≤1 拍带全证 panic,健康靴零输出）。
+**root-a 定谳+修真**：IRQ 出口 rt_preempt_requeue 对 rt_cur=引导期 idle
+照走→idle（池外伪任务,不占池是设计铁律）每靴 tick1-2 必入 prio31 队
+（守卫 2/2+冒烟 2/2 实证）→空队 pick 恒回 idle 被当真任务切进（eret 陈旧
+引导帧）→idle->next 字段撞自家 q[] FP 区→队链写野喷（rdy_tail 野化,
+rt_cur_arr/rt_ticks/壳 sp BSS 多点中弹）→毒帧恢复 ret 进池数据执行→
+SP0 槽=guest_park 静默楔/SP_ELx 槽=rt_sync_fault panic 两脸一dễ;修真
+=rdy_enqueue 池域硬门 rt_task_in_pool（单窒息点）;证效=队列毒五靴全消
++全案首次完整走通 governed 零开火。**root-b/c 武装待续**：fork 子孤儿
+（READY 而 sp/ksp 全净队不可达,守卫活捉×2,窗=tick26-33 loader 首阻,
+cur=ramfs 服务器答中在场）与 REPL/RX 残面——全审计下次开火即分类指认写手
+（68B 续侦,判据面=守卫四元）。A/B 对照纪律:0/3 集中挂=回归,1/3 随机挂
+=历史病;守卫自身必须过全量冒烟（首版曾把设计常态当犯罪抓 2/2）。
+
 **站62 版本 pin+SBOM 台账（[179]——外部件账本,批次 D 第三站）**：
 **3rd/manifest.yaml**（机器可读事实源;八组件:musl 1.2.5/cjson 1.7.18/
 zlib 1.3.1（in-repo,工件名含钉死版本）+busybox 1.36.1/linux-image 6.6
