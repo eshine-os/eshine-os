@@ -339,6 +339,22 @@ guest_irq:
      * 全串位,heartbeat elr=0x0 IABT 即时定谳——故用抓现值习语
      * (同 RT_EL0_RET mov x2,sp),消灭重载+补偏的重复记账 */
     mov     x5, sp                 /* GPR 块基 = task->sp+16(换库前) */
+    /* 站68C-17:.Lel1 臂点窗检——x5(next->sp+16,簿记臂+.Lpop ldp
+     * 推进)即将写入 SP_EL1;落蹦床窗=某任务 sp 字段=蹦床域=出生
+     * 链源头,违例走臂点桩(受害者=next 当场点名)。x9/x10 帧
+     * 未弹恒死;符号窗防构建漂移。 */
+    ldr     x9, =rt_el0_tramp
+    sub     x10, x9, #512
+    cmp     x5, x10
+    b.lo    15f
+    add     x10, x9, #576
+    cmp     x5, x10
+    b.hs    15f
+    mov     x3, x5
+    ldr     x11, [x0, #RT_KSTK_OFF]
+    adr     x4, 15f
+    b       .Lbk_viol_arm
+15:
     msr     spsel, #1
     mov     sp, x5                 /* SP_EL1 := GPR 块基,留在本库弹 */
 .Lregs:

@@ -310,11 +310,40 @@ static long sys_wait4(u64 *frame)
 /* COPY_UCONTEXT(参考实现 fork 形状):子进程 eager 全拷+子任务帧整拷
  * (272B 紧布局),x0=魔数辨 child。协作式无抢占窗,帧覆写与子首
  * 派发之间零竞(父 prio 低于子,父续跑到显式让位)。 */
+/* 站68C-16:fork 阶段 SP_EL1 检查点——tick 环实测毒入窗=单 tick
+ * 内 fork 执行中,且 as_copy 检测器(68C-15)静默=毒先于 as_copy。
+ * 各阶段布点精确定位。spsel 双 ferry 读 bank(直读 UNDEF,站28)。 */
+static u64 fork_el1_ref;
+static u64 fork_el1_init_done;
+
+static void fork_sp_el1_chk(const char *tag)
+{
+    u64 sel, el1;
+
+    __asm__ volatile("mrs %0, spsel" : "=r"(sel));
+    __asm__ volatile("msr spsel, #1");
+    __asm__ volatile("mov %0, sp" : "=r"(el1));
+    __asm__ volatile("msr spsel, %0" :: "r"(sel));
+    if (!fork_el1_init_done) {
+        fork_el1_ref = el1;
+        fork_el1_init_done = 1;
+        return;
+    }
+    if (el1 != fork_el1_ref) {
+        rt_puts("FORK-CHK ");
+        rt_puts(tag);
+        rt_puts_hex(" ref 0x", fork_el1_ref, "");
+        rt_puts_hex(" now 0x", el1, "\n");
+        fork_el1_ref = el1;
+    }
+}
+
 static long sys_fork(u64 *frame)
 {
     struct rt_proc *pp = rt_cur->proc, *cp;
     rt_task_t *ct;
 
+    fork_sp_el1_chk("0-entry");
     if (!pp)
         return -ES_EINVAL;
     if (!(pp->caps & CAP_SPAWN))
@@ -331,8 +360,10 @@ static long sys_fork(u64 *frame)
     cp->parent = pp->pid;
     rt_fd_fork(pp, cp);                /* 站31:fdtable 组拷+双侧引用 */
     rt_sig_fork(pp, cp);               /* 站32:handler/blocked 继承 */
+    fork_sp_el1_chk("1-precreate");
     ct = rt_task_create_el0("child", NULL, NULL, rt_cur->prio + 1,
                             (void *)rt_cur->usp);
+    fork_sp_el1_chk("2-postcreate");
     if (!ct) {
         rt_proc_reap(cp);
         return -ES_EAGAIN;
@@ -346,6 +377,7 @@ static long sys_fork(u64 *frame)
         dst[2] = RT_FORK_MAGIC;          /* x0 槽@16 */
     }
     ct->usp = rt_cur->usp;
+    fork_sp_el1_chk("3-postusp");
     ct->tpidr_el0 = rt_cur->tpidr_el0;  /* 站65:子继承父 TLS 指针(fork
                                       * 语义;站35 线程面 SETTLS 的
                                       * fork 缺角——busybox ash fork 孙
@@ -357,6 +389,7 @@ static long sys_fork(u64 *frame)
     ct->ttbr = rt_proc_ttbr(cp);
     ct->tid = (u64)cp->pid;           /* 站35:leader tid=pid */
     cp->leader = ct;
+    fork_sp_el1_chk("4-prereturn");
     return (long)cp->pid;
 }
 

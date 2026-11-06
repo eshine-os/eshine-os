@@ -547,6 +547,22 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
         rt_puts_hex("cur0 0x", (u64)rt_cur_arr[0], "");
         rt_puts_hex(" cur1 0x", (u64)rt_cur_arr[1], "");
         rt_puts_hex(" ticks ", rt_ticks, "\n");
+        /* 站68C-14:tick 环四元历史(旧→新)——蹦床值首现 tick
+         * =真凶时刻(采样器驻 rt_tick_bookkeep,spsel 双 ferry)。 */
+        {
+            extern u64 ghost_ring[16][4];
+            extern u32 ghost_ring_idx;
+            u32 k;
+
+            for (k = 0; k < 16; k++) {
+                u32 s = (ghost_ring_idx + k) & 15u;
+
+                rt_puts_hex("R sp_el1 0x", ghost_ring[s][0], "");
+                rt_puts_hex(" sel ", ghost_ring[s][1], "");
+                rt_puts_hex(" tp ", ghost_ring[s][2], "");
+                rt_puts_hex(" @", ghost_ring[s][3], "\n");
+            }
+        }
     }
     panic_park();
 }

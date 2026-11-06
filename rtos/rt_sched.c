@@ -369,10 +369,31 @@ void rt_wake_rx(void)
     rt_task_wake_all(RT_RX_BIT);    /* 扫池唤醒:命中等待位的 BLOCK->READY */
 }
 
+/* 站68C-14:幽灵残值 tick 环采样——理论穷尽后上机械仪器:每 tick
+ * 存 SP_EL1/spsel/tpidr 四元入 16 槽环(蹦床值首现的 tick=真凶时刻,
+ * 出生检查开火时整环打印)。spsel 双 ferry 读 bank(直读 UNDEF,站28)。 */
+u64 ghost_ring[16][4];
+u32 ghost_ring_idx;
+
 void rt_tick_bookkeep(void)
 {
     rt_task_t *t;
     u32 c = rt_cpu_id();
+    {
+        u64 sel, el1, tp;
+        u32 slot;
+
+        __asm__ volatile("mrs %0, spsel" : "=r"(sel));
+        __asm__ volatile("msr spsel, #1");
+        __asm__ volatile("mov %0, sp" : "=r"(el1));
+        __asm__ volatile("msr spsel, %0" :: "r"(sel));
+        __asm__ volatile("mrs %0, tpidr_el1" : "=r"(tp));
+        slot = ghost_ring_idx++ & 15u;
+        ghost_ring[slot][0] = el1;
+        ghost_ring[slot][1] = sel;
+        ghost_ring[slot][2] = tp;
+        ghost_ring[slot][3] = rt_ticks;
+    }
 
     need_switch[c] = 0;
     /* 站二十:睡客扫描单写者化——核 0 独扫全池(推入各自亲和队,
