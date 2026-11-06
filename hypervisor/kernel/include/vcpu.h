@@ -65,9 +65,12 @@ struct vcpu {
                                  * 位与 vgic 帧身份);帧尾,asm 不触及 */
 };
 
-/* 站68C-8:asm 偏移契约(tpidr_el1 逐陷阱存还,与 sp@248/sp_el0@416 同律) */
+/* 站68C-8:asm 偏移契约(tpidr_el1 逐陷阱存还,与 sp@248/sp_el0@416 同律);
+ * 站68C-13:idx 还原钳位(核号权威=帧内自带,段内污染活不过一量子) */
 _Static_assert(__builtin_offsetof(struct vcpu, tpidr_el1) == 432,
                "vcpu.tpidr_el1 must be @432 for vcpu_entry.S");
+_Static_assert(__builtin_offsetof(struct vcpu, idx) == 1032,
+               "vcpu.idx must be @1032 for vcpu_entry.S clamp");
 
 /* 退回宿主的原因码(vcpu_run 返回值) */
 #define VCPU_EXIT   0UL         /* HVC #1:guest 主动退出 -> VM 层 TEARDOWN->DEAD */

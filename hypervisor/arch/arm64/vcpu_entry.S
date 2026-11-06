@@ -103,7 +103,13 @@ trap_resume:                          /* x0 = vcpu */
     ldr     x1, [x0, #416]             /* 站十四:还原 guest current */
     msr     sp_el0, x1
     ldr     x1, [x0, #432]             /* 站68C-8:核号随帧走,eret 强制还原 */
-    msr     tpidr_el1, x1
+    /* 站68C-13:核号钳位——还原客人存值在"整段被毒"下=忠实还原
+     * 毒值锁死(实测:tpidr 整段=1 时所有蹦床臂"一致地"算 core1
+     * 蹦床,复核全绿=一致性非正确性)。改钳 v->idx(帧内权威核号,
+     * vcpu 构造即定):任何段内污染活不过一个量子。idx 偏移 asm
+     * 契约:帧尾(见 vcpu.h 帧尾注释)。 */
+    ldr     x2, [x0, #1032]           /* idx@1032(_Static_assert 锁) */
+    msr     tpidr_el1, x2
     ldr     x1, [x0, #256]
     msr     elr_el2, x1
     ldr     x1, [x0, #264]
