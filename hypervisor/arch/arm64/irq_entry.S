@@ -153,4 +153,22 @@ preempt_save_frame:
     str     x0, [x29, #256]
     mrs     x0, spsr_el2
     str     x0, [x29, #264]
+    /* 站68C-9:IRQ 陷阱存的蹦床窗检查(tag=2;此路径从未审计)。
+     * x29=vcpu 暂存 x28(bl 坏 x0-x18 含 x29),归位后续跑。 */
+    ldr     x9, [x29, #248]
+    movz    x10, #0x4018, lsl #16
+    movk    x10, #0x8e00
+    cmp     x9, x10
+    b.lo    9f
+    movz    x10, #0x4018, lsl #16
+    movk    x10, #0x9180
+    cmp     x9, x10
+    b.hs    9f
+    mov     x28, x29
+    mov     x0, x29
+    mov     x1, x9
+    mov     x2, #2
+    bl      hv_sp_el1_tramp_hit
+    mov     x29, x28
+9:
     ret

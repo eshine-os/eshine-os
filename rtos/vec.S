@@ -292,6 +292,23 @@ guest_irq:
     ldr     x7, =rt_el0_tramp       /* 32B/核:lsl #5 索引 */
     add     x7, x7, x6, lsl #5
     add     x7, x7, #32
+    /* 站68C-11:.Lpop 蹦床臂复核(68C-10 同律)——x7 须恰=tramp+
+     * tpidr_now*32+32。错核臂(实测 core0 语境被臂 core1 蹦床顶
+     * 0x40189000=幽灵链出生)违例走主桩双值同帧。x9/x10 pops 前
+     * 恒死。 */
+    mrs     x9, tpidr_el1
+    ldr     x10, =rt_el0_tramp
+    add     x10, x10, x9, lsl #5
+    add     x10, x10, #32
+    cmp     x7, x10
+    b.eq    13f
+    mov     x3, x7
+    ldr     x2, =rt_cur_arr
+    ldr     x2, [x2, x9, lsl #3]
+    ldr     x11, [x2, #RT_KSTK_OFF]
+    adr     x4, 13f
+    b       .Lbk_viol
+13:
     str     x5, [sp, #-16]          /* usp → 旧 elr 槽 */
     str     x7, [sp, #-8]           /* 蹦床顶 → 旧 psr 槽 */
     RT_POP_GPRS                     /* +256:此后 sp=帧基+256 */
@@ -400,6 +417,23 @@ guest_sync:
      * mov sp 后即回 SPsel=0 内核栈帧,DAIF 已掩无中断窗 */
     msr     spsel, #1
     mov     sp, x11
+    /* 站68C-10:蹦床臂复核——x11 须恰=tramp+tpidr_now*32+32。臂值
+     * 与重读核号不符=ENTER 内 tpidr 变脸/计算源错(实测 core0 语境
+     * SP_EL1 被臂到 core1 蹦床=幽灵链出生)。违例走主桩,双值同帧
+     * 打印。x9-x11 帧后恒死。 */
+    mrs     x9, tpidr_el1
+    ldr     x10, =rt_el0_tramp
+    add     x10, x10, x9, lsl #5
+    add     x10, x10, #32
+    cmp     x11, x10
+    b.eq    12f
+    mov     x3, x11                 /* 桩协议:毒值=错臂的蹦床顶 */
+    ldr     x2, =rt_cur_arr
+    ldr     x2, [x2, x9, lsl #3]
+    ldr     x11, [x2, #RT_KSTK_OFF]
+    adr     x4, 12f
+    b       .Lbk_viol
+12:
     msr     spsel, #0
 .endm
 
@@ -425,6 +459,21 @@ guest_sync:
     add     x1, x1, #32
     msr     spsel, #1
     mov     sp, x1                  /* SP_EL1 := 蹦床顶(不变量) */
+    /* 站68C-11:RET 蹦床臂复核(68C-10/.Lpop 同律,x9/x10 pops 前
+     * 恒死)——syscall 返回路径的错核臂在此现形。 */
+    mrs     x9, tpidr_el1
+    ldr     x10, =rt_el0_tramp
+    add     x10, x10, x9, lsl #5
+    add     x10, x10, #32
+    cmp     x1, x10
+    b.eq    14f
+    mov     x3, x1
+    ldr     x2, =rt_cur_arr
+    ldr     x2, [x2, x9, lsl #3]
+    ldr     x11, [x2, #RT_KSTK_OFF]
+    adr     x4, 14f
+    b       .Lbk_viol
+14:
     msr     spsel, #0
     mov     sp, x2                  /* 弹栈归 GPR 块(两库同址) */
     RT_POP_GPRS

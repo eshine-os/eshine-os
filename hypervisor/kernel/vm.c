@@ -1058,6 +1058,24 @@ bool sched_pump(void)
  * "跑到出";无量子无轮转,PPI26 不配);空转 WFE:本核 27(睡客
  * 醒)与 SEV 邮箱(CPU_ON 的 poke)皆可唤醒。noreturn:
  * secondary_main 直落于此。 */
+/* 站68C-9:SP_EL1 存还面蹦床窗命中打印器(68D 幽灵链注入点直捕)。
+ * guest 蹦床区(rt_el0_tramp±窗,按构建 nm 重取——本诊断窗口与
+ * guest 侧 68C-7 同窗)绝无合法 SP_EL1 流通值:命中即=毒值正经
+ * EL2 存还面注入/还原 vcpu 帧。tag:1=同步陷阱存 2=IRQ 陷阱存
+ * 3=还原。裸 console_puts(EL2 语境,勿锁)。 */
+void hv_sp_el1_tramp_hit(struct vcpu *v, u64 val, u64 tag)
+{
+    console_puts("[SP_EL1-TRAMP] cpu=");
+    util_putdec(cpu_id());
+    console_puts(" vcpu=");
+    util_putdec(v->idx);
+    console_puts(" val=");
+    console_puthex(val);
+    console_puts(" tag=");
+    console_puthex(tag);
+    console_puts("\n");
+}
+
 void pump_cpu(u32 cpu)
 {
     for (;;) {

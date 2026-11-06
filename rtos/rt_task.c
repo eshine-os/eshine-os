@@ -525,6 +525,15 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
             rt_puts_hex(" fx29 0x", fx29, "");
             rt_puts_hex(" up 0x", up, "");
             rt_puts_hex(" upret 0x", upret, "\n");
+            /* 站68C-12:帧头三槽——初始帧签名(elr/psr/x0:fork 子
+             * frame_init_el0 只写此三+零余槽;若 [0]=0/[1]=0 则毒帧
+             * =fork 帧手术落蹦床,直指 ct->sp/frame_init 的 x1)。 */
+            rt_puts_hex("f.elr 0x",
+                        *(volatile u64 *)(unsigned long)poison_sp, "");
+            rt_puts_hex(" f.psr 0x",
+                        *(volatile u64 *)(unsigned long)(poison_sp + 8), "");
+            rt_puts_hex(" f.x0 0x",
+                        *(volatile u64 *)(unsigned long)(poison_sp + 16), "\n");
         }
         /* 站68C-5b:任务字段五元——old/next 的 sp/usp 现值判幽灵
          * 上栈路径:old->sp=蹦床=臂点已毒(sp 字段复活);old->sp

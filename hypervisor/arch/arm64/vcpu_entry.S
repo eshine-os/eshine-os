@@ -60,6 +60,24 @@ el1_trap:
     add     x9, x9, x1, lsl #12      /* cpu * 0x1000 */
     add     x9, x9, #0x1000          /* 本核栈顶(512 * 8) */
     mov     sp, x9                   /* SPSel=1 -> SP_EL2 */
+    /* 站68C-9:同步陷阱存的蹦床窗检查——guest 蹦床区绝无合法
+     * SP_EL1 流通值,命中=毒值入 vcpu 帧的当场(核/vcpu/值)。
+     * x28 帧后恒死作 vcpu 暂存(bl 坏 x0-x18)。 */
+    ldr     x9, [x0, #248]
+    movz    x10, #0x4018, lsl #16
+    movk    x10, #0x8e00
+    cmp     x9, x10
+    b.lo    8f
+    movz    x10, #0x4018, lsl #16
+    movk    x10, #0x9180
+    cmp     x9, x10
+    b.hs    8f
+    mov     x28, x0
+    mov     x1, x9
+    mov     x2, #1
+    bl      hv_sp_el1_tramp_hit
+    mov     x0, x28
+8:
     b       el1_sync                  /* x0 = vcpu;此路径不再返回 */
 
 /* ---- 续跑:帧即真相 -> 加载 -> eret(noreturn) ---- */
@@ -67,6 +85,21 @@ el1_trap:
 trap_resume:                          /* x0 = vcpu */
     ldr     x1, [x0, #248]
     msr     sp_el1, x1
+    /* 站68C-9:还原点蹦床窗检查——毒帧被 eret 回 guest 前拦截
+     * (tag=3),与两存(tag=1/2)合围注入-消费全链。 */
+    movz    x9, #0x4018, lsl #16
+    movk    x9, #0x8e00
+    cmp     x1, x9
+    b.lo    7f
+    movz    x9, #0x4018, lsl #16
+    movk    x9, #0x9180
+    cmp     x1, x9
+    b.hs    7f
+    mov     x28, x0
+    mov     x2, #3
+    bl      hv_sp_el1_tramp_hit
+    mov     x0, x28
+7:
     ldr     x1, [x0, #416]             /* 站十四:还原 guest current */
     msr     sp_el0, x1
     ldr     x1, [x0, #432]             /* 站68C-8:核号随帧走,eret 强制还原 */
