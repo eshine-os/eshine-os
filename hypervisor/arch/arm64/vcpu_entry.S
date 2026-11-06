@@ -41,6 +41,11 @@ el1_trap:
     str     x1, [x0, #248]
     mrs     x1, sp_el0                /* 站十四:guest current,逐陷阱入帧 */
     str     x1, [x0, #416]
+    mrs     x1, tpidr_el1             /* 站68C-8:guest 核号随帧走——EL2 从不
+                                       * 存还则物理 TPIDR 残留跨核互染(实测
+                                       * core0 语境读到 1:蹦床槽/簿记索引全按
+                                       * core1 算=幽灵链出生) */
+    str     x1, [x0, #432]
     mrs     x1, elr_el2
     str     x1, [x0, #256]
     mrs     x1, spsr_el2
@@ -64,6 +69,8 @@ trap_resume:                          /* x0 = vcpu */
     msr     sp_el1, x1
     ldr     x1, [x0, #416]             /* 站十四:还原 guest current */
     msr     sp_el0, x1
+    ldr     x1, [x0, #432]             /* 站68C-8:核号随帧走,eret 强制还原 */
+    msr     tpidr_el1, x1
     ldr     x1, [x0, #256]
     msr     elr_el2, x1
     ldr     x1, [x0, #264]

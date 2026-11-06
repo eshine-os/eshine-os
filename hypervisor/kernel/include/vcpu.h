@@ -32,6 +32,11 @@ struct vcpu {
     u64 sp_el0;                 /* guest SP_EL0(arm64 内核 current;第十四站) */
     u64 mdscr;                  /* 站53:per-VM MDSCR_EL1(MDCR_EL2.TDA 陷阱,
                                  * EC 0x18 代访;debug 族跨 VM 隔离) */
+    u64 tpidr_el1;              /* 站68C-8:guest 核号随帧走。物理 TPIDR_EL1
+                                 * EL2 从不存还=核间残留互染(实测 core0 语境
+                                 * 读到 1:蹦床槽按 core1 算=SP_EL1 臂错核蹦
+                                 * 床=幽灵链出生;簿记 rt_cur_arr 同按错核索
+                                 * 引)。逐陷阱存还,每次 eret 强制还原。 */
     /* SIMD per-VM 帧(第十六站):Q0-Q31 + FPCR/FPSR。宿主零 FP
      * (-mgeneral-regs-only),泵在 vcpu_run 前装/后存(站七 vtimer
      * 同形),guest FP 现场跨客切换无损。16B 对齐(stp q 对要求);
@@ -59,6 +64,10 @@ struct vcpu {
     u64 idx;                     /* 站19D:VM 内 vCPU 序(0/1;VMPIDR 低
                                  * 位与 vgic 帧身份);帧尾,asm 不触及 */
 };
+
+/* 站68C-8:asm 偏移契约(tpidr_el1 逐陷阱存还,与 sp@248/sp_el0@416 同律) */
+_Static_assert(__builtin_offsetof(struct vcpu, tpidr_el1) == 432,
+               "vcpu.tpidr_el1 must be @432 for vcpu_entry.S");
 
 /* 退回宿主的原因码(vcpu_run 返回值) */
 #define VCPU_EXIT   0UL         /* HVC #1:guest 主动退出 -> VM 层 TEARDOWN->DEAD */

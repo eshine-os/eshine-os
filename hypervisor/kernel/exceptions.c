@@ -333,6 +333,8 @@ void el1_sync(struct vcpu *v)
                 tv->vtimer_ctl = 0UL;
                 tv->vtimer_cval = 0UL;
                 tv->sp_el0 = 0UL;
+                tv->tpidr_el1 = vi;   /* 站68C-8:新帧核号随帧(客入口自写
+                                       * 后逐陷阱存还,物理残留不再互染) */
                 tv->wait_reason = 0UL;
                 tv->wait_state = 0UL;          /* 出泊:映射核专泵即扫即跑 */
                 v->gprs[0] = 0UL;              /* PSCI_SUCCESS */
