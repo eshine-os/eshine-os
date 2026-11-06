@@ -180,6 +180,12 @@ guest_park:
     mov     x2, x0                 /* old 语义改受害者(臂点语境) */
     b       .Lbk_viol
 
+/* 站68C-6:usp 窗检违例包装(x5=毒 usp 承 x3;受害者=next)。 */
+.Lbk_viol_usp:
+    mov     x3, x5
+    mov     x2, x0
+    b       .Lbk_viol
+
 /* 站68C:簿记域检违例桩(三展开点共用)。x2=old 任务,x3=毒 sp,
  * x11=ksp,x4=案发展开点,x0=next(簿记的切换目标)。当前 sp=毒值
  * (蹦床域)不可用,换引导栈调 C 打印器;noreturn(打印+park)。
@@ -213,6 +219,28 @@ guest_park:
 
 guest_irq:
     RT_PUSH_GPRS
+    /* 站68C-7:SPx 入口蹦床窗检(幽灵出生现场直捕)。帧压毕(x9-x12
+     * 已存可自由用),若活跃 sp 落蹦床窗 [tramp-512, tramp+NCPU*32
+     * +512)即:本 IRQ 正把 272B 帧压上蹦床=出生瞬间,elr/spsr=谁在
+     * EL1h 拿蹦床当栈(种子身份)。走主桩全套现场捕获,site 分址。 */
+    mrs     x9, spsel
+    cbz     x9, 4f
+    mov     x10, sp
+    ldr     x11, =rt_el0_tramp
+    sub     x12, x11, #512
+    cmp     x10, x12
+    b.lo    4f
+    add     x12, x11, #576         /* tramp+2*32+512(NCPU=2) */
+    cmp     x10, x12
+    b.hs    4f
+    mrs     x9, tpidr_el1          /* 核号(x9 前承 spsel=1) */
+    ldr     x2, =rt_cur_arr
+    ldr     x2, [x2, x9, lsl #3]   /* rt_cur=被中断语境所属任务 */
+    ldr     x11, [x2, #RT_KSTK_OFF] /* 桩协议:x11=ksp */
+    mov     x3, x10                /* 桩协议:毒 sp=现活跃栈(蹦床帧) */
+    adr     x4, 4f
+    b       .Lbk_viol
+4:
     mrs     x0, elr_el1
     mrs     x1, spsr_el1
     stp     x0, x1, [sp, #-16]!
@@ -246,6 +274,20 @@ guest_irq:
      * SP_EL0 被帧顶覆写,壳以内核栈入场,首压栈即越权→诚实终态,
      * 冒烟定谳);SP_EL1 同刻复位蹦床(eret→EL0 不变量) */
     ldr     x5, [x0, #672]          /* task->usp(偏移断言在 rtos.h) */
+    /* 站68C-6:EL0 复活的 usp 窗检——usp 须落用户窗 [0x40200000,
+     * 0x80000000)。毒 usp(0/内核窗/蹦床)经下方 mov sp,x5 即以
+     * 毒栈入 EL0,后续一切压栈落毒区=幽灵链种子(实测幽灵 SP_EL1
+     * =蹦床残值+SP_EL0=冻结处理器栈,壳 sp/usp 字段全净,字段毒
+     * 化路径全排除后唯一幸存口)。违例 x3:=x5 复用臂点桩,site=
+     * adr 本点与保存/臂点分址可辨。x4/x11/x12 帧后恒死。 */
+    movz    x11, #0x4020, lsl #16
+    cmp     x5, x11
+    adr     x4, 6f
+    b.lo    .Lbk_viol_usp
+    movz    x12, #0x8000, lsl #16
+    cmp     x5, x12
+    b.hs    .Lbk_viol_usp
+6:
     mrs     x6, tpidr_el1
     ldr     x7, =rt_el0_tramp       /* 32B/核:lsl #5 索引 */
     add     x7, x7, x6, lsl #5
