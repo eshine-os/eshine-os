@@ -479,7 +479,8 @@ static void rt_queue_poison(int c, int p, unsigned long v1,
  * 合法续跑址,三展开各唯一;对 objdump/map 即指认 rt_switch_to /
  * guest_irq / guest_el0_irq 中哪一个在交叉存)。纪律同上:全掩+
  * 单次+裸 uart+park。 */
-void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site)
+void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
+                           u64 elr, u64 spsr, u64 next, u64 sp_el1)
 {
     if (!panic_done) {
         panic_done = 1;
@@ -490,9 +491,17 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site)
         rt_puts_hex(" st 0x", old->state, "");
         rt_puts_hex(" el0 ", old->el0, "\n");
         rt_puts_hex("site 0x", site, "\n");
-        rt_puts_hex("sp 0x", poison_sp, "");
+        rt_puts_hex(" sp 0x", poison_sp, "");
         rt_puts_hex(" dom 0x", ksp - 4096, "-0x");
         rt_puts_hex("", ksp, "\n");
+        /* 站68C-2 全现场四元:被中断 PC/PSTATE+切换目标+案发库。
+         * spsr[0]=被中断 SPSel,[3:2]=特权级(M=0 EL0/5 EL1h)——
+         * "谁在 EL1+SPSel=1 且 SP_EL1=蹦床残值"当场读出;elr 对
+         * map/objdump 即函数名=原罪语境直证。 */
+        rt_puts_hex("elr 0x", elr, "");
+        rt_puts_hex(" psr 0x", spsr, "");
+        rt_puts_hex(" next 0x", next, "");
+        rt_puts_hex(" sp_el1 0x", sp_el1, "\n");
         rt_puts_hex("cur0 0x", (u64)rt_cur_arr[0], "");
         rt_puts_hex(" cur1 0x", (u64)rt_cur_arr[1], "");
         rt_puts_hex(" ticks ", rt_ticks, "\n");

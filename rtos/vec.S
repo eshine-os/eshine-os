@@ -162,13 +162,21 @@ guest_park:
 .endm
 
 /* 站68C:簿记域检违例桩(三展开点共用)。x2=old 任务,x3=毒 sp,
- * x11=ksp,x4=案发展开点。当前 sp=毒值(蹦床域)不可用,换引导栈
- * 调 C 打印器;noreturn(打印+park)。 */
+ * x11=ksp,x4=案发展开点,x0=next(簿记的切换目标)。当前 sp=毒值
+ * (蹦床域)不可用,换引导栈调 C 打印器;noreturn(打印+park)。
+ * 站68C-2 全现场捕获:x4-x7 承被中断上下文四元(elr/spsr/next/
+ * sp_el1)——sp2[0]=SPSel 位+M[3:2]=特权级,直读"谁在 EL1SPSel=1
+ * 且 SP_EL1=蹦床残值"这一原罪语境;elr 对 map 即函数名。 */
 .Lbk_viol:
-    mov     x0, x2                 /* old 任务 */
+    mov     x9, x4                 /* site 先保(x9 帧后恒死) */
+    mrs     x7, sp_el1             /* 案发库现值 */
+    mrs     x5, spsr_el1           /* 被中断 PSTATE */
+    mov     x6, x0                 /* next=切换目标(先于 x0 覆写) */
     mov     x1, x3                 /* 毒 sp */
+    mov     x0, x2                 /* old */
+    mrs     x4, elr_el1            /* 被中断 PC */
+    mov     x3, x9                 /* site */
     mov     x2, x11                /* ksp */
-    mov     x3, x4                 /* 案发展开点 */
     ldr     x12, =__stack_top
     mov     sp, x12
     bl      rt_bookkeep_violation

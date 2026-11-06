@@ -928,7 +928,8 @@ void rt_switch_to(rt_task_t *next);
 void rt_frame_init(rt_task_t *t, void *stack_top, void (*entry)(void *), void *arg);
 /* 站68C:簿记域检违例打印器(vec.S .Lbk_viol 桩调;noreturn 打印+park。
  * 勿标 noreturn 于头——asm bl 不经 C 语义,标了反令 GCC 在别处删尾码)。 */
-void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site);
+void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
+                           u64 elr, u64 spsr, u64 next, u64 sp_el1);
 
 /* rt_sched.c:DAIF 短临界段(第十七站)。save/restore 而非 set/clr——
  * ISR 语境(I=1)restore 原样归还,不泄掩码。 */
