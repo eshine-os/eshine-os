@@ -3,6 +3,13 @@
 # Copyright (c) 2026 Julian Chu
 """eshine-os true-green gate (week-1 core + stops 1-5).
 
+用法(2026-11-06 用户令精简,保可靠性):
+    python3 tools/verify/verify_el2.py                # 全量 183 门(站收口两连真绿)
+    python3 tools/verify/verify_el2.py --stop-after=44  # 迭代快环:boot+vm0+核心
+                                                       # rtos 门,门边界干净退出,
+                                                       # 判据=PARTIAL-PASS(非真绿)
+每门行尾附 (X.Xs) 计时——慢门/慢段当场可见,后续裁剪有据。
+
 Boots eshine.elf on QEMU virt (direct EL2), waits for the banner and
 the shell prompt, sends `echo ESHINEOK<pid>`, and asserts the token
 appears at least TWICE: once as typed-echo by the guest shell, once as
@@ -108,6 +115,39 @@ import socket
 import subprocess
 import sys
 import time
+
+# --- 精简 verify(2026-11-06 用户令:耗时过长,保可靠性精简)---------
+# ① --stop-after N:迭代快环——第 N 门判据过即干净退出,判据行明示
+#   "PARTIAL-PASS"(全量未跑非真绿),全量门/两连真绿纪律零改动
+#   (站收口仍跑全量)。② 每门计时:包裹 print 一处改动覆盖全部
+#   199 门,门行尾附 (X.Xs)——慢门/慢段当场可见,后续裁剪有据
+#   (判据先于裁剪)。桩契约:门行恒 print("  [N/183] ..."),199
+#   处全数核验零非门行,stop-after 只在真门行触发不误触。
+_GATE_RE = re.compile(r"\s*\[(\d+)/183\]")
+_print_orig = print
+_gate_t0 = [time.time()]
+_stop_after = [None]
+_verify_q = [None]
+
+def _gate_print(*args, **kw):
+    s = " ".join(str(a) for a in args)
+    m = _GATE_RE.match(s)
+    if m:
+        now = time.time()
+        dt = now - _gate_t0[0]
+        _gate_t0[0] = now
+        n = int(m.group(1))
+        if _stop_after[0] is not None and n > _stop_after[0]:
+            _print_orig("RESULT PARTIAL-PASS gates 1..%d (--stop-after;"
+                        " 全量未跑非真绿;站收口须全量两连)" % _stop_after[0])
+            if _verify_q[0] is not None:
+                _verify_q[0].terminate()
+            sys.exit(0)
+        if args and isinstance(args[0], str):
+            args = (args[0] + " (%.1fs)" % dt,) + args[1:]
+    return _print_orig(*args, **kw)
+
+print = _gate_print
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ELF = os.path.join(REPO, "eshine.elf")
@@ -367,6 +407,15 @@ def _forensic_gdb():
 
 
 def main():
+    # 精简:--stop-after N(迭代快环);无参=全量默认零改动
+    for i, a in enumerate(sys.argv[1:]):
+        if a.startswith("--stop-after="):
+            _stop_after[0] = int(a.split("=", 1)[1])
+        elif a == "--stop-after" and i + 2 <= len(sys.argv) - 1:
+            _stop_after[0] = int(sys.argv[i + 2])
+    if _stop_after[0] is not None:
+        _print_orig("verify: --stop-after %d (迭代快环;全量未跑非真绿)"
+                    % _stop_after[0])
     if not os.path.exists(ELF):
         print("FAIL: %s not built (run make first)" % ELF)
         return 1
@@ -420,6 +469,7 @@ def main():
         stderr=open(os.environ.get("ESHINE_INTLOG", "/dev/null"), "w") if
             os.environ.get("ESHINE_INTLOG") else subprocess.DEVNULL,
     )
+    _verify_q[0] = qemu             # 精简:--stop-after 退出前自收尾挂点
     def _boot_restart():
         nonlocal qemu
         global _FOREN_S
@@ -451,6 +501,7 @@ def main():
             ],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
+        _verify_q[0] = qemu         # 精简:重启后句柄同步(stop-after 收尾用)
 
     try:
         # 站40:0 字节靴家族侦测(站 25/33 记档:console 静默+QEMU 活,
