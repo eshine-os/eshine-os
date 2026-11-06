@@ -85,6 +85,48 @@ sed -i "s/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/" .config
 for a in $APPLETS; do
     sed -i "s/^# CONFIG_$a is not set/CONFIG_$a=y/" .config
 done
+# 站68F:applet 类翻转(REGULAR→NOEXEC)——精选集里上游标 APPLET() 的
+# 普通类(cat/sleep/wc/tail/du/mount/ifconfig/ping)在 ash 的 tryexec 里
+# 走 execve(busybox 自身路径/路径表安装位),而本内核 exec=用户态驱动
+# (站29 红线:exec_setup 帧改写,无 execve syscall)→ ENOSYS,ash 报
+# "sh: <cmd>: Function not implemented" + exit 126(实测 cat/tail/wc 三
+# 灭,md5sum/ls/head=NOEXEC 类全活:ash.c tryexec 的 APPLET_IS_NOEXEC
+# 分支=run_noexec_applet_and_exit 内建分发零 execve)。修=类翻 NOEXEC。
+# 真源=.c 文件头的 //applet: 注解(include/applets.h 是其生成物,配置步
+# 再生会冲掉对生成物的 sed——首版教训:flip on 生成物=永不入二进制)。
+# 上游标志是行为选择非接口契约;逐条断言生效(静默替换雷=哑包)。
+flip_src() { # flip_src <file> <旧行> <新行> —— 幂等(源目录跨跑驻留)
+    grep -q -F "$3" "$2" && return 0
+    sed -i "s@^$1\$@$3@" "$2"
+    grep -q -F "$3" "$2" || { echo "FATAL: applet 类翻转未生效: $3"; exit 1; }
+}
+flip_src '//applet:IF_CAT(APPLET(cat, BB_DIR_BIN, BB_SUID_DROP))'\
+         coreutils/cat.c\
+         '//applet:IF_CAT(APPLET_NOEXEC(cat, cat, BB_DIR_BIN, BB_SUID_DROP, cat))'
+flip_src '//applet:IF_SLEEP(APPLET(sleep, BB_DIR_BIN, BB_SUID_DROP))'\
+         coreutils/sleep.c\
+         '//applet:IF_SLEEP(APPLET_NOEXEC(sleep, sleep, BB_DIR_BIN, BB_SUID_DROP, sleep))'
+flip_src '//applet:IF_WC(APPLET(wc, BB_DIR_USR_BIN, BB_SUID_DROP))'\
+         coreutils/wc.c\
+         '//applet:IF_WC(APPLET_NOEXEC(wc, wc, BB_DIR_USR_BIN, BB_SUID_DROP, wc))'
+flip_src '//applet:IF_TAIL(APPLET(tail, BB_DIR_USR_BIN, BB_SUID_DROP))'\
+         coreutils/tail.c\
+         '//applet:IF_TAIL(APPLET_NOEXEC(tail, tail, BB_DIR_USR_BIN, BB_SUID_DROP, tail))'
+flip_src '//applet:IF_DU(APPLET(du, BB_DIR_USR_BIN, BB_SUID_DROP))'\
+         coreutils/du.c\
+         '//applet:IF_DU(APPLET_NOEXEC(du, du, BB_DIR_USR_BIN, BB_SUID_DROP, du))'
+flip_src '//applet:IF_IFCONFIG(APPLET(ifconfig, BB_DIR_SBIN, BB_SUID_DROP))'\
+         networking/ifconfig.c\
+         '//applet:IF_IFCONFIG(APPLET_NOEXEC(ifconfig, ifconfig, BB_DIR_SBIN, BB_SUID_DROP, ifconfig))'
+flip_src '//applet:IF_PING(APPLET(ping, BB_DIR_BIN, BB_SUID_MAYBE))'\
+         networking/ping.c\
+         '//applet:IF_PING(APPLET_NOEXEC(ping, ping, BB_DIR_BIN, BB_SUID_MAYBE, ping))'
+flip_src '//applet:IF_MOUNT(APPLET(mount, BB_DIR_BIN, IF_DESKTOP(BB_SUID_MAYBE) IF_NOT_DESKTOP(BB_SUID_DROP)))'\
+         util-linux/mount.c\
+         '//applet:IF_MOUNT(APPLET_NOEXEC(mount, mount, BB_DIR_BIN, BB_SUID_DROP, mount))'
+# 强制生成物再生(增量构建陈旧表防呆):applets.h 与 applet_tables.h
+# 皆生成物,删旧逼重建——翻转是否真入二进制由末尾旗标位断言把关。
+rm -f include/applets.h include/applet_tables.h include/NUM_APPLETS.h applets/applet_tables
 yes "" | # oldconfig 对新符号交互提问(无 tty 即悬空)——yes 喂默认
     yes '' | make ARCH=arm64 CROSS_COMPILE="$CROSS" oldconfig >/dev/null
 
