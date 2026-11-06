@@ -34,6 +34,15 @@ def entry(name, data, ino):
 def main(src, dst):
     blob = b""
     ino = 1
+    # 站68F 环境雷哨:busybox=GPL 仓外工件,安装拷贝(tools/ramfs/bin/
+    # busybox)曾整段蒸发(宿主环境级,删手未明)——蒸发窗内每次
+    # make 都打"无 busybox 的哑包",早序门 [1]-[42] 不消费它零报警,
+    # 症状只在 bsh/run busybox 现场爆("run: open failed")。打包时
+    # 显式点名,缺件即警告(不阻断:GPL 工件按红线不入库,空树
+    # 打包对早序门合法)。
+    if not os.path.exists(os.path.join(src, "bin", "busybox")):
+        print("gen_ramfs: WARN /bin/busybox missing — bsh/run busybox "
+              "gates will fail; run tools/build-busybox.sh first")
     for root, dirs, files in os.walk(src):
         dirs.sort()
         for fn in sorted(files):
