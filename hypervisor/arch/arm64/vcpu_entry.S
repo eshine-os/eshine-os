@@ -102,14 +102,21 @@ trap_resume:                          /* x0 = vcpu */
 7:
     ldr     x1, [x0, #416]             /* 站十四:还原 guest current */
     msr     sp_el0, x1
-    ldr     x1, [x0, #432]             /* 站68C-8:核号随帧走,eret 强制还原 */
-    /* 站68C-13:核号钳位——还原客人存值在"整段被毒"下=忠实还原
-     * 毒值锁死(实测:tpidr 整段=1 时所有蹦床臂"一致地"算 core1
-     * 蹦床,复核全绿=一致性非正确性)。改钳 v->idx(帧内权威核号,
-     * vcpu 构造即定):任何段内污染活不过一个量子。idx 偏移 asm
-     * 契约:帧尾(见 vcpu.h 帧尾注释)。 */
-    ldr     x2, [x0, #1032]           /* idx@1032(_Static_assert 锁) */
-    msr     tpidr_el1, x2
+    ldr     x1, [x0, #432]             /* 站68C-8:guest TPIDR_EL1 随帧
+                                       * 逐陷阱存还(站68F 定谳:TPIDR_EL1
+                                       * 是 guest 自己的寄存器——RTOS 拿它
+                                       * 存核号,Linux 拿它存 per-CPU 基址,
+                                       * 值域归客,宿主只存还不解释) */
+    msr     tpidr_el1, x1
+    /* 站68F 翻案:68C-13 的"核号钳位"(还原 v->idx 而非存值)撤除——
+     * 钳位是幽灵时代"整段被毒"误诊的产物(root-d/e/f 三案证明毒
+     * 从不入寄存器,入的是帧/队列),而它对 Linux 客是灾难:
+     * Linux 的 TPIDR_EL1=per-CPU 基址(开机写一次),钳位每次
+     * eret 把它强写成 vcpu 序号 0/1 → 首个 per-CPU 访问
+     * (__rmqueue_pcplist 页池)以 0 为基址 → NULL 解引用于 0,
+     * kmem_cache_init 期 Kernel panic(用户 vm2 实测)。
+     * vm0 RTOS 恰以核号为 tpidr 故钳位在其上无感=两客一明一暗。
+     * idx 字段与断言保留(构造期权威核号,vcpu 检索/帧身份用)。 */
     ldr     x1, [x0, #256]
     msr     elr_el2, x1
     ldr     x1, [x0, #264]
