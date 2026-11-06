@@ -77,12 +77,15 @@ void rtos_secondary_main(u32 cpu)
                                       * SGI0+PPI27 使能——ipidemo rx=0
                                       * 定谳:次核不开自家帧,SGI 取走
                                       * 被 isenabler 门滤掉) */
-    gic_guest_enable();              /* 本核 ICV 面(PMR/IGRPEN/解掩) */
     vtimer_arm_periodic();           /* 本核 tick 起拍:RT_HZ 同律 */
     rt_puts_u64("cpu1: online (rtos psci) gicr1_en=",
                 (u64)vgicr_read(0x20000UL + GICR_SGI + GICR_ISENABLER0),
                 "\n");              /* 站二十:帧 1 使能回读自证
                                       * (SGI0|PPI27 应见 0x08000001) */
+    /* 站68F(root-e)同律主核:解掩点后移到自报打印之后、idle 入口
+     * 之前——次核引导尾(gic_secondary_frame_init+自报)整段不可
+     * 抢占,防同型孤儿化(被切走的 idle1 池外不入队)。 */
+    gic_guest_enable();              /* 本核 ICV 面(PMR/IGRPEN/解掩) */
     rt_idle_loop();                  /* noreturn:idle1 即本核引导语境 */
 }
 
@@ -307,7 +310,6 @@ void guest_main(void)
     rt_irq_register(GUEST_INTID_IPI, isr_ipi, 0);
     rt_irq_register(GUEST_INTID_UART, isr_uart, RT_RX_BIT);
     vtimer_arm_periodic();            /* 100Hz tick 起拍 */
-    gic_guest_enable();              /* 解 IRQ:此后 tick/RX 走真中断 */
 
     rt_puts("uart irq on\n");         /* 与裸机同 needle(RXIM 已使能) */
     rt_puts("virtio blk on\n");
@@ -318,6 +320,19 @@ void guest_main(void)
      * EL2 置帧+poke,cpu3 专泵扫到即跑;拒绝只报不炸(单核退化仍活)。 */
     if (psci_rtos_cpu_on(0x80000001UL, rtos_secondary_entry, 1) != 0)
         rt_puts("smp: cpu1 cpu_on denied\n");
+
+    /* 站68F(root-e):解掩点后移到引导尾之后、idle 入口之前——引导尾
+     * (三打印+LOG_INF+PSCI CPU_ON)整段 DAIF 全掩不可抢占。旧位在
+     * vtimer_arm 后=boot 语境在尾段裸奔:外部击键(verify [9]/[19] 在
+     * banner 后即入 RX 环)在门开瞬间挂起,SPI33 使能即注入即抢占,
+     * 落点恰在 LOG_INF/PSCI 窗;被切走的引导语境=idle0(池外伪任务,
+     * root-a 门不入队)=引导尾永久孤儿化——LOG_INF 行蒸发+CPU_ON 从
+     * 未发出+次核永不上岗(harness 4/4 死 vs 手动探针 14/4 活:探针
+     * 全在 "rtos: up" 出现后才发键=尾已跑完;harness 在 banner 后
+     * 发键=RX 先于门入环,二分 B/C 定谳)。解掩后落点=idle 入口,引
+     * 导语境已被切走也仅失 idle 本体(良性面:末位让者内含 WFI 兜底),
+     * 引导尾契约保全。次核 rtos_secondary_main 同律(打印后解掩)。 */
+    gic_guest_enable();              /* 解 IRQ:引导尾后,idle 入口前 */
 
     rt_idle_loop();                   /* noreturn:idle 即引导语境 */
 }

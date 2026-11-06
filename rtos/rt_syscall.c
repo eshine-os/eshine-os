@@ -310,40 +310,11 @@ static long sys_wait4(u64 *frame)
 /* COPY_UCONTEXT(参考实现 fork 形状):子进程 eager 全拷+子任务帧整拷
  * (272B 紧布局),x0=魔数辨 child。协作式无抢占窗,帧覆写与子首
  * 派发之间零竞(父 prio 低于子,父续跑到显式让位)。 */
-/* 站68C-16:fork 阶段 SP_EL1 检查点——tick 环实测毒入窗=单 tick
- * 内 fork 执行中,且 as_copy 检测器(68C-15)静默=毒先于 as_copy。
- * 各阶段布点精确定位。spsel 双 ferry 读 bank(直读 UNDEF,站28)。 */
-static u64 fork_el1_ref;
-static u64 fork_el1_init_done;
-
-static void fork_sp_el1_chk(const char *tag)
-{
-    u64 sel, el1;
-
-    __asm__ volatile("mrs %0, spsel" : "=r"(sel));
-    __asm__ volatile("msr spsel, #1");
-    __asm__ volatile("mov %0, sp" : "=r"(el1));
-    __asm__ volatile("msr spsel, %0" :: "r"(sel));
-    if (!fork_el1_init_done) {
-        fork_el1_ref = el1;
-        fork_el1_init_done = 1;
-        return;
-    }
-    if (el1 != fork_el1_ref) {
-        rt_puts("FORK-CHK ");
-        rt_puts(tag);
-        rt_puts_hex(" ref 0x", fork_el1_ref, "");
-        rt_puts_hex(" now 0x", el1, "\n");
-        fork_el1_ref = el1;
-    }
-}
-
 static long sys_fork(u64 *frame)
 {
     struct rt_proc *pp = rt_cur->proc, *cp;
     rt_task_t *ct;
 
-    fork_sp_el1_chk("0-entry");
     if (!pp)
         return -ES_EINVAL;
     if (!(pp->caps & CAP_SPAWN))
@@ -360,10 +331,8 @@ static long sys_fork(u64 *frame)
     cp->parent = pp->pid;
     rt_fd_fork(pp, cp);                /* 站31:fdtable 组拷+双侧引用 */
     rt_sig_fork(pp, cp);               /* 站32:handler/blocked 继承 */
-    fork_sp_el1_chk("1-precreate");
     ct = rt_task_create_el0("child", NULL, NULL, rt_cur->prio + 1,
                             (void *)rt_cur->usp);
-    fork_sp_el1_chk("2-postcreate");
     if (!ct) {
         rt_proc_reap(cp);
         return -ES_EAGAIN;
@@ -377,7 +346,6 @@ static long sys_fork(u64 *frame)
         dst[2] = RT_FORK_MAGIC;          /* x0 槽@16 */
     }
     ct->usp = rt_cur->usp;
-    fork_sp_el1_chk("3-postusp");
     ct->tpidr_el0 = rt_cur->tpidr_el0;  /* 站65:子继承父 TLS 指针(fork
                                       * 语义;站35 线程面 SETTLS 的
                                       * fork 缺角——busybox ash fork 孙
@@ -389,7 +357,6 @@ static long sys_fork(u64 *frame)
     ct->ttbr = rt_proc_ttbr(cp);
     ct->tid = (u64)cp->pid;           /* 站35:leader tid=pid */
     cp->leader = ct;
-    fork_sp_el1_chk("4-prereturn");
     return (long)cp->pid;
 }
 
@@ -891,6 +858,33 @@ static long sys_writev(u64 *frame)
             return -ES_EFAULT;
         for (u64 k = 0; k < len; k++)
             kbuf[k] = ub[k];
+        /* 站68F:洪水绊线二段——全空格小片签名。站 68 一段绊线
+         * (len>64KB 巨 iov)全量洪水实测零命中=洪水非巨 iov 面,
+         * 是小片流(每片 ≤256B 经 kbuf 钳,64KB 线永不及):候证
+         * 面收窄为"musl 格式串/用户页损坏→printf 活环"(58 族洪
+         * 水脸候证"用户页/回执损坏"的正脸)。签名=片长 ≥32 且全
+         * 0x20;首发打证 fd/base/len+任务名+pid,续发静默——不改
+         * 语义(照写),带出处留证在前台。 */
+        if (len >= 32) {
+            static int sp_said;
+            u32 sp_all = 1;
+
+            for (u64 k = 0; k < len; k++)
+                if (kbuf[k] != 0x20) {
+                    sp_all = 0;
+                    break;
+                }
+            if (sp_all && !sp_said) {
+                sp_said = 1;
+                rt_puts("wvtrip: all-space chunk\n");
+                rt_puts_hex("  fd ", (u64)FR(0), "");
+                rt_puts_hex(" base 0x", (u64)ub, "");
+                rt_puts_hex(" len 0x", len, "\n");
+                rt_puts("  task ");
+                rt_puts(rt_cur->name);
+                rt_puts_hex(" pid ", (u64)rt_cur->tid, "\n");
+            }
+        }
         if (len) {
             if ((long)FR(0) >= 3) {    /* 站59:真 fd 写(同 sys_write 律) */
                 long r = rt_fd_write(rt_cur->proc, (int)FR(0), kbuf,
@@ -1406,6 +1400,7 @@ static long sys_demo(u64 *frame)
     case RT_U_EVENTDEMO:  rt_demo_event(); break;
     case RT_U_QUEUEDEMO:  rt_demo_queue(); break;
     case RT_U_SMPDEMO:    rt_demo_smp();   break;
+    case RT_U_SMPSTAT:    rt_demo_smpstat(); break;
     case RT_U_IPIDEMO:    rt_demo_ipi();   break;
     case RT_U_FPSMP:      rt_demo_fpsmp(); break;
     case RT_U_TMODEMO:    rt_demo_tmo();   break;

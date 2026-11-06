@@ -76,36 +76,9 @@ static void as_copy(void *dst, const void *src, u64 n)
 {
     const u8 *s = src;
     u8 *d = dst;
-    /* 站68C-15:SP_EL1 变化检测器——C 函数体内 SP_EL1 不应变
-     * (syscall 处理器恒 SPSel=0,SP_EL1 驻蹦床不变量残值);tick 环
-     * 实测毒入窗=单 tick 内 fork as_copy 执行中。逐字节太密,64 字
-     * 节一检:一变即打印新旧值+步号=毒入精确时刻。spsel 双 ferry
-     * 读 bank(直读 UNDEF,站28)。 */
-    u64 el1_ref = 0, el1_now;
-    u64 sel;
-    u64 step = 0;
 
-    __asm__ volatile("mrs %0, spsel" : "=r"(sel));
-    __asm__ volatile("msr spsel, #1");
-    __asm__ volatile("mov %0, sp" : "=r"(el1_ref));
-    __asm__ volatile("msr spsel, %0" :: "r"(sel));
-
-    while (n--) {
+    while (n--)
         *d++ = *s++;
-        if ((++step & 63u) == 0) {
-            __asm__ volatile("mrs %0, spsel" : "=r"(sel));
-            __asm__ volatile("msr spsel, #1");
-            __asm__ volatile("mov %0, sp" : "=r"(el1_now));
-            __asm__ volatile("msr spsel, %0" :: "r"(sel));
-            if (el1_now != el1_ref) {
-                rt_puts_hex("AS-COPY SP_EL1 CHANGED ref 0x", el1_ref,
-                            "");
-                rt_puts_hex(" now 0x", el1_now, "");
-                rt_puts_hex(" step ", step, "\n");
-                el1_ref = el1_now;
-            }
-        }
-    }
 }
 
 static struct rt_proc procs[RT_PROC_MAX];

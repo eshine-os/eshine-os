@@ -841,6 +841,46 @@ cur=ramfs 服务器答中在场）与 REPL/RX 残面——全审计下次开火�
 （68B 续侦,判据面=守卫四元）。A/B 对照纪律:0/3 集中挂=回归,1/3 随机挂
 =历史病;守卫自身必须过全量冒烟（首版曾把设计常态当犯罪抓 2/2）。
 
+**站68C-68F 幽灵出生链（root-d 定谳+封口;68C 守卫族常驻）**：用户脸=
+进 rtos shell 敲回车即 bookkeep violation,毒 sp 跨靴同值;68C 域检/窗检
+/出生检/臂点复核+68D 孤儿修真（rt_pick_ready 锁内置 RUN）+68E create_el0
+半窗修真后,十七件仪器排净字段/臂点/EL2 存还面,向量表槽位指认出生点:
+**EL0 异常处理语境=EL1 SPSel=0（活栈=SP_EL0 库=任务内核 C 栈,站28 契约）
+,SVC 边界 daifclr 开中断,tick 落窗即取 "Current EL, SP_EL0" 槽**——旧表
+直通 guest_irq,硬件入场强制 SPSel=1 → 272B 帧压上 SP_EL1=32B 蹦床（psr
+存照=EL1t,故"psr 说 SPSel=0 而 spsel=1"非悖论=存照与现值两张脸）,簿记
+把蹦床址存进 old->sp=毒注入;复活经 .Lel1 eret EL1t 而 SP_EL0 库驻他人
+残留=幽灵以别任务 usp 当活栈跑内核 C,自复制同址跨靴恒定（站32"别家字
+面"/站68 复合帧=同根下游,站28 日生的设计缺口）。**修真两件配对**
+（vec.S 站68F）:①"Current EL, SP_EL0" IRQ 槽改道 guest_irq_sp0——渡回
+SP_EL0 库（被中断任务自己的内核 C 栈）再压帧,帧满嵌套任务栈域,簿记存值
+在域;②.Lel1 对 EL1t 目标预还 SP_EL0 库=帧顶（GPR 基+256,恰=压帧前活
+sp）——弹栈在 SP_EL1 推进而 SP_EL0 驻残留即幽灵第二脸,两语境（渡口对
+岸写/换库直写）同律。68C-15/16 法医渡口随修拆除（开中断语境 spsel=1 窗
+=残余出生窗）;68C-14 tick 环与守卫族保留常驻。ARM 向量表 16 槽="从哪来
++当时用什么栈"完整谓词,EL1 双库设计里 SP_EL0 槽是第四种必须专门接的
+入口（站28 只接了 EL0 入/EL1h 入两种）。
+
+**站68F root-e 次核失踪案（门[35] 洋葱层;smpstat 命令面）**：68F 修真后
+全量推进到 [35] 撞新死点=vm0 次核整靴从未上岗（harness 4/4 死 vs 手动
+探针 14/14 活;-d int 定谳:CPU3 零 guest 执行+全靴 hvc#0 PSCI 零次=
+CPU_ON 从未发出;接缝字节干净=LOG_INF 行根本没发出来）。真凶=**击键时
+机**:verify 在 [9] banner 后即把换行送进 RX 环（早于 gic_guest_enable）,
+RX 挂起等门,门一开 SPI33 使能即注入,落点恰在引导尾窗内（rtos:up 打
+印→LOG_INF→PSCI CPU_ON→idle 入口）;RX 唤醒壳在 IRQ 出口切走引导语境
+——被切走的引导语境=idle0（池外伪任务）,root-a 入队硬门令其永不复活
+=**引导尾永久孤儿化**（其余一切照常:末位让者内含 WFI 的 rt_sched 空转
+语境兜底=系统"看起来完全健康";旧 verify 过 [35] 是 root-a 前 idle 入队
+使引导尾被迟到复活——root-a 揭掉遮盖,68C 守卫把 [19] 提前死又把 [35]
+遮了三十六小时）。**修真=gic_guest_enable 解掩点后移**（主核:PSCI 之
+后、idle 入口之前;次核:自报打印之后——引导尾整段 DAIF 全掩不可抢占,
+挂起 RX/tick 在 idle 入口放行=落点语境已完整,被切走也只失 idle 本体
+=良性面）。**smpstat 新命令**（rt_demo.c,sys_demo 蹦床,壳入口）:主核
+经 vgic 地址路由（帧号=off>>17）跨帧读回帧1 ISENABLER0——0x08000001
+只有次核 gic_secondary_frame_init 写得出,0=诚实失败面;一次性开机行判
+据在 chardev 丢字节族（站25/33）下不可重放,命令/应答面免疫,门 [35]/
+[131] 已改。
+
 **站62 版本 pin+SBOM 台账（[179]——外部件账本,批次 D 第三站）**：
 **3rd/manifest.yaml**（机器可读事实源;八组件:musl 1.2.5/cjson 1.7.18/
 zlib 1.3.1（in-repo,工件名含钉死版本）+busybox 1.36.1/linux-image 6.6

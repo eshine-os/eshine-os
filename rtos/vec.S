@@ -20,7 +20,7 @@
 guest_vectors:
     /* Current EL, SP_EL0 */
     VENTRY guest_park               /* sync */
-    VENTRY guest_irq
+    VENTRY guest_irq_sp0             /* 站68F:SPSel=0 语境改道 */
     VENTRY guest_park               /* fiq */
     VENTRY guest_park               /* serror */
     /* Current EL, SP_ELx(常驻组) */
@@ -186,6 +186,13 @@ guest_park:
     mov     x2, x0
     b       .Lbk_viol
 
+/* 站68C-20:elr 窗检违例包装(x5=毒 elr 承 x3;受害者=next,x11=ksp)。 */
+.Lbk_viol_elr:
+    mov     x2, x0
+    mov     x3, x5
+    ldr     x11, [x0, #RT_KSTK_OFF]
+    b       .Lbk_viol
+
 /* 站68C:簿记域检违例桩(三展开点共用)。x2=old 任务,x3=毒 sp,
  * x11=ksp,x4=案发展开点,x0=next(簿记的切换目标)。当前 sp=毒值
  * (蹦床域)不可用,换引导栈调 C 打印器;noreturn(打印+park)。
@@ -216,6 +223,23 @@ guest_park:
     mov     sp, x12
     stp     x10, x8, [sp, #-16]!   /* 第9/10参:SP_EL0+SPSel(栈参) */
     bl      rt_bookkeep_violation
+
+/* 站68F:Current EL SP_EL0 槽专用 IRQ 入口(幽灵出生链封口)。
+ * 槽位即语境铁证:取此槽=异常时 EL1 SPSel=0=EL0 异常处理中
+ * (RT_EL0_ENTER 渡 SP_EL0 库=任务内核 C 栈,站28 契约)的嵌套
+ * tick/RX。硬件入场强制 SPSel=1:帧若压彼处=压 SP_EL1=蹦床顶
+ * (32B/核槽)——272B 帧踩蹦床邻域,bookkeep 把蹦床址存进
+ * old->sp=毒 sp 注入(68C-7 出生直捕三证:psr=EL1t/帧落蹦床窗/
+ * 寄存器=as_copy 活现场);复活经 .Lel1 eret EL1t 而 SP_EL0 库
+ * 驻他人残留=幽灵以别任务 usp 当活栈跑内核 C,自复制同址跨靴恒
+ * 定(68C 全系捕获的出生面)。修法=改道:渡回 SP_EL0 库=被中断
+ * 任务自己的内核 C 栈,帧满嵌套任务栈域,bookkeep 存值在域
+ * (门检恒绿),同任务返程弹栈推进即自然回位。渡口一步无窗:
+ * 异常入口 DAIF 全掩;x9-x12 未压先动=自由 scratch。复活面=
+ * .Lel1 站68F 库还(帧顶预还 SP_EL0 库),两件配对成套。 */
+guest_irq_sp0:
+    msr     spsel, #0
+    b       guest_irq
 
 guest_irq:
     RT_PUSH_GPRS
@@ -264,6 +288,21 @@ guest_irq:
      * 站16 帧自铸即此),EL1h 任务的活栈驻 SP_EL1——蹦床与它
      * 同库不同值,故凡离开 EL0 必重臂、凡回 EL1h 必归还。 */
     ldp     x5, x6, [sp], #16       /* 目标帧 elr/psr */
+    /* 站68C-20:复活帧 elr 窗检——毒帧内容门(域检只验 sp 落栈域,
+     * 毒 sp 在域内时(槽复用+A5 重填后的僵尸帧消费,fpsmp 实测
+     * elr=0xa5a5…/ipidemo elr=0x1 两脸)内容全毒而域检恒绿。复活
+     * 目标必在 [0x40000000,0x80000000):内核镜像(EL1 帧:coop/
+     * 抢占/首帧 rt_trampoline)或用户窗(EL0 帧含 sigreturn/handler
+     * 入口);首帧 x30=0 亦合法。违例=毒帧消费当场,受害者=next
+     * 全息。x4/x11/x12 弹后恒死;psr 未消费先用作 scratch。 */
+    movz    x11, #0x4000, lsl #16
+    cmp     x5, x11
+    adr     x4, 16f
+    b.lo    .Lbk_viol_elr
+    movz    x12, #0x8000, lsl #16
+    cmp     x5, x12
+    b.hs    .Lbk_viol_elr
+16:
     msr     elr_el1, x5
     msr     spsr_el1, x6
     tst     x6, #0xc
@@ -324,8 +363,8 @@ guest_irq:
     eret
 .Lel1:
     mrs     x5, spsel
-    cbnz    x5, .Lregs             /* SPSel=1:簿记 mov sp 已写 SP_EL1,
-                                     * .Lpop 顶 ldp 亦已推进本库,零改动 */
+    cbnz    x5, .Lel1_t            /* SPSel=1:簿记 mov sp 已写 SP_EL1,
+                                     * .Lpop 顶 ldp 亦已推进本库 */
     /* SPSel=0 语境(自 EL0 异常处理链切来):.Lpop 顶 ldp 已把当前库
      * (SP_EL0)推到 task->sp+16 = GPR 块基(bank 无关)。弹栈必须在
      * 目标的 SP_EL1 库就地进行:换库前抓现值,换库后原地弹到底——
@@ -355,8 +394,34 @@ guest_irq:
     adr     x4, 15f
     b       .Lbk_viol_arm
 15:
+    /* 站68F(库还):EL1t 目标复活时 eret 后 SPSel=0、活栈=SP_EL0
+     * 库——弹栈若在 SP_EL1 库推进,SP_EL0 仍驻他人残留(实测=别
+     * 任务 usp)=幽灵以用户栈跑内核 C 的第二脸。帧顶(GPR 块基
+     * +256,恰=压帧前活 sp,续跑 ABI 栈自然回位)必预还 SP_EL0
+     * 库。tst 判据=psr bit0:M=4(EL1t)=0/M=5(EL1h)=1(帧契约
+     * 0x3c4/0x3c5,站28 铁证);x6=psr 已入 spsr_el1 消费,弹前作
+     * scratch 恒死。EL1t 帧源=guest_irq_sp0 改道后的任务栈嵌套
+     * 帧(站68F 出生链封口);EL1h 帧源=coop/EL1h 抢占,零改动。 */
+    tst     x6, #1
+    bne     .Lel1_swap
+    add     x6, x5, #256           /* 帧顶=复活活栈 */
+    mov     sp, x6                 /* 活库=SP_EL0:直写即还库 */
+    msr     spsel, #1
+    mov     sp, x5                 /* SP_EL1 := GPR 块基,换库弹 */
+    b       .Lregs
+.Lel1_swap:
     msr     spsel, #1
     mov     sp, x5                 /* SP_EL1 := GPR 块基,留在本库弹 */
+    b       .Lregs
+.Lel1_t:
+    tst     x6, #1
+    bne     .Lregs                /* EL1h:零改动原路径 */
+    /* 站68F(库还)SPSel=1 语境同律:渡口写对岸 SP_EL0 库,活库
+     * SP_EL1 弹栈不动。x5=spsel 残值已消费,scratch 自由。 */
+    add     x6, sp, #256           /* 帧顶(活库 sp=GPR 块基) */
+    msr     spsel, #0
+    mov     sp, x6                 /* SP_EL0 := 帧顶(渡口对岸写) */
+    msr     spsel, #1
 .Lregs:
     RT_POP_GPRS
     eret

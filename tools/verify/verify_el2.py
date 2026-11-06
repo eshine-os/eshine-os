@@ -847,13 +847,26 @@ def main():
             print("  [34/183] fpstat: lazy FP %d saves << %d switches" % (n_sv, n_sw))
 
             # ---- 站二十:RTOS 次核自报(PSCI CPU_ON 经 hvc 泛化;GIC 帧 1
-            #      使能回读 = MMIO 窗/nframes/使能门三层链全通的硬证) ----
-            buf = read_until(s, buf, b"cpu1: online (rtos psci)", time.time() + 90)
-            m = re.search(rb"cpu1: online \(rtos psci\) gicr1_en=(\d+)", buf)
+            #      使能回读 = MMIO 窗/nframes/使能门三层链全通的硬证)。
+            #      站68F:改命令/应答面(smpstat)——开机自报行是一次性
+            #      判据,chardev 分块丢字节族(站25/33 记档)丢一次即永
+            #      不再来=90s 必死(全量两连实测丢 "log core up"+"cpu1:
+            #      online" 相邻两行);命令行判据可重放,对该族免疫。
+            #      判据保真:帧1 ISENABLER0 只有次核 gic_secondary_frame_init
+            #      写得出 0x08000001,vgic 按地址路由主核可跨帧读回。 ----
+            p35 = len(buf)
+            s.sendall(b"smpstat\n")
+            buf = read_until(s, buf, b"smp: cpu1 gicr1_en=", time.time() + 30, start=p35)
+            m = re.search(rb"smp: cpu1 gicr1_en=(\d+)", buf[p35:])
             if not m or int(m.group(1)) != 0x08000001:
-                raise AssertionError("secondary frame1 ISENABLER0 readback bad: %r"
-                                     % buf[-300:])
-            print("  [35/183] RTOS secondary online (rtos psci), frame1 en=0x08000001")
+                with open("/tmp/g35buf.log", "wb") as _f:   # 站68F 取证:失败落全会话 console
+                    _f.write(buf)                            # (段界字节干净与否=判传输丢 vs 没发出)
+                raise AssertionError(
+                    "secondary frame1 ISENABLER0 readback bad: %r "
+                    "(boot self-report line seen this session: %s)"
+                    % (buf[p35:][-300:],
+                       b"cpu1: online (rtos psci)" in buf))
+            print("  [35/183] RTOS secondary online (smpstat), frame1 en=0x08000001")
 
             # ---- 站二十:smpdemo——双核计数行交错(cpu1 行 >= 2) ----
             #      站23C 评审补:vm0 双帧行完整性 needle——次核 bg 行
@@ -2109,14 +2122,22 @@ def main():
             pos = len(buf)
             s.sendall(b"vmrun 0\n")
             buf = read_until(s, buf, b"rtos: up", time.time() + 60, start=pos)
-            buf = read_until(s, buf, b"cpu1: online (rtos psci)", time.time() + 90,
-                             start=pos)
             pos = len(buf)
             s.sendall(b"vmconsole 0\n")
             buf = read_until(s, buf, b"console -> vm", time.time() + 300, start=pos)
             pos = len(buf)
             s.sendall(b"\n")
             buf = read_until(s, buf, b"rtos> ", time.time() + 300, start=pos)
+            # 站68F:次核判据改 smpstat 命令面(同 [35]:一次性开机行
+            # 在 chardev 丢字节族下丢一次即永不再来;第二次 vm0 起机
+            # 同样适用,命令行可重放=对该族免疫)
+            pos = len(buf)
+            s.sendall(b"smpstat\n")
+            buf = read_until(s, buf, b"smp: cpu1 gicr1_en=", time.time() + 30, start=pos)
+            m = re.search(rb"smp: cpu1 gicr1_en=(\d+)", buf[pos:])
+            if not m or int(m.group(1)) != 0x08000001:
+                raise AssertionError("reboot secondary readback bad: %r"
+                                     % buf[pos:][-200:])
             pos = len(buf)
             s.sendall(b"overflow\n")
             buf = read_until(s, buf, b"rtos panic: stack overflow", time.time() + 60,

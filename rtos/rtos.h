@@ -40,7 +40,14 @@ typedef unsigned char u8;
                         * =RT_READY 与"已建未跑的帧改写子"同貌,旧槽
                         * 判 entry==NULL 把活 fork/clone 子当空槽整
                         * struct 复用=pt leader 被 clone 蒸发,gdb 池
-                        * 像定谳) */
+                        * 像定谳;复用洗名先行的根)。站68F root-f:
+                        * alloc 后即改置 RT_CREATING——RT_FREE 兼任
+                        * "僵尸闸拒收位"后,新生首推(68B 锁内置
+                        * READY 先于闸读)会撞闸丢推=引导停摆(实测:
+                        * inittab 永不 processed);新生态专职半创建窗。 */
+#define RT_CREATING 6u /* 站68F root-f:半创建态——alloc 已认领/帧
+                        * 未就绪;守卫族经 TASK_LIVE 排除(同 FREE/
+                        * DEAD 律),入队闸放行(新生首推合法)。 */
 
 struct rt_task {
     /* asm 契约(vec.S):sp 必须在偏移 0;统一帧顶指针(elr 槽) */
@@ -458,6 +465,7 @@ enum {
     RT_U_HAM_ADD, RT_U_HAM_BEAT, RT_U_HAM_LS,
     RT_U_DBGDEMO,
     RT_U_PSCIDEMO, RT_U_PSCIOFF, RT_U_PSCIRESET,
+    RT_U_SMPSTAT,
 };
 
 /* 站49:eshine_log 契约控制面(体在 rt_log_be.c 内核语境;sys_demo
@@ -815,6 +823,8 @@ rt_task_t *rt_ps_first(unsigned int *idx);
 rt_task_t *rt_ps_next(unsigned int *idx);
 rt_task_t *rt_idle_task(void);
 int rt_task_in_pool(rt_task_t *t);       /* 站45:idle 池外伪任务判别 */
+int rt_task_slot(rt_task_t *t);          /* 站68F:槽号(池外=-1;僵尸摘头
+                                          * 守卫的 panic 指名用) */
 
 /* ---- 站四十五:分区化(rt_part.c)——APS CPU 预算分区+MPRT 内存
  *      预算分区(参考实现 k_aps/k_apm 白描;demo 级内核面,零新 syscall) ---- */
@@ -1029,6 +1039,7 @@ void rt_demo_pi(void);           /* 站十八B:PI 饥饿反转 */
 void rt_demo_fpdual(void);       /* 站十八C:per-task FP 并发自证 */
 void rt_demo_event(void);
 void rt_demo_smp(void);              /* 站二十:双核计数交错 */
+void rt_demo_smpstat(void);          /* 站68F:次核在线查询(命令/应答面) */
 void rt_demo_ipi(void);              /* 站二十:SGI 跨核唤醒全链 */
 void rt_demo_fpsmp(void);            /* 站二十:per-CPU FP 双精确 */
 void rt_demo_queue(void);        /* 站十九B:16 条收发+满环阻塞 */

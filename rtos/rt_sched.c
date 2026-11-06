@@ -118,8 +118,14 @@ static void rdy_enqueue_core(rt_task_t *t, int set_ready)
      * (sys_exit 收尸广播等,IRQ 开)调用时,tick 恰落两句之间=
      * 守卫见"READY 而未入队"瞬态=自造孤儿假阳性且 panic 杀好
      * 靴(冒烟 0/3 定谳);原子化后内核不变量同固:任务永无
-     * READY-未入队瞬态。令牌路(requeue)不碰状态,纪律仍旧。 */
-    if (!rt_task_in_pool(t)) {
+     * READY-未入队瞬态。令牌路(requeue)不碰状态,纪律仍旧。
+     * 站68F(root-f):DEAD/FREE 入锁闸——唤醒路径的 check 与入队
+     * 之间无锁窗(扫池谓词在锁外读 state),退出路径恰可插入:
+     * 检查时 SLEEP→exit 置 DEAD+摘链→push 落后=DEAD 任务入队
+     * (68C 守卫实测捕获:rt_cur=已退池任务 st 0,sp 毒 0x1;僵尸
+     * 被 pick 后按陈旧帧复活=0xa5a5 野跳族)。陈旧推送落空=无害
+     * (被推者已死,醒不醒无意义);合法路径全在 LIVE 态入队。 */
+    if (!rt_task_in_pool(t) || t->state == RT_DEAD || t->state == RT_FREE) {
         rt_spin_unlock(&rdy_lk[c], d);
         return;
     }
@@ -164,6 +170,15 @@ rt_task_t *rt_pick_ready(void)
     if (!rdy_head[c][p]) {
         rdy_tail[c][p] = NULL;
         rdy_map[c] &= ~(1u << p);
+    }
+    /* 站68F(root-f):僵尸摘头闸——队头 DEAD/FREE = 队列不变量已破
+     * (入队闸(root-f 前段)漏网的历史残链/收尸竞速)。若放行,
+     * 68D 锁内置 RUN 会把僵尸状态洗白复活:按陈旧帧 eret=野跳族
+     * (68C 守卫实测 rt_cur=已退池任务+sp 毒 0x1)。尸检纪律:解锁
+     * 后停车指名,不消费尸帧。 */
+    if (t->state == RT_DEAD || t->state == RT_FREE) {
+        rt_spin_unlock(&rdy_lk[c], d);
+        rt_panic("zombie picked (rdy corruption)", (unsigned)rt_task_slot(t));
     }
     /* 站68D:摘链+置 RUN 同锁窗(68B 入队侧 state+link 原子的对称
      * 补角)。旧码摘链在锁内而 state=RUN 由调用方在锁外后写,留

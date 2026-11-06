@@ -88,7 +88,12 @@ static rt_task_t *task_alloc_kernel(const char *name, void (*entry)(void *),
             *w++ = 0xA5A5A5A5A5A5A5A5ULL;
     }
     /* 站21A:复用槽必清清单(评审核 blocker:残留 stale deadline
-     * =复用槽首个挂等假超时;wait_mask/wq_next/wake_tick 旧三件沿用) */
+     * =复用槽首个挂等假超时;wait_mask/wq_next/wake_tick 旧三件沿用)。
+     * 站68F root-f:置 RT_CREATING——半创建态守卫族经 TASK_LIVE
+     * 免检(同 FREE/DEAD 律),入队闸放行(新生首推合法;旧置
+     * RT_FREE 会在 create 尾推时被僵尸闸在锁内置 READY 之前读
+     * 出=丢推=initmark 子永不调度=引导停摆,实测定谳)。 */
+    t->state = RT_CREATING;
     t->pend_deadline = 0;
     t->pend_qh = NULL;
     t->pend_qt = NULL;
@@ -112,8 +117,13 @@ static rt_task_t *task_alloc_kernel(const char *name, void (*entry)(void *),
      * 预 governed 毒发,ticks 11-50)。修=创建窗内恒置 RT_FREE
      * (TASK_LIVE 假→扫描全谓词跳过;分配判 FREE/DEAD 故不双认领,
      * 创建实序贯无双认领面),READY 唯一由末尾 rt_ready_push 原子
-     * 置+入队——状态可见即可达,孤儿窗彻底闭合(68B 同律上移创建面)。 */
-    t->state = RT_FREE;
+     * 置+入队——状态可见即可达,孤儿窗彻底闭合(68B 同律上移创建面)。
+     * 站68F root-f:窗口态改 RT_CREATING——半创建与退池尸在状态上
+     * 分家:僵尸入队闸拒 DEAD/FREE,新生态放行(旧置 FREE 时新生
+     * 首推被闸在锁内置 READY 之前读出=丢推,initmark 子永不调度=
+     * 引导停摆实测)。守卫/扫描性质全承 RT_FREE 旧律:TASK_LIVE
+     * 假(排除清单已加)、分配判 FREE/DEAD 不双认领。 */
+    t->state = RT_CREATING;
     t->wait_mask = 0;
     t->wq_next = NULL;            /* 站十七:同步队列链,复用槽必清 */
     t->wake_tick = 0;
@@ -284,7 +294,8 @@ void rt_block_rx(void)
  * fork/clone 子恒 entry==NULL(帧改写形)——四条走查(唤醒全/睡醒/
  * 超时到账/栈哨兵)一直把它们排除在外。首个自然睡的 fork 子
  * (sigqdemo)睡死定谳。活判据=状态面(站35 RT_FREE 同族)。 */
-#define TASK_LIVE(t) ((t)->state != RT_FREE && (t)->state != RT_DEAD)
+#define TASK_LIVE(t) ((t)->state != RT_FREE && (t)->state != RT_DEAD && \
+                      (t)->state != RT_CREATING)
 
 void rt_task_wake_all(u32 mask)
 {
@@ -511,8 +522,11 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
         /* 站68C-5 毒帧槽位解剖:帧基=毒 sp(x1),被中断上下文的
          * x30@264(链接=wfi 语境被谁调用=幽灵身份直证)、x29@256
          * (帧指针)+ 一级链([fp]=上级 fp,[fp+8]=上级返回址)——
-         * rt_cur 失同步镜像下 old 名不可信,帧内调用链才是本人。 */
-        {
+         * rt_cur 失同步镜像下 old 名不可信,帧内调用链才是本人。
+         * 站68F:sp 非映射(实测 sp=0x1,僵尸帧消费面)时解剖读
+         * 自死=打印半途截断,cur0/cur1/tick 环全失——毒 sp 闸外
+         * 跳过帧读,后续双核现场保全。 */
+        if (poison_sp >= 0x40000000ULL && poison_sp < 0x80000000ULL) {
             u64 fx30 = *(volatile u64 *)(unsigned long)(poison_sp + 264);
             u64 fx29 = *(volatile u64 *)(unsigned long)(poison_sp + 256);
             u64 up = 0, upret = 0;
@@ -534,6 +548,8 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
                         *(volatile u64 *)(unsigned long)(poison_sp + 8), "");
             rt_puts_hex(" f.x0 0x",
                         *(volatile u64 *)(unsigned long)(poison_sp + 16), "\n");
+        } else {
+            rt_puts("fx* skipped (poison sp unmapped)\n");
         }
         /* 站68C-5b:任务字段五元——old/next 的 sp/usp 现值判幽灵
          * 上栈路径:old->sp=蹦床=臂点已毒(sp 字段复活);old->sp
@@ -703,6 +719,11 @@ rt_task_t *rt_ps_next(unsigned int *idx)
 int rt_task_in_pool(rt_task_t *t)
 {
     return t >= pool && t < pool + RT_POOL_MAX;
+}
+
+int rt_task_slot(rt_task_t *t)
+{
+    return rt_task_in_pool(t) ? (int)(t - pool) : -1;
 }
 
 rt_task_t *rt_idle_task(void)

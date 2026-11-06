@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (c) 2026 Julian Chu */
 #include "rtos.h"
+#include "miniuart.h" /* 站68F:gic.h 前置契约(puts_uart 声明,同 rt_main.c 序) */
+#include "gic.h"      /* 站68F:vgicr_read 帧回读(smpstat 判据面) */
 
 /* 演示即判据(第十七站):静态对象,任务体自证同步原语。
  * 池占用:常驻 shell+heartbeat,演示峰值 +2 < 8。
@@ -281,6 +283,21 @@ void rt_demo_smp(void)
     if (!rt_task_create_cpu("smp0", smp_counter, (void *)0UL, 12, 0) ||
         !rt_task_create_cpu("smp1", smp_counter, (void *)1UL, 12, 1))
         rt_puts("smpdemo: pool full\n");
+}
+
+/* 站68F:smpstat——次核在线状态的命令面查询。门[35]原判据=次核
+ * 开机一次性自报行,在 chardev 分块丢字节族(站25/33 记档,散布型
+ * 丢行:全量两连实测丢 "log core up"+"cpu1: online" 相邻两行)
+ * 下丢一次即永不再来=90s 必死;命令/应答面(发 smpstat 读回行)
+ * 对该族免疫。判据保真:帧1 ISENABLER0 使能位 0x08000001
+ * (SGI0|PPI27)只有次核 gic_secondary_frame_init 写得出;vgic 模拟
+ * 按地址路由(mmio.c 帧号=off>>17)主核跨帧读回同值——0=次核
+ * 从未上岗,诚实失败;开机自报行保留(人读面不变)。 */
+void rt_demo_smpstat(void)
+{
+    rt_puts_u64("smp: cpu1 gicr1_en=",
+                (u64)vgicr_read(0x20000UL + GICR_SGI + GICR_ISENABLER0),
+                "\n");
 }
 
 static void ipi_sleeper(void *arg)

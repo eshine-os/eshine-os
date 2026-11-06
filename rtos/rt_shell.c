@@ -2322,6 +2322,8 @@ static void shell_line(char *line)
         sys2(ES_NR_demo, RT_U_QUEUEDEMO, 0);
     } else if (streq(line, "smpdemo")) {
         sys2(ES_NR_demo, RT_U_SMPDEMO, 0);
+    } else if (streq(line, "smpstat")) {
+        sys2(ES_NR_demo, RT_U_SMPSTAT, 0);
     } else if (streq(line, "ipidemo")) {
         sys2(ES_NR_demo, RT_U_IPIDEMO, 0);
     } else if (streq(line, "fpsmp")) {
