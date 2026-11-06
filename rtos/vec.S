@@ -169,7 +169,15 @@ guest_park:
  * 且 SP_EL1=蹦床残值"这一原罪语境;elr 对 map 即函数名。 */
 .Lbk_viol:
     mov     x9, x4                 /* site 先保(x9 帧后恒死) */
-    mrs     x7, sp_el1             /* 案发库现值 */
+    /* 站68C-2 案发库:直读 sp_el1 在 EL1 落 UNDEF(EC=0,站28 冒烟
+     * 定谳;用户实测 elr=0x40018794 现场复抓=桩自雷吞证据)——换
+     * spsel 摆渡:x8 存原选择器,切 SP_EL1 库取值后原样归还。桩的
+     * UNDEF 落 SP_ELx 槽(guest_sync)反向坐实:违例瞬间 SPSel=1,
+     * 毒 sp 即 SP_EL1 蹦床帧,与域检违例全息自洽。 */
+    mrs     x8, spsel              /* 原选择器 */
+    msr     spsel, #1
+    mov     x7, sp                 /* SP_EL1 现值 */
+    msr     spsel, x8              /* 原样归还 */
     mrs     x5, spsr_el1           /* 被中断 PSTATE */
     mov     x6, x0                 /* next=切换目标(先于 x0 覆写) */
     mov     x1, x3                 /* 毒 sp */
