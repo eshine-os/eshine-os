@@ -69,6 +69,7 @@ void rtos_secondary_main(u32 cpu)
     idle->name[3] = '1'; idle->name[4] = ' '; idle->name[5] = 'i';
     idle->name[6] = 'd'; idle->name[7] = 'l'; idle->name[8] = 'e';
     idle->name[9] = '\0';
+    idle->ksp = (u64)__cpu1_stack_top;   /* 站68C-4:同 idle0 律入域检 */
     idle->slice_left = RT_SLICE;
     __asm__ volatile("msr cpacr_el1, %0" :: "r"(3UL << 20));
     __asm__ volatile("isb");
@@ -270,6 +271,11 @@ void guest_main(void)
     idle->state = RT_RUN;
     idle->name[0] = 'i'; idle->name[1] = 'd'; idle->name[2] = 'l';
     idle->name[3] = 'e'; idle->name[4] = '\0';
+    /* 站68C-4:idle0 ksp=引导栈顶(boot 语境转正,首切出落帧域内)。
+     * 内核任务 ksp 旧恒 0=域检 cbz 放行=隐形人——幽灵(idle sp 毒化
+     * 后复活上蹦床跑 rt_sched 死循环,实测 elr=wfi nop/双 bank=
+     * 蹦床帧)对保存/臂点两道检查全隐形,rt_cur 失同步镜像同源。 */
+    idle->ksp = (u64)__stack_top;
     idle->slice_left = RT_SLICE;
     gic_dist_init();                  /* 站12:vGIC 真启动式 */
     rt_blk_boot();                    /* 站39:探针相(rt_blk 单 TU) */

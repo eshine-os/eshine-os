@@ -858,6 +858,8 @@ int  rt_as_user_mapped(struct rt_proc *p, u64 va);   /* 映射门 */
 rt_task_t *rt_idle1_task(void);      /* 站二十:次核 idle(池外伪任务) */
 void rtos_secondary_main(u32 cpu);   /* 站二十:次核世界(asm 入口落点) */
 void rtos_secondary_entry(void);      /* 站二十:asm 入口(vec.S .global) */
+extern char __stack_top[];            /* 站68C-4:链接器主核引导栈页顶
+                                        * (idle0 域检入列;boot 语境转正) */
 extern char __cpu1_stack_top[];       /* 站二十:链接器次核引导栈页顶 */
 
 /* rt_smp 面(站二十;落在 rt_sched.c) */
@@ -929,7 +931,8 @@ void rt_frame_init(rt_task_t *t, void *stack_top, void (*entry)(void *), void *a
 /* 站68C:簿记域检违例打印器(vec.S .Lbk_viol 桩调;noreturn 打印+park。
  * 勿标 noreturn 于头——asm bl 不经 C 语义,标了反令 GCC 在别处删尾码)。 */
 void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
-                           u64 elr, u64 spsr, u64 next, u64 sp_el1);
+                           u64 elr, u64 spsr, u64 next, u64 sp_el1,
+                           u64 sp_el0, u64 spsel);
 
 /* rt_sched.c:DAIF 短临界段(第十七站)。save/restore 而非 set/clr——
  * ISR 语境(I=1)restore 原样归还,不泄掩码。 */

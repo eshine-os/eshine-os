@@ -480,7 +480,8 @@ static void rt_queue_poison(int c, int p, unsigned long v1,
  * guest_irq / guest_el0_irq 中哪一个在交叉存)。纪律同上:全掩+
  * 单次+裸 uart+park。 */
 void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
-                           u64 elr, u64 spsr, u64 next, u64 sp_el1)
+                           u64 elr, u64 spsr, u64 next, u64 sp_el1,
+                           u64 sp_el0, u64 spsel)
 {
     if (!panic_done) {
         panic_done = 1;
@@ -501,7 +502,39 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
         rt_puts_hex("elr 0x", elr, "");
         rt_puts_hex(" psr 0x", spsr, "");
         rt_puts_hex(" next 0x", next, "");
-        rt_puts_hex(" sp_el1 0x", sp_el1, "\n");
+        rt_puts_hex(" sp_el1 0x", sp_el1, "");
+        /* 站68C-5c:bank 三元组终局——SPSel 现值+双 bank 现值:判帧
+         * 落何库(sp==sp_el0=SP0 槽;sp==sp_el1=SPx 槽)、另一库何值、
+         * psr.SPSel 与现值相悖=换库窗案。 */
+        rt_puts_hex(" sp_el0 0x", sp_el0, "");
+        rt_puts_hex(" spsel 0x", spsel, "\n");
+        /* 站68C-5 毒帧槽位解剖:帧基=毒 sp(x1),被中断上下文的
+         * x30@264(链接=wfi 语境被谁调用=幽灵身份直证)、x29@256
+         * (帧指针)+ 一级链([fp]=上级 fp,[fp+8]=上级返回址)——
+         * rt_cur 失同步镜像下 old 名不可信,帧内调用链才是本人。 */
+        {
+            u64 fx30 = *(volatile u64 *)(unsigned long)(poison_sp + 264);
+            u64 fx29 = *(volatile u64 *)(unsigned long)(poison_sp + 256);
+            u64 up = 0, upret = 0;
+
+            if (fx29 >= 0x40000000ULL && fx29 < 0x40200000ULL) {
+                up = *(volatile u64 *)(unsigned long)fx29;
+                upret = *(volatile u64 *)(unsigned long)(fx29 + 8);
+            }
+            rt_puts_hex("fx30 0x", fx30, "");
+            rt_puts_hex(" fx29 0x", fx29, "");
+            rt_puts_hex(" up 0x", up, "");
+            rt_puts_hex(" upret 0x", upret, "\n");
+        }
+        /* 站68C-5b:任务字段五元——old/next 的 sp/usp 现值判幽灵
+         * 上栈路径:old->sp=蹦床=臂点已毒(sp 字段复活);old->sp
+         * 净而 next->usp=蹦床=.Lpop EL0 路 SP_EL0:=usp 毒化路径
+         * (eret→EL0 以蹦床为用户栈);两者皆净=第三路径待排除。 */
+        rt_puts_hex("o_sp 0x", old->sp, "");
+        rt_puts_hex(" o_usp 0x", old->usp, "");
+        rt_puts_hex(" n_sp 0x", next ? *(u64 *)(void *)&((rt_task_t *)next)->sp : 0, "");
+        rt_puts_hex(" n_usp 0x",
+                    next ? *(u64 *)(void *)&((rt_task_t *)next)->usp : 0, "\n");
         rt_puts_hex("cur0 0x", (u64)rt_cur_arr[0], "");
         rt_puts_hex(" cur1 0x", (u64)rt_cur_arr[1], "");
         rt_puts_hex(" ticks ", rt_ticks, "\n");

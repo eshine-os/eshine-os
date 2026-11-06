@@ -196,6 +196,8 @@ guest_park:
     mrs     x8, spsel              /* 原选择器 */
     msr     spsel, #1
     mov     x7, sp                 /* SP_EL1 现值 */
+    msr     spsel, #0
+    mov     x10, sp                /* 站68C-5c:SP_EL0 现值(第二 ferry) */
     msr     spsel, x8              /* 原样归还 */
     mrs     x5, spsr_el1           /* 被中断 PSTATE */
     mov     x6, x0                 /* next=切换目标(先于 x0 覆写) */
@@ -206,6 +208,7 @@ guest_park:
     mov     x2, x11                /* ksp */
     ldr     x12, =__stack_top
     mov     sp, x12
+    stp     x10, x8, [sp, #-16]!   /* 第9/10参:SP_EL0+SPSel(栈参) */
     bl      rt_bookkeep_violation
 
 guest_irq:
@@ -486,6 +489,12 @@ rt_frame_init:                      /* x0=task x1=stack_top x2=entry x3=arg */
     str     x3, [x1, #16]           /* x0 槽 = arg */
     str     x2, [x1, #32]           /* x1 槽 = entry */
     str     x1, [x0]                /* task->sp = 帧顶 */
+    /* 站68C-4:ksp=栈顶。内核任务 ksp 旧恒 0=域检 cbz 放行=隐形
+     * 人(保存/臂点两道皆跳)——幽灵(已毒 sp 复活上蹦床跑 rt_sched
+     * 死循环,实测 elr=wfi nop/双 bank=蹦床帧)出生即漏网。补设后
+     * 全任务入域检:毒化写与已毒复活双面皆在门口。 */
+    add     x1, x1, #272
+    str     x1, [x0, #RT_KSTK_OFF] /* ksp = 栈顶 */
     ret
 
 rt_trampoline:                      /* 帧里:x0=arg,x1=entry */
