@@ -144,7 +144,21 @@ guest_park:
     ldr     x1, =rt_cur_arr
     str     x0, [x1, x9, lsl #3]   /* rt_cur = 新(本核槽) */
     ldr     x3, [x0]
-    mov     sp, x3                 /* sp = 新帧顶 */
+    /* 站68C-3 臂点域检:next->sp 须落 next 的内核栈域 [ksp-4096,
+     * ksp)。已毒 sp 的复活=.Lpop 把蹦床上陈旧 272B 旧 IRQ 帧当任
+     * 务帧消费=幽灵执行(实测 elr=rt_sched wfi nop、psr=EL1t、SP=
+     * 蹦床帧,与复合帧解剖标本同形)。门口拦截:违者不放行——首
+     * 次毒化的受害者与时间戳当场钉住,幽灵不跑毒不再自我复制。
+     * x4/x11/x12 帧后恒死;ksp=0(内核任务)放行同保存面。 */
+    ldr     x11, [x0, #RT_KSTK_OFF]
+    cbz     x11, 7f
+    sub     x12, x11, #4096
+    cmp     x3, x12
+    adr     x4, 7f
+    b.lo    .Lbk_viol_arm
+    cmp     x3, x11
+    b.hs    .Lbk_viol_arm
+7:  mov     sp, x3                 /* sp = 新帧顶 */
     ldr     x3, [x0, #736]
     msr     tpidr_el0, x3
     /* 站29:地址空间切换点(参考实现 switch_mm 的调度器内联形)。任务
@@ -160,6 +174,11 @@ guest_park:
     msr     ttbr0_el1, x3
     isb
 .endm
+
+/* 站68C-3:臂点违例包装(受害者=next,复用主桩全套现场捕获)。 */
+.Lbk_viol_arm:
+    mov     x2, x0                 /* old 语义改受害者(臂点语境) */
+    b       .Lbk_viol
 
 /* 站68C:簿记域检违例桩(三展开点共用)。x2=old 任务,x3=毒 sp,
  * x11=ksp,x4=案发展开点,x0=next(簿记的切换目标)。当前 sp=毒值
