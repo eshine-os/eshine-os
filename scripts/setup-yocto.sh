@@ -9,13 +9,17 @@ set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 Poky="${ESHINE_POKY_DIR:-$HOME/projects/poky}"
 BUILD="${ESHINE_YOCTO_BUILD:-$HOME/projects/eshine-yocto-build}"
-PROXY="$ESHINE_PROXY"
+PROXY="${ESHINE_PROXY:-}"
 
-# 1) poky(scarthgap LTS,shallow;直连不通退代理,与 busybox 取源同法)
+# 1) poky(scarthgap LTS,shallow;直连不通时经 ESHINE_PROXY)
 if [ ! -d "$Poky/bitbake" ]; then
     echo "== 克隆 poky(scarthgap)到 $Poky =="
     if ! git clone --depth 1 -b scarthgap \
         https://git.yoctoproject.org/poky.git "$Poky" 2>/dev/null; then
+        if [ -z "$PROXY" ]; then
+            echo "ERROR: poky clone failed; set ESHINE_PROXY to retry via proxy" >&2
+            exit 1
+        fi
         git -c http.proxy="$PROXY" clone --depth 1 -b scarthgap \
             https://git.yoctoproject.org/poky.git "$Poky"
     fi

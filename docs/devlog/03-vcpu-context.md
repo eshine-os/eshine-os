@@ -46,9 +46,9 @@ resumed(断点续跑)、fault(隔离:诊断+VM 死+宿主无损)。
    (循环体零累加指令)。空 asm `"+r"(sum)"` 屏障挡折叠后,x19/x30 落点
    实证(反汇编 `add x30,x30,x19` 跨 hvc)—— 寄存器完整性判据才真活。
 
-## 参考实现基准对齐(结构参考,clean-room 纪律不变)
+## 参考实现对齐(结构参考,clean-room 纪律不变)
 
-探索代理扫了参考实现(参考实现/hypervisor/arch/arm64)的 trap 上下文形态:
+探索代理扫了参考实现(arch/arm64)的 trap 上下文形态:
 
 **结构一致仅命名偏离**:参考实现 `cpu_regs.regs[30]+lr+sp+elr+spsr` ≈ 新仓
 `gprs[31]+sp+pc+pstate`(信息等价,x30 命名 lr 而已);asm 桩+C handler
@@ -56,7 +56,7 @@ resumed(断点续跑)、fault(隔离:诊断+VM 死+宿主无损)。
 `el1_trap→el1_sync→trap_resume` 完全同构;`callee_saved_regs` ≈ host_ctx;
 WFI-trap-yield ≈ HVC#2-yield(语义同,机制不同)。
 
-**真结构差异(docs/baseline-deviations.md 已登记)**:
+**真结构差异(站点设计已登记)**:
 1. **帧归属层级**:参考实现帧=宿主线程栈顶钉住(`cpu_regs_ctx`,经 osx_tcb
    间接引用),GPR 与 sysreg(spe_ctx/vgic/vtimer)分置;新仓帧内嵌 vcpu
    结构,尚无线程/调度间接层 —— 第三站形态是"无调度器的帧",参考实现是

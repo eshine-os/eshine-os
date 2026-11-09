@@ -155,7 +155,7 @@ git show --stat 验三件在——站 17 教训)。
 | D:DTB 重裁剪遗漏节点 | 树裁剪与 QEMU 自动树逐节点 diff 自检(站 14 同法) |
 | D:CPU_SUSPEND 语义放水 | standby 空转返回 0 记残余(power_level>0 未建) |
 
-## 7. 偏离登记(预登记 #23,随实现 commit 落 baseline-deviations.md)
+## 7. 偏离登记(预登记 #23,随实现 commit 落站点设计文档)
 
 > #23 站十九四块:A=[41] 追查结案口径(复现修/不复现结案);B=事件组
 > +u64 消息队列(参考RTOS IPC 公开语义最小化:32 位 AND/OR 等待+环形收发

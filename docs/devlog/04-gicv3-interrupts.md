@@ -78,6 +78,6 @@ cpu.c/helper.c）；每个"记忆位号"先核源码再落键盘，核不到就�
 ## 对齐与登记
 
 偏差 #8（单 LR 无兜底/单版本直书）、#9（TWI+WAIT+代完成）、#10
-（vtimer 串行共享）按 spec §6 预登记入册 docs/baseline-deviations.md。
+（vtimer 串行共享）按 spec §6 预登记入册站点设计文档。
 门禁 17 → 20 步：[4] tick 递增、[13] sleep→slept、[19] guest 退场后
 tick 复验——三步分别钉死物理面、注入面、恢复面。

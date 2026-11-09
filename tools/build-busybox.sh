@@ -57,10 +57,17 @@ if [ ! -d "busybox-${VER}" ]; then
             [ -f "$t" ] && found="$t" && break
         done
         if [ -z "$found" ]; then
-            echo "== 下载 busybox ${VER}(直连先试,退 代理)=="
+            echo "== 下载 busybox ${VER}(直连先试,失败时经 ESHINE_PROXY)=="
             CURL="curl -fL --retry 3"
-            curl -sI --max-time 8 "$BB_URL" 2>/dev/null | head -1 | \
-                grep -q " 200" || CURL="$CURL -x $ESHINE_PROXY"
+            if ! curl -sI --max-time 8 "$BB_URL" 2>/dev/null | head -1 | \
+                grep -q " 200"; then
+                if [ -n "${ESHINE_PROXY:-}" ]; then
+                    CURL="$CURL -x $ESHINE_PROXY"
+                else
+                    echo "ERROR: 无法直连 $BB_URL,且未设置 ESHINE_PROXY" >&2
+                    exit 1
+                fi
+            fi
             $CURL -o "busybox-${VER}.tar.bz2" "$BB_URL"
         else
             cp "$found" "busybox-${VER}.tar.bz2"

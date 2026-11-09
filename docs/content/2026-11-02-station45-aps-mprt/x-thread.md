@@ -1,7 +1,7 @@
 # X 8 推(站 45 APS+MPRT)
 
 1/8
-eshine-os 站 45:混合关键性的本职技能——CPU 预算分区(APS,QNX 白描)+内存预算分区(MPRT)。参考实现参考是 1108 行的 k_aps.c,我们落地 200 行:白描的是机制不是行数。 #RTOS #mixedcriticality
+eshine-os 站 45:混合关键性的本职技能——CPU 预算分区(APS,QNX 白描)+内存预算分区(MPRT)。参考实现是 1108 行的 k_aps.c,我们落地 200 行:白描的是机制不是行数。 #RTOS #mixedcriticality
 
 2/8
 APS 两个语义:guarantee——20% 分区在争跑时实得 20%(窗 20 tick 记账,tick 粒度与参考同款);steal——没人要的 CPU 白给你,记账回冲。保证是下限不是上限,偷闲是权利不是漏洞。 #scheduling

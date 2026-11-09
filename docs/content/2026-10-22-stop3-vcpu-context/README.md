@@ -26,7 +26,7 @@
 
 - 事实:陷阱帧(gprs[31]+sp+pc+pstate 内嵌 vcpu,偏移=asm 契约)、
   HVC 三调用号(#2 yield)、PAUSED 首次启用(状态机零新转换)、
-  17 步门禁连续 2 过、与旧参考实现形态对齐(差异入设计记录 #5/6/7)
+  17 步门禁连续 2 过、与参考实现形态对齐(差异入设计记录 #5/6/7)
 - 三个 debug war story 全实证:noreturn 反杀 / SP_EL2 79 发陷阱碾穿栈底 /
   GCC 常量折叠杀判据
 - AI 署名透明:Claude / GLM-5.3(git log 可查)

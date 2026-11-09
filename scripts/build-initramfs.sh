@@ -12,10 +12,15 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SLOT=$((8 * 1024 * 1024))
 BB_URL="https://busybox.net/downloads/busybox-${VER}.tar.bz2"
 CURL="curl -fL --retry 3"
-# busybox.net 直连多半不通,先试直连再退代理(与站 14 内核取源同法)
+# busybox.net 直连多半不通,先试直连;失败时经 ESHINE_PROXY(可选)
 curl_head_ok() { curl -sI --max-time 8 "$1" 2>/dev/null | head -1 | grep -q " 200"; }
 if ! curl_head_ok "$BB_URL"; then
-    CURL="$CURL -x $ESHINE_PROXY"
+    if [ -n "${ESHINE_PROXY:-}" ]; then
+        CURL="$CURL -x $ESHINE_PROXY"
+    else
+        echo "ERROR: 无法直连 $BB_URL,且未设置 ESHINE_PROXY" >&2
+        exit 1
+    fi
 fi
 
 mkdir -p "$DIR"

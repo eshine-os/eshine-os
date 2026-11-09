@@ -67,4 +67,4 @@ chardev FIFO push 在 read_pos/write_pos 上赛跑。空读返 0 被
 - 多 vCPU / VM 抽象（struct eshine_vm 的 vcpus[]/mem[]/devices[] 落实）
 - GICv3 虚拟化（ICH_*），中断不再 WFI
 - EL1 stage-1 打开后的双阶段翻译
-- 27.04 路线见 docs/superpowers/specs/2026-10-22-stage2-first-guest-design.md
+- 27.04 路线见 docs/specs/ 的后续站点设计。

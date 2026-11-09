@@ -18,7 +18,7 @@ if [ ! -d "$Poky/bitbake" ] || [ ! -f "$BUILD/conf/local.conf" ]; then
 fi
 
 # 站37 自愈定谳:归档=gitignore 工件,站34 后无人重生则 bitbake
-# 恒吃参考实现——[99] 曾以站34 部署物混过三轮绿灯(参考实现也有
+# 恒吃陈旧归档——[99] 曾以站34 部署物混过三轮绿灯(陈旧归档也有
 # hello)。每次构建前重生=门恒验当下提交树(源变即新哈希,
 # sstate 自然失配重建)。
 bash "$REPO/scripts/archive-source.sh" > /dev/null

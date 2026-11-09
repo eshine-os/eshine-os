@@ -156,7 +156,7 @@ int rt_msg_conn_ref(int coid)
 static int name_cmp(const char *a, const char *b)
 {
     /* 分段比较:逐 segment 精确匹配,杜绝前缀误中("/ipc/dem" 不中
-     * "/ipc/demo");旧参考实现全平表线性 strcmp 的层级化修正在此。 */
+     * "/ipc/demo");参考实现全平表线性 strcmp 的层级化修正在此。 */
     while (*a == *b) {
         if (*a == '\0')
             return 0;

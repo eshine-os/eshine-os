@@ -17,3 +17,7 @@ meta-eshine/recipes-eshine/eshine-rtos/files/eshine-os-*.tar.gz
 tools/ramfs/bin/busybox
 # 站63:发布件=make-release.sh 产物(可解包即靴,自靴判据在脚本内)
 release/
+# 内部工作笔记(不随公开仓发布)
+.claude/
+docs/superpowers/
+docs/baseline-deviations.md

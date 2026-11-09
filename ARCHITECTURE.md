@@ -322,7 +322,6 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
   RTOS 与 vm1/vm2 物理并行；WFE/SEV 邮箱跨泵握手、console 自旋锁
   行级原子、VM 状态锁收敛 kill/在途退场竞态、VMPIDR per-vcpu
   （0x80000000|idx，guest MPIDR 视图=帧号，DTB/PSCI 三角一致）
-- 与参考实现的结构对齐约定见 docs/baseline-deviations.md
 
 ## 验证
 

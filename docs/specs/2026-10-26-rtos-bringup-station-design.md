@@ -181,7 +181,7 @@ vtimer 到点唤醒泵回,站五机制零改动)。
   各以 DAIF 屏蔽——27 在这两窗内插队会把 armed 存成 0/把装载好的
   ctl 关线,RAW 语义归 RX 永久停摆。
 
-## 7. 偏离登记(预登记 #20,随实现 commit 落 baseline-deviations.md)
+## 7. 偏离登记(预登记 #20,随实现 commit 落站点设计文档)
 
 > #20 RTOS 形态:参考实现 rtos-kernel(参考RTOS/Linux 派生聚合,130K 行,"连行为
 > 参考也不进")-> 新仓第十六站 参考RTOS 公开设计为基准从零最小人格(32 级位图
