@@ -1,7 +1,7 @@
 # X 8 推(站 58 virtio-net,九刀二分之夜)
 
 1/8
-eshine-os station 58: a second virtio device — virtio-net, consumed by vm2's own Linux virtio_net driver. OASIS spec clean-room (the reference repo's virtio-net 组件 is off-limits by license). The night's real content: a nine-cut bisection. #buildinpublic #hypervisor #virtio
+eshine-os station 58: a second virtio device — virtio-net, consumed by vm2's own Linux virtio_net driver. OASIS spec clean-room. The night's real content: a nine-cut bisection. #buildinpublic #hypervisor #virtio
 
 2/8
 The bind proof writes itself: Linux discovers the device on a second virtio-mmio window, negotiates F_MAC, and reads the MAC from our config space — the six bytes we wrote come back through the guest's sysfs. That's a device model's full marks.

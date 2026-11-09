@@ -35,3 +35,26 @@ VERSION 文件（仓库根,唯一事实源）
 - **mainline** = master tip（`YY.MM-dev`）
 - **stable** = 最新 `vYY.MM` tag（点版本沿用同 tag 系列）
 - **longterm** = LTS tag（未来）
+
+## 开发周标签（dev tags）
+
+- 每周一个轻量 tag，格式 `YY.MM-Nw`：
+  - `YY.MM` = 该周周一所在月份；
+  - `N` = 该月内**有提交的周**的序号（从 1 起）；
+  - 例：2026-11 第一个开发周（周一 2026-11-02）→ `26.11-1w`。
+- tag 指向该周**最早提交**的 commit（按 author date，仅 master）。
+- 开发 tag 为 lightweight；正式版 `vYY.MM` 仍为 annotated。
+- 脚本：`scripts/tag-dev-week.py`（当前周）/ `--backfill`（全部历史周，幂等）。
+
+## 提交 trailer 规范
+
+所有 commit 的消息末尾统一为以下四行（顺序固定，前面一个空行）：
+
+    Co-Authored-By: Claude Code <noreply@anthropic.com>
+    Co-Authored-By: glm-5.3 <noreply@zhipuai.cn>
+    Reviewed-by: deepseek-v4.1-flash <noreply@deepseek.com>
+    Signed-off-by: Julian Chu <rootuliux@gmail.com>
+
+- 提交消息使用英文、纯 ASCII，subject ≤72 字符。
+- 作者与提交日期不改写；`Signed-off-by` 即 DCO 声明。
+- 细则见 [CONTRIBUTING.md](../CONTRIBUTING.md)。

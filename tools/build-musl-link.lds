@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (c) 2026 Julian Chu */
 /* eshine-rtos 用户窗链接脚本(mmap 窗 0x40C00000..0x40E00000):
  * 静态 musl hello 落窗内,hint-mmap 直挂。
  *

@@ -13,13 +13,13 @@ Landmine #1: QEMU TCG doesn't enforce MDCR_EL2 traps AT ALL. Instrumented handle
 ...but plot twist: QEMU's debug registers are inert stubs anyway (MDSCR write reads back 0). The platform has NO leak surface by construction. So: mechanism stays in the code (real-hw ready), platform stubs cover QEMU, and a probe reports both shapes honestly.
 
 5/8
-Landmine #2 — the one that cost blood: I took TPM=bit0/TPMCR=bit1 from the reference repo's sysregs.h. MDCR_EL2=0x203. Result: the third child process of the service governor hung SILENTLY. Bisected to that single MSR.
+Landmine #2 — the one that cost blood: I took TPM=bit0/TPMCR=bit1 from the reference implementation's sysregs.h. MDCR_EL2=0x203. Result: the third child process of the service governor hung SILENTLY. Bisected to that single MSR.
 
 6/8
-Root cause: bits [4:0] of MDCR_EL2 are HPMN (Hypervisor PMU Number). Bit0-1 aren't TPM's home — they're HPMN's. Writing 0x203 set HPMN=3 and QEMU died quietly somewhere in PMU logic. The reference repo's header was wrong.
+Root cause: bits [4:0] of MDCR_EL2 are HPMN (Hypervisor PMU Number). Bit0-1 aren't TPM's home — they're HPMN's. Writing 0x203 set HPMN=3 and QEMU died quietly somewhere in PMU logic. The reference implementation's header was wrong.
 
 7/8
-Lesson engraved: a reference repo is also written by humans. When a bit definition touches a reserved/multi-bit field boundary (HPMN[4:0]), re-verify. Two authorities colliding means one of them is a typo.
+Lesson engraved: a reference implementation is also written by humans. When a bit definition touches a reserved/multi-bit field boundary (HPMN[4:0]), re-verify. Two authorities colliding means one of them is a typo.
 
 8/8
 Final: MDCR_GUEST=0x200 (TDA only, matching the ARM ARM), dbgdemo probe (trapped/quiescent dual-shape platform report), vmdbg slot dump, vm1 boot probe. Gates 151→154, smoke 14/14. #ARM #virtualization

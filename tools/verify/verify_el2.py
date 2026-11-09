@@ -14,8 +14,8 @@ Boots eshine.elf on QEMU virt (direct EL2), waits for the banner and
 the shell prompt, sends `echo ESHINEOK<pid>`, and asserts the token
 appears at least TWICE: once as typed-echo by the guest shell, once as
 actual command output. Static markers do not count; this mirrors the
-login-dance + token-echo standard used by the previous eshine-os
-reference repo (baseline alignment, spec section 5).
+login-dance + token-echo standard used by the reference
+implementation (baseline alignment, spec section 5).
 
 第五站(27.04)起调度异步化:vmrun 不再阻塞,双 VM 在 shell 等输入的
 间隙被泵轮转(1 tick 量子,tick 出口帧转写抢占)。第六站 UART 撤出

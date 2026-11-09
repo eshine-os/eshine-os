@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Julian Chu
 # eshine-os 外部件台账(站六十二:版本 pin+SBOM;站 59 LEDGER.md 的
 # 机器可读形)。纪律:一行一组件先于一个 tarball(append-only);GPL 仓外
 # 隔离(in-repo: false);sha256=in-repo 工件的钉死哈希。
