@@ -1,0 +1,40 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (c) 2026 Julian Chu -->
+# 已知问题与边界 / Known issues and scope
+
+更新 / Updated: 2026-11-09
+
+本仓处于快速迭代期。以下问题已知、已记录，按优先级持续收敛；门禁全绿不等于没有残余缺陷。
+
+This repository iterates quickly. The issues below are known and tracked;
+a fully green gate run does not imply the absence of residual defects.
+
+## 1. SMP demo 深层污染族
+
+- 门禁 `[37]`/`[38]`（双核 demo）存在深层污染面，已有守卫与全息取证，但根因尚未完全收敛。
+- 现象线索：`sp=0xC`、self-switch `next==old`、CPU1 六拍落在 `ipimain` 栈域。
+
+## 2. 交互 shell 空格洪水
+
+- `bsh`（busybox ash REPL）场景下约 1/3 的运行会出现空格洪水残面；已有绊线，尚未自首。
+
+## 3. 门禁耗时与宿主负载敏感
+
+- 全量 183 门在当前宿主机负载下单轮可超过 30 分钟；部分门（futex/APS 时序窗）对宿主负载敏感。
+- 结论纪律：门禁失败先查宿主负载与并行任务，再谈机制；两连真绿需在安静窗复跑。
+
+## 4. 仅 QEMU virt 验证
+
+- 当前全部判据在 QEMU virt（ARM64）上执行；真板启动链、时钟、GIC 实现差异尚未验证。
+- FVP 参考平台不在本仓发布物中。
+
+## 5. v0 安全边界
+
+- 安全定位是路线图目标，不是当前完成态。
+- 当前隔离手段：EL2 stage-2、per-VM 地址空间、fail-closed 的跨 VM 共享窗授权。
+- 尚未包含：PAN/SMAP（目标 CPU 不含 PAN）、KASLR、栈保护（freestanding 构建按设计关闭）、形式化验证、模糊测试。
+
+## 6. 维护结构
+
+- 单维护者 + AI 结对开发；外部评审与贡献流程（CLA）在建立中。
+- 审计、复现与门禁记录优先于功能扩张。

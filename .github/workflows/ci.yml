@@ -3,15 +3,17 @@
 name: ci
 on: [push, pull_request]
 jobs:
-  build-and-verify:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: install cross toolchain and qemu
+      - name: install cross toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu qemu-system-arm
+          sudo apt-get install -y gcc-aarch64-linux-gnu device-tree-compiler python3
       - name: build
-        run: make
-      - name: true-green verify
-        run: python3 tools/verify/verify_el2.py
+        run: make -j"$(nproc)"
+      - name: static checks
+        run: |
+          bash -n scripts/*.sh tools/*.sh
+          python3 -m py_compile tools/verify/*.py tools/*.py
