@@ -15,13 +15,25 @@ static volatile unsigned long con_nest;
 
 void console_lock(void)
 {
+    u64 d;
+
     if (con_owner == (long)cpu_id()) {
         con_nest++;
         return;
     }
+    /* 站68I:取锁窗 DAIF 屏——station68I 迹环锁同宗竞态(见 vm.c
+     * trail_lock 定谳):stxr 置 lock 与 owner/nest 回写之间的窗口
+     * 若被 IRQ 抢占,ISR 打印面见 owner 仍旧值 → 自旋自己刚取得
+     * 的锁=本核永死+余核连坐。修=屏蔽只罩"试取+owner 回写"一步,
+     * 等锁自旋与打印临界段全程解屏(站24 响应性纪律:等锁期 IRQ
+     * 照服、行级打印期 IRQ 可入,复入走上方 owner==me 递归支;
+     * 解屏后 IRQ 抢入者的取锁尝试要么自获要么规范排队,无人
+     * 持锁离场,无死锁面)。 */
     for (;;) {
         unsigned long v;
 
+        __asm__ volatile("mrs %0, daif" : "=r"(d));
+        __asm__ volatile("msr daifset, #0xf" ::: "memory");
         __asm__ volatile("ldaxr %0, [%1]" : "=r"(v) : "r"(&con_lock));
         if (!v) {
             unsigned long ok;
@@ -32,9 +44,11 @@ void console_lock(void)
             if (!ok) {
                 con_owner = (long)cpu_id();
                 con_nest = 1;
+                __asm__ volatile("msr daif, %0" :: "r"(d) : "memory");
                 return;
             }
         }
+        __asm__ volatile("msr daif, %0" :: "r"(d) : "memory");
         __asm__ volatile("wfe");
     }
 }

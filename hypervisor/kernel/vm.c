@@ -552,56 +552,61 @@ struct trail_slot {
 static struct trail_slot trail[TRAIL_N];
 static volatile u32 trail_h;
 static volatile unsigned long trail_lk;
-static volatile long trail_owner = -1;
-static volatile unsigned long trail_nest;
 
-static void trail_lock(void)
+/* ---- 站68I:迹环锁定谳重写——旧"站25 递归锁"(owner/nest)自带夺命
+ * 竞态:stxr 置 lk=1 之后、owner/nest 回写之前的窗口未屏蔽 EL2
+ * IRQ;IRQ 恰落窗内 → ISR 的 trail_add 见 owner 仍旧值≠本核 → 对
+ * 自己刚取得的锁 WFE 自旋(DAIF 已屏)=本核永死,余核 1Hz tick/泵
+ * 每次 trail_add 相继撞 lk=1 全灭。两日龄冻尸活解指印严丝合缝:
+ * trail_lk=1 + trail_nest=0 + trail_owner=-1(窗口内中断残影),
+ * 迹环 #107558 后零写、QEMU 四线程 WFE 烧 CPU、输入进环被吃而
+ * 输出全灭=用户"pwd 卡死/久置 Enter 卡死"与站64 boot 挂脸族
+ * (峰 4/4 挂/静置 6/6 绿/法医挂账)共此一颗雷——数 ns 窗 × 4 核
+ * × ~600 ev/s × 小时驻留=定时炸弹。
+ * 修真=与 RTOS rt_spin_lock 同律:DAIF 屏蔽内纯原子锁,owner/nest
+ * 全删。临界段=4 个 store(~50ns,屏蔽无害);递归需求消失(IRQ
+ * 不可能在段内抢占)。 */
+static u64 trail_lock(void)
 {
-    if (trail_owner == (long)cpu_id()) {
-        trail_nest++;
-        return;
-    }
+    u64 d;
+
+    __asm__ volatile("mrs %0, daif" : "=r"(d));
+    __asm__ volatile("msr daifset, #0xf" ::: "memory");
     for (;;) {
-        unsigned long v;
+        unsigned long v, ok;
 
         __asm__ volatile("ldaxr %0, [%1]" : "=r"(v) : "r"(&trail_lk));
         if (!v) {
-            unsigned long ok;
-
             __asm__ volatile("stxr %w0, %w2, [%1]"
                              : "=&r"(ok)
-                             : "r"(&trail_lk), "r"(1UL));
-            if (!ok) {
-                trail_owner = (long)cpu_id();
-                trail_nest = 1;
-                return;
-            }
+                             : "r"(&trail_lk), "r"(1UL) : "memory");
+            if (!ok)
+                return d;
         }
         __asm__ volatile("wfe");
     }
 }
 
-static void trail_unlock(void)
+static void trail_unlock(u64 d)
 {
-    if (--trail_nest == 0UL) {
-        trail_owner = -1;
-        __asm__ volatile("stlr %0, [%1]" :: "r"(0UL), "r"(&trail_lk));
-        __asm__ volatile("sev");
-    }
+    __asm__ volatile("stlr %0, [%1]" :: "r"(0UL), "r"(&trail_lk) : "memory");
+    __asm__ volatile("sev");
+    __asm__ volatile("msr daif, %0" :: "r"(d) : "memory");
 }
 
 void trail_add(u32 ev, u64 a, u64 b)
 {
     struct trail_slot *s;
+    u64 d;
 
-    trail_lock();
+    d = trail_lock();
     s = &trail[trail_h % TRAIL_N];
     trail_h++;
     s->cpu = cpu_id();
     s->ev = ev;
     s->a = a;
     s->b = b;
-    trail_unlock();
+    trail_unlock(d);
 }
 
 void vm_trail_dump(u32 n, int cpu_f)

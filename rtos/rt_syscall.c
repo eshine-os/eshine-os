@@ -921,7 +921,7 @@ static long sys_writev(u64 *frame)
          * 0x20;首发打证 fd/base/len+任务名+pid,续发静默——不改
          * 语义(照写),带出处留证在前台。 */
         if (len >= 32) {
-            static int sp_said;
+            static u32 sp_hits;
             u32 sp_all = 1;
 
             for (u64 k = 0; k < len; k++)
@@ -929,12 +929,22 @@ static long sys_writev(u64 *frame)
                     sp_all = 0;
                     break;
                 }
-            if (sp_all && !sp_said) {
-                sp_said = 1;
+            /* 站68I:洪水法医扩容——首 6 发逐发打证。base 序列=凶手
+             * 签名:同 base 重发=musl 写循环重试(writev 返回契约
+             * 死循环);前进=printf 生成面活环(格式串/用户页损坏)。
+             * 附调用点 LR(elr)+iov 形状(i/cnt)。6 发后静默,续流
+             * 仍证在前台。 */
+            if (sp_all && sp_hits < 6) {
+                sp_hits++;
                 rt_puts("wvtrip: all-space chunk\n");
-                rt_puts_hex("  fd ", (u64)FR(0), "");
+                rt_puts_hex("  hit ", (u64)sp_hits, "");
+                rt_puts_hex(" fd ", (u64)FR(0), "");
+                rt_puts_hex(" iov ", (u64)i, "/");
+                rt_puts_hex("", cnt, "");
                 rt_puts_hex(" base 0x", (u64)ub, "");
                 rt_puts_hex(" len 0x", len, "\n");
+                rt_puts_hex("  lr 0x", FR(30), "");
+                rt_puts_hex(" elr 0x", ((u64 *)frame)[0], "\n");
                 rt_puts("  task ");
                 rt_puts(rt_cur->name);
                 rt_puts_hex(" pid ", (u64)rt_cur->tid, "\n");
