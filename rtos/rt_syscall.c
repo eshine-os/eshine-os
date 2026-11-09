@@ -69,6 +69,15 @@ static long sys_read(u64 *frame)
             break;
         rt_block_rx();               /* 站17 机器原样:DAIF 窗+RT_RX_BIT */
     }
+    /* 站68G:^D(0x04)→read()=0 行规程最小面——裸 tty 无流终语义,
+     * 无参 stdin 消费型 applet(busybox cat/wc/head/tail,站68F 翻
+     * NOEXEC 后内建分发直读 fd0)永等 EOF=bsh 父壳永挂 wait4
+     * ("卡在 ash"用户实测:cat 吞行回显后 ^D 当字面字节回显,流
+     * 永不终)。0x04 弹出即 EOF(一次性:后续 read 继续阻塞等新
+     * 字节,壳层 read!=1 continue 惯用法天然受容零自旋);harness
+     * 从不发 0x04,门禁面零扰动。行中 ^D=截断式(行首判据=后弧)。 */
+    if (c == 0x04)
+        return 0;
     ub[0] = (char)c;
     return 1;
 }

@@ -2571,7 +2571,8 @@ void rt_shell_task(void *arg)
         char c;
 
         if (sys3(ES_NR_read, 0, (long)&c, 1) != 1)
-            continue;                /* 不可达(read 恒 1 或负 errno) */
+            continue;                /* 0=EOF(^D,站68G 一次性)或负 errno:
+                                      * 丢弃即续读,下一 read 继续阻塞 */
         if (c == '\r' || c == '\n') {
             sys3(ES_NR_write, 1, (long)"\n", 1);
             linebuf[idx] = '\0';
