@@ -410,6 +410,49 @@ static int copy_in_str(char *dst, u64 uptr, u32 max)
     return 0;
 }
 
+/* 站68H:路径正常化(fd 层入路径面统一过路)——v0 无 chdir,cwd
+ * 恒 "/":相对路径一律按根解析。规则:循环剥前导 "./" 与 "../"
+ * (根无父,POSIX 律 ../ 到根即止);剥尽裸 "." 或 ".." → "/";仍
+ * 相对则补前导 "/";空 path 原样放行(查询面报 ENOENT,POSIX 律)。
+ * 实测撞面:busybox `ls`(无参)=`ls .`——opendir(".") 意外吃
+ * 站67 rf_under dl==1 根特判而活,但逐条目 lstat("./bin") 在
+ * ramfs 直名+前缀双查全不中(挂名表恒绝对名)→ "No such file or
+ * directory" 三连 exit 1(用户 bsh 现场报障)。中段 "./" 不剥:
+ * 名字面比对 v0 无生成者,剥了反而掩症状(最小面纪律)。 */
+static void kpath_norm(char *p)
+{
+    char tmp[48];
+    char *s = p;
+    u32 n, i;
+
+    while (s[0] == '.' && (s[1] == '/' ||
+                          (s[1] == '.' && s[2] == '/')))
+        s += (s[1] == '.') ? 3 : 2;
+    if (!s[0])
+        return;                        /* 空:保 ENOENT 面 */
+    if (s[0] == '.' && (!s[1] || (s[1] == '.' && !s[2]))) {
+        p[0] = '/';                    /* 裸 "."/".."(含剥尽)→ 根 */
+        p[1] = '\0';
+        return;
+    }
+    if (s[0] == '/') {                 /* 已绝对:剥后残段前移 */
+        if (s != p) {
+            for (n = 0; s[n]; n++)
+                p[n] = s[n];
+            p[n] = '\0';
+        }
+        return;
+    }
+    for (n = 0; s[n] && n + 1 < sizeof(tmp); n++)
+        ;                              /* 相对名补根前导(超长截断) */
+    tmp[0] = '/';
+    for (i = 0; i < n; i++)
+        tmp[1 + i] = s[i];
+    tmp[1 + n] = '\0';
+    for (i = 0; i <= n + 1; i++)
+        p[i] = tmp[i];
+}
+
 static long sys_ch_create(u64 *frame)
 {
     return rt_msg_ch_create((u32)FR(0));
@@ -509,6 +552,7 @@ static long sys_fdopen(u64 *frame)
         return -ES_EINVAL;
     if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
         return -ES_EFAULT;
+    kpath_norm(kpath);                 /* 站68H:相对路径按根解析 */
     return rt_fd_open(p, kpath);
 }
 
@@ -550,6 +594,7 @@ static long sys_fdcreate(u64 *frame)
         return -ES_EINVAL;
     if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
         return -ES_EFAULT;
+    kpath_norm(kpath);                 /* 站68H:相对路径按根解析 */
     return rt_fd_create(rt_cur->proc, kpath);
 }
 
@@ -561,6 +606,7 @@ static long sys_fdunlink(u64 *frame)
         return -ES_EINVAL;
     if (copy_in_str(kpath, FR(0), sizeof(kpath)) < 0)
         return -ES_EFAULT;
+    kpath_norm(kpath);                 /* 站68H:相对路径按根解析 */
     return rt_fd_unlink(rt_cur->proc, kpath);
 }
 
@@ -1071,6 +1117,7 @@ static long sys_openat(u64 *frame)
         return -ES_EINVAL;
     if (copy_in_str(kpath, FR(1), sizeof(kpath)) < 0)
         return -ES_EFAULT;             /* dirfd v0 不读(AT_FDCWD) */
+    kpath_norm(kpath);                 /* 站68H:相对路径按根解析 */
     r = rt_fd_open(rt_cur->proc, kpath);   /* 目录回退在 fd 层 */
     /* 站59:musl 建文件面(fopen(w)/touch/重定向)全走 O_CREAT=0x40
      * (ztest 定谳:纯 open 对新文件 -ENOENT);v0 语义=open 失败即
@@ -1117,6 +1164,7 @@ static long sys_newfstatat(u64 *frame)
         return -ES_EINVAL;
     if (copy_in_str(kpath, FR(1), sizeof(kpath)) < 0)
         return -ES_EFAULT;
+    kpath_norm(kpath);                 /* 站68H:相对路径按根解析 */
     if (!access_ok(up, sizeof(st)))
         return -ES_EFAULT;
     if ((r = rt_fd_fstatat(rt_cur->proc, kpath, &mode, &size)) < 0)
