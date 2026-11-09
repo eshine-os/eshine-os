@@ -38,8 +38,8 @@ Author names and commit dates are never rewritten.
 ## Weekly development tags
 
 - One lightweight tag per development week: `YY.MM-Nw`.
-- `YY.MM` is the month of the week's Monday; `N` is the ordinal of the
-  week among weeks containing commits in that month.
+- `YY.MM` is the month of the week's Monday; `N` is the ordinal of that
+  Monday within the month (1 = first Monday of the month).
 - The tag points to the earliest commit of that week on `master`
   (author date).
 - Create the current week's tag with `scripts/tag-dev-week.py`; backfill

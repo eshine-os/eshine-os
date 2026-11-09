@@ -6,7 +6,7 @@
 Rule (docs/VERSIONING.md):
 - Week = ISO week, Monday-Sunday.
 - YY.MM = month of the week's Monday.
-- N = ordinal of that week among weeks containing commits in that month.
+- N = ordinal of that Monday within its month (1 = first Monday).
 - The tag points to the earliest commit of the week on master (author date).
 - Tags are lightweight; release tags vYY.MM remain annotated.
 
@@ -42,9 +42,8 @@ def week_groups():
 
 
 def tag_name(monday, groups):
-    same_month = sorted(m for m in groups if (m.year, m.month) ==
-                        (monday.year, monday.month))
-    ordinal = same_month.index(monday) + 1
+    # natural week ordinal: which Monday of the month this Monday is
+    ordinal = (monday.day - 1) // 7 + 1
     return '%s-%dw' % (monday.strftime('%y.%m'), ordinal)
 
 
