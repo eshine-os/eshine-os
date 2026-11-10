@@ -336,13 +336,27 @@ int vm_start(u32 id)
     }
     vm = &vm_table[id];
     resumed = (vm->state == VM_PAUSED);
-    if (vm->state == VM_PAUSED || vm->state == VM_CREATED)
-        vm_transition(vm, VM_RUNNING);       /* 断点续跑 / 新跑 */
-    else {
+    if (vm->state != VM_PAUSED && vm->state != VM_CREATED) {
         vm_id_label(id);
         console_puts("denied: vmcreate first\n");
         return -1;
     }
+    if (!resumed && id == 2) {
+        /* 槽 2 是 Linux:QEMU loader 缺席时入口全是零,进去只会执行
+         * 0x00000000 -> 向量表 0x200 取指故障。启动前用 arm64 Image
+         * 头 magic(偏移 0x38)把"镜像没装"变成一句可行动的拒绝,
+         * 而不是让 vmrun 把 VM 打成 DEAD。ELF2 恒等映射,直接读 PA。 */
+        u32 magic = *(volatile u32 *)(vm_geo[2].ram_pa +
+                                      (vm_geo[2].entry - VM_RAM_IPA) + 0x38);
+        if (magic != 0x644d5241u) {          /* "ARM\x64" */
+            vm_id_label(id);
+            console_puts("denied: Linux Image not loaded at slot 2\n");
+            console_puts("  bootstrap it: scripts/bootstrap.sh --fetch\n");
+            console_puts("  (or --adopt --from ... ), then restart make run\n");
+            return -1;
+        }
+    }
+    vm_transition(vm, VM_RUNNING);           /* 断点续跑 / 新跑 */
     if (!resumed) {
         /* VM 出生即清 stage-1(第十四站从 vcpu_run 收编至此:进场不许
          * 碰 guest 的 SCTLR_EL1,出生清一次防上一位 guest 的陈旧页表

@@ -93,6 +93,15 @@ directories); the repository files are identical.
 preflight only requires Linux/initramfs at gate 62 and busybox at gate
 103; a full run still fails loudly when they are missing.
 
+## Running without artifacts
+
+A clean work root builds the hypervisor and VM0/VM1, but the Linux Image
+and initramfs are external. `scripts/run_qemu.sh` prints a warning when
+either is missing, and `vmrun 2` refuses to start with a bootstrap
+instruction instead of faulting on zeroed guest memory. Run
+`scripts/bootstrap.sh --fetch` (or `--adopt` with explicit legacy
+directories) before exercising VM2.
+
 ## Isolation check
 
     make check-isolation

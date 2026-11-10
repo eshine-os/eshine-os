@@ -11,10 +11,16 @@ QEMU="${ESHINE_QEMU:-qemu-system-aarch64}"
 EXTRA=""
 if [ -f "$IMG" ]; then
   EXTRA="-device loader,file=$IMG,addr=0x58080000,force-raw=on"
+else
+  echo "WARNING: Linux Image absent: $IMG" >&2
+  echo "         vm2 will refuse to start; run scripts/bootstrap.sh --fetch" >&2
+  echo "         (or --adopt --from ...), then restart make run." >&2
 fi
 # 第十五站:initramfs 定长 8MB 槽(IPA 0x44000000 = 宿主 0x5C000000)
 if [ -f "$INITRD" ]; then
   EXTRA="$EXTRA -device loader,file=$INITRD,addr=0x5C000000,force-raw=on"
+else
+  echo "WARNING: initramfs absent: $INITRD (vm2 userland will not boot)" >&2
 fi
 
 exec "$QEMU" \
