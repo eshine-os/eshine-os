@@ -95,12 +95,15 @@ preflight only requires Linux/initramfs at gate 62 and busybox at gate
 
 ## Running without artifacts
 
-A clean work root builds the hypervisor and VM0/VM1, but the Linux Image
-and initramfs are external. `scripts/run_qemu.sh` prints a warning when
-either is missing, and `vmrun 2` refuses to start with a bootstrap
-instruction instead of faulting on zeroed guest memory. Run
-`scripts/bootstrap.sh --fetch` (or `--adopt` with explicit legacy
-directories) before exercising VM2.
+`make run` checks the work root first. If it is incomplete it runs
+`scripts/bootstrap.sh --fetch` and repacks the ramfs before booting, so
+a clean checkout can go straight to `make run` (network required). For
+offline/adopted setups, run `scripts/bootstrap.sh --adopt` explicitly
+first; the check then skips the fetch.
+
+If the Linux Image or initramfs is still absent, `scripts/run_qemu.sh`
+prints a warning and `vmrun 2` refuses to start with a bootstrap
+instruction instead of faulting on zeroed guest memory.
 
 ## Isolation check
 

@@ -54,7 +54,7 @@ In the most risk-prone edge zones, this base layer delivers high reliability and
 
     make                # build eshine.elf + rtos.bin + guest2.bin
     make bootstrap      # populate .work (fetch pins; see --adopt for existing)
-    make run            # QEMU virt, interactive shell
+    make run            # QEMU virt; auto-fetches missing .work artifacts
     make verify-fast    # fast loop (gates 1-36; stops before the open [37]/[38] family)
     make verify         # full 183 gates (needs .work artifacts + Yocto)
 

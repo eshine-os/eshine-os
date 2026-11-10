@@ -65,8 +65,15 @@ tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb: tools/dtb/eshine-vm.dts tool
 hypervisor/kernel/dtb.o: tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb
 
 # make run 与 make verify 同构:同一构建产物(含 guest 双镜像),
-# run 走 run_qemu.sh 交互,verify 走 80 步门禁——两者验的是同一个 elf
+# run 走 run_qemu.sh 交互,verify 走 80 步门禁——两者验的是同一个 elf。
+# 启动前确保工作根:缺工件则 --fetch,并重打 rtos.bin(同一 make 里
+# 先建的 ramfs 不含 fetch 新产出的 busybox)。
 run: $(TARGET) rtos.bin guest2.bin
+	@if ! scripts/bootstrap.sh --check >/dev/null 2>&1; then \
+	    echo "== work root incomplete; scripts/bootstrap.sh --fetch =="; \
+	    scripts/bootstrap.sh --fetch || exit 1; \
+	    $(MAKE) rtos.bin || exit 1; \
+	fi
 	./scripts/run_qemu.sh
 
 verify: $(TARGET) rtos.bin guest2.bin
