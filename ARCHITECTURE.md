@@ -326,13 +326,13 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 ## 验证
 
 **精简分层（2026-11-06 用户令：耗时过长，保可靠性精简）**：全量 183 门
-（站收口两连真绿纪律不变）+ `--stop-after=44` 迭代快环（boot+vm0+核心
+（站收口两连真绿纪律不变）+ `--stop-after=36` 迭代快环（止于已知 [37]/[38] 族之前）（boot+vm0+核心
 rtos 门，门边界干净退出，判据行=PARTIAL-PASS 明示非真绿）；每门行尾
 (X.Xs) 计时，慢门/慢段当场可见（后续裁剪有据）。慢段大头：vm2 真
-Linux 引导（[61] 起段）与电池类真实等待——迭代改 rtos 侧时 1..44 快环
-即覆盖改动面。
+Linux 引导（[61] 起段）与电池类真实等待——迭代改 rtos 侧时 1..36 快环
+即覆盖改动面（[37]/[38] 已知族除外）。
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（111 步：banner + prompt +
+真绿门禁：`python3 tools/verify/verify_el2.py`（183 门：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +

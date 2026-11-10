@@ -52,11 +52,18 @@ In the most risk-prone edge zones, this base layer delivers high reliability and
 
 ## 快速开始 / Quick start
 
-    make            # 构建 eshine.elf + rtos.bin + guest2.bin
-    make run        # QEMU virt 启动，交互 shell
-    make verify     # 全量门禁（需要 Linux guest Image，见 scripts/build-linux.sh）
+    make                # build eshine.elf + rtos.bin + guest2.bin
+    make bootstrap      # populate .work (fetch pins; see --adopt for existing)
+    make run            # QEMU virt, interactive shell
+    make verify-fast    # fast loop (gates 1-36; stops before the open [37]/[38] family)
+    make verify         # full 183 gates (needs .work artifacts + Yocto)
 
-依赖 / deps: `aarch64-linux-gnu-gcc`, `qemu-system-aarch64` (>= 6.0), `python3`；可选 `dtc`。
+    scripts/container.sh build      # pinned toolchain image
+    scripts/container.sh selftest   # container build + fast gates
+
+依赖 / deps: cross toolchain and QEMU (or Docker), `python3`; optional `dtc`.
+工作根 / work root: `.work/` (override with `ESHINE_WORK`). See
+[docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md).
 
 ## 文档 / Docs
 
@@ -65,6 +72,10 @@ In the most risk-prone edge zones, this base layer delivers high reliability and
 - [docs/devlog/](docs/devlog/) — 开发日志（双语）
 - [docs/content/](docs/content/) — 每站技术内容包
 - [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) — 已知问题与边界
+- [docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md) — 工作根、bootstrap、容器
+- [docs/STATION-PLAYBOOK.md](docs/STATION-PLAYBOOK.md) — 站点流程与 DoD
+- [docs/MODEL-ROUTING.md](docs/MODEL-ROUTING.md) — 模型路由与证据纪律
+- [docs/state/PROJECT-STATE.md](docs/state/PROJECT-STATE.md) — 当前状态与下一步
 
 ## License
 
