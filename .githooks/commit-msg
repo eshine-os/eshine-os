@@ -1,0 +1,16 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Julian Chu
+# Real-semantics trailer validation. Install with scripts/install-hooks.sh.
+set -e
+ROOT=$(git rev-parse --show-toplevel)
+GITDIR=$(git rev-parse --git-dir)
+
+# History rewrites and cherry-picks replay old messages; skip validation.
+case "${GIT_REFLOG_ACTION:-}" in
+    *rebase*|*cherry-pick*) exit 0 ;;
+esac
+[ -d "$GITDIR/rebase-merge" ] || [ -d "$GITDIR/rebase-apply" ] && exit 0
+[ -f "$GITDIR/CHERRY_PICK_HEAD" ] && exit 0
+
+exec python3 "$ROOT/scripts/check-commit-msg.py" --file "$1"

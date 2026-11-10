@@ -18,7 +18,7 @@
 2. `make run`：banner + `eshine> state` 状态机输出（主视觉图，深色背景）
 3. `make verify`：`[1/3]…[3/3]…RESULT PASS`
 4. GitHub 仓库首页（README 26.10 状态）
-5. GitHub commit 历史（`Co-authored-by: Claude / glm-5.3` 署名特写）
+5. GitHub commit 历史（历史 AI 署名模板示例；模板≠逐条参与，见 docs/COMMIT-ATTRIBUTION.md）
 6. 官网 www.eshine-os.org（Latest Release: eshine-os 26.10）
 
 ## 统一口径

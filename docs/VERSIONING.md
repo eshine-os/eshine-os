@@ -47,15 +47,18 @@ VERSION 文件（仓库根,唯一事实源）
 - 开发 tag 为 lightweight；正式版 `vYY.MM` 仍为 annotated。
 - 脚本：`scripts/tag-dev-week.py`（当前周）/ `--backfill`（全部历史周，幂等）。
 
-## 提交 trailer 规范
+## 提交 trailer 规范（真实语义）
 
-所有 commit 的消息末尾统一为以下四行（顺序固定，前面一个空行）：
+提交消息末尾的 trailer 只记录**实际参与**：
 
-    Co-Authored-By: Claude Code <noreply@anthropic.com>
-    Co-Authored-By: glm-5.3 <noreply@zhipuai.cn>
-    Reviewed-by: deepseek-v4.1-flash <noreply@deepseek.com>
-    Signed-off-by: Julian Chu <rootuliux@gmail.com>
+    Model: <主模型>
+    Assisted-by: <实际参与的其它模型>     # 没有就省略
+    Reviewed-by: <评审者>                # 只有真做过评审才写
+    Review-Ref: docs/reviews/<file>.md    # 有 Reviewed-by 时必须存在
+    Signed-off-by: Julian Chu <rootuliux@gmail.com>  # 必须，最后一行
 
 - 提交消息使用英文、纯 ASCII，subject ≤72 字符。
 - 作者与提交日期不改写；`Signed-off-by` 即 DCO 声明。
-- 细则见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
+- 2026-11-10 之前的历史提交带统一四行模板；那只是模板，不是逐条参与
+  证明（见 [docs/COMMIT-ATTRIBUTION.md](COMMIT-ATTRIBUTION.md)）。
+- 校验器：`scripts/check-commit-msg.py`；安装 hook：`scripts/install-hooks.sh`。

@@ -99,7 +99,7 @@ teardown 铁律也写进了结构体：每个 VM 挂 `vcpus[] / mem[] / devices[
 
 ## 工程惯例（开源项目的"教养"）
 
-- **kernel 风格 commit**：`subsystem: 摘要` + 正文 + `Signed-off-by:`（DCO）+ `Co-authored-by:` 把 AI 结对**透明署名**（Claude / GLM-5.3 就在 git log 里，不藏着）
+- **kernel 风格 commit**：`subsystem: 摘要` + 正文 + `Signed-off-by:`（DCO）+ AI 署名。历史提交用统一模板（模板≠逐条参与，见 docs/COMMIT-ATTRIBUTION.md）；新提交按真实语义记录 `Model:` / `Assisted-by:` / `Reviewed-by:`。
 - **Ubuntu 式版本管理**：YY.MM 时间驱动（每年 4/10 月），仓库根一个 `VERSION` 文件做单一事实源——Makefile 注入编译宏、验证脚本动态读它，版本、banner、发布物永远不会漂移
 - **Apache-2.0 + 全文件 SPDX + NOTICE**
 - 官网用 kernel.org 的视觉风格（kernel.org 开源的 "Fifty shades of Tux" 主题，换个配色），发布表 mainline/stable/longterm——这次 stable 一栏终于不是 Coming soon 了

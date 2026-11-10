@@ -39,7 +39,7 @@ AI 结对的署名都老实写在 commit 里（Claude / GLM-5.3，git log 可查
 2. `RESULT PASS` 三步验证输出（[1/3] banner ok … [3/3] token echoed back）
 3. GitHub 仓库首页截图（README + 26.10 released 状态）
 4. 官网 www.eshine-os.org 首页（Latest Release: eshine-os 26.10）
-5.（可选）git log 截图，展示 Co-authored-by AI 署名
+5.（可选）git log 截图，展示 AI 署名（历史模板，说明见 docs/COMMIT-ATTRIBUTION.md）
 
 ## 标签
 
