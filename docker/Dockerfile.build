@@ -1,23 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Julian Chu
 #
-# 站六十三:构建环境容器——工具链的运输形态。基座 ubuntu:24.04(noble)
-# 与宿主同源:apt 交付的 cross 工具链版本与 3rd/manifest.yaml 的
-# prebuilt pin(gcc 13.3.0 / binutils 2.42 / qemu 8.2.2)同源即同
-# pin;scripts/docker-build.sh 在容器内实采对账(台账记的版本与容器
-# 长出的版本必须逐字相等——pin 是对账出来的,不是注释出来的)。
-#
-# 件面(全部构建链先决):
-#   gcc-aarch64-linux-gnu / binutils-aarch64-linux-gnu  cross 工具链
-#   qemu-system-arm                                   验证平台(virt)
-#   device-tree-compiler                              make -B 重建 dtb
-#   python3 / make / ca-certificates                  gen_ramfs+脚本面
-#
-# 用法:docker build -f docker/Dockerfile.build .
-#      (判据=scripts/docker-build.sh:build 后容器内重建全链)
-
+# Pinned toolchain container: same tree, same binaries, any machine.
+# The host-side version audit is scripts/docker-build.sh (it compares
+# gcc/binutils/qemu against 3rd/manifest.yaml).
 FROM ubuntu:24.04
 ARG DEBIAN_FRONTEND=noninteractive
+ARG http_proxy=
+ARG https_proxy=
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc-aarch64-linux-gnu \
         binutils-aarch64-linux-gnu \
@@ -26,5 +16,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         make \
         ca-certificates \
+        git \
+        curl \
+        xz-utils \
+        bzip2 \
+        file \
+        gdb-multiarch \
+        flex \
+        bison \
+        bc \
+        libssl-dev \
+        libelf-dev \
     && rm -rf /var/lib/apt/lists/*
+# QEMU virt resolves efi-virtio.rom from ipxe-qemu; the Ubuntu
+# qemu-system-arm package alone omits it and boot fails with
+# "failed to find romfile efi-virtio.rom".
+RUN apt-get update && apt-get install -y --no-install-recommends ipxe-qemu \
+    && rm -rf /var/lib/apt/lists/*
+ENV LC_ALL=C
+ENV ESHINE_WORK=/work
 WORKDIR /src

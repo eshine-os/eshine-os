@@ -7,13 +7,59 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: install cross toolchain
+        with:
+          fetch-depth: 0
+      - name: install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu device-tree-compiler python3
+          sudo apt-get install -y gcc-aarch64-linux-gnu \
+            device-tree-compiler python3 qemu-system-arm gdb-multiarch
       - name: build
         run: make -j"$(nproc)"
       - name: static checks
         run: |
           bash -n scripts/*.sh tools/*.sh
-          python3 -m py_compile tools/verify/*.py tools/*.py
+          python3 -m py_compile tools/verify/*.py tools/*.py scripts/*.py
+      - name: trailer validation
+        run: |
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            echo "tag push: no new commit range to validate"
+            exit 0
+          fi
+          base="${{ github.event.before }}"
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          fi
+          if [ -z "$base" ] || \
+             [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base="HEAD~1"
+          fi
+          python3 scripts/check-commit-msg.py --range "$base..HEAD"
+      - name: host independence
+        run: scripts/check-host-independence.sh
+      - name: fast gates
+        run: python3 tools/verify/verify_el2.py --stop-after=36
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build toolchain image
+        run: docker build -t eshine-build:ci -f docker/Dockerfile.build .
+      - name: prepare work root
+        run: mkdir -p "$RUNNER_TEMP/work/home" "$RUNNER_TEMP/work/tmp"
+      - name: container build
+        run: |
+          docker run --rm --network none \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/src" -v "$RUNNER_TEMP/work:/work" \
+            -e ESHINE_WORK=/work -e HOME=/work/home -e TMPDIR=/work/tmp \
+            -w /src eshine-build:ci make -B -j"$(nproc)"
+      - name: container fast gates
+        run: |
+          docker run --rm --network none \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/src" -v "$RUNNER_TEMP/work:/work" \
+            -e ESHINE_WORK=/work -e HOME=/work/home -e TMPDIR=/work/tmp \
+            -w /src eshine-build:ci \
+            python3 tools/verify/verify_el2.py --stop-after=36

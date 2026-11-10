@@ -1,0 +1,12 @@
+# Keep the build context to source only; ESHINE_WORK can be multi-GB.
+.git
+.work
+release
+docs/superpowers
+.claude
+__pycache__/
+*.o
+*.d
+*.elf
+*.bin
+rtos/ramfs.cpio
