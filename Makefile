@@ -51,9 +51,17 @@ $(OBJS): VERSION
 
 # 第十一站:设备树。blob 由 dts 编译(dtc;无 dtc 时用随仓提交的 .dtb),
 # incbin 在汇编期展开,-MMD 抓不到 -> dtb.o 显式依赖 blob
+DTC ?= $(shell command -v dtc 2>/dev/null)
 tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb: tools/dtb/eshine-vm.dts tools/dtb/eshine-linux.dts
-	dtc -q -I dts -O dtb -o tools/dtb/eshine-vm.dtb tools/dtb/eshine-vm.dts
-	dtc -q -I dts -O dtb -o tools/dtb/eshine-linux.dtb tools/dtb/eshine-linux.dts
+	@if [ -n "$(DTC)" ]; then \
+	    $(DTC) -q -I dts -O dtb -o tools/dtb/eshine-vm.dtb tools/dtb/eshine-vm.dts && \
+	    $(DTC) -q -I dts -O dtb -o tools/dtb/eshine-linux.dtb tools/dtb/eshine-linux.dts; \
+	else \
+	    test -f tools/dtb/eshine-vm.dtb -a -f tools/dtb/eshine-linux.dtb || { \
+	        echo "ERROR: dtc missing and committed dtb absent" >&2; exit 1; }; \
+	    echo "WARNING: dtc missing; using committed dtb (may be stale)" >&2; \
+	    touch tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb; \
+	fi
 hypervisor/kernel/dtb.o: tools/dtb/eshine-vm.dtb tools/dtb/eshine-linux.dtb
 
 # make run 与 make verify 同构:同一构建产物(含 guest 双镜像),
@@ -63,6 +71,21 @@ run: $(TARGET) rtos.bin guest2.bin
 
 verify: $(TARGET) rtos.bin guest2.bin
 	python3 tools/verify/verify_el2.py
+
+verify-fast: $(TARGET) rtos.bin guest2.bin
+	python3 tools/verify/verify_el2.py --stop-after=36
+
+bootstrap:
+	scripts/bootstrap.sh --all
+
+check-isolation:
+	scripts/check-host-independence.sh
+
+container-build:
+	scripts/container.sh build
+
+container-verify:
+	scripts/container.sh verify --stop-after=36
 
 guest/main1.o: guest/main.c guest/hvc.h guest/miniuart.h guest/gic.h guest/timer.h guest/virtio.h guest/fdt.h
 	$(CC) $(CFLAGS) -DGUEST_ID=1 -c -o $@ $<
@@ -87,7 +110,14 @@ RTOBJS := rtos/start.o rtos/vec.o rtos/rt_sched.o rtos/rt_task.o \
 
 # 站31:rootfs 构建期打包——tools/ramfs 树 -> cpio(newc),ramfs.S
 # .incbin 内嵌(汇编期展开,-MMD 抓不到 -> ramfs.o 显式依赖归档)
-rtos/ramfs.cpio: tools/gen_ramfs.py $(shell find tools/ramfs -type f 2>/dev/null)
+# EL0 demo 件虽随仓提交,重建由 `make demos` 显式触发;它们不得成为
+# 默认构建的传递先决条件(否则干净 checkout 会为打包 ramfs 去拉
+# cjson/zlib/musl)。改了 demo 源码须 `make demos` 再 `make` 重打包。
+RAMFS_DEMO_BINS := tools/ramfs/bin/jsontest tools/ramfs/bin/ztest \
+                   tools/ramfs/bin/cyclictest tools/ramfs/bin/coreparse
+RAMFS_INPUTS := $(filter-out $(RAMFS_DEMO_BINS),\
+                  $(shell find tools/ramfs -type f 2>/dev/null))
+rtos/ramfs.cpio: tools/gen_ramfs.py $(RAMFS_INPUTS)
 	python3 tools/gen_ramfs.py tools/ramfs rtos/ramfs.cpio
 
 rtos/start.o: rtos/start.S
@@ -108,18 +138,22 @@ clean:
 	       $(RTOBJS) rtos/*.d rtos.elf rtos.bin rtos/ramfs.cpio
 
 # 站59:EL0 生态件 demo 链接(cJSON/zlib 静态链;先跑 tools/build-musl.sh
-# +build-cjson.sh+build-zlib.sh 备 /tmp 三件)。内核目标与 EL0 目标分立。
-MUSLDIR := /tmp/musl-build
-CJSONDIR := /tmp/cjson-build
-ZLIBDIR := /tmp/zlib-build
+# +build-cjson.sh+build-zlib.sh 备工作根三件)。内核目标与 EL0 目标分立。
+ESHINE_WORK ?= $(CURDIR)/.work
+MUSLDIR ?= $(if $(ESHINE_MUSL_DIR),$(ESHINE_MUSL_DIR),\
+            $(if $(MUSL_BUILD_DIR),$(MUSL_BUILD_DIR),$(ESHINE_WORK)/musl-build))
+CJSONDIR ?= $(if $(ESHINE_CJSON_DIR),$(ESHINE_CJSON_DIR),\
+             $(if $(CJSON_BUILD_DIR),$(CJSON_BUILD_DIR),$(ESHINE_WORK)/cjson-build))
+ZLIBDIR ?= $(if $(ESHINE_ZLIB_DIR),$(ESHINE_ZLIB_DIR),\
+            $(if $(ZLIB_BUILD_DIR),$(ZLIB_BUILD_DIR),$(ESHINE_WORK)/zlib-build))
 EL0FLAGS := -static -O2 -fno-asynchronous-unwind-tables \
 	-isystem $(MUSLDIR)/inst/include \
 	-specs $(MUSLDIR)/inst/lib/musl-gcc.specs \
 	-T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code
 
 .PHONY: demos
-demos: tools/ramfs/bin/jsontest tools/ramfs/bin/ztest tools/ramfs/bin/cyclictest \
-       tools/ramfs/bin/coreparse
+demos: $(RAMFS_DEMO_BINS)
+	@rm -f rtos/ramfs.cpio    # force repack with the freshly built demos
 
 tools/ramfs/bin/jsontest: tools/ramfs-jsontest.c $(CJSONDIR)/libcjson.a
 	$(CROSS)gcc $(EL0FLAGS) -I$(CJSONDIR)/cJSON-1.7.18 -o $@ $< $(CJSONDIR)/libcjson.a -lc

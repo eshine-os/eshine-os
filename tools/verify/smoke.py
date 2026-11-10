@@ -27,14 +27,20 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 ELF = os.path.join(REPO, "eshine.elf")
 RTOS_BIN = os.path.join(REPO, "rtos.bin")
 GUEST2 = os.path.join(REPO, "guest2.bin")
-SOCK = "/tmp/eshine-smoke-%d.sock" % os.getpid()
-LOG = "/tmp/eshine-smoke-%d.log" % os.getpid()
+WORK = os.environ.get("ESHINE_WORK", os.path.join(REPO, ".work"))
+RUN_DIR = os.environ.get("ESHINE_RUN_DIR", os.path.join(WORK, "run"))
+os.makedirs(RUN_DIR, exist_ok=True)
+SOCK = os.path.join(RUN_DIR, "smoke-%d.sock" % os.getpid())
+LOG = os.path.join(RUN_DIR, "smoke-%d.log" % os.getpid())
+QEMU = os.environ.get("ESHINE_QEMU", "qemu-system-aarch64")
+LINUX_DIR = os.environ.get("ESHINE_LINUX_DIR",
+                           os.path.join(WORK, "linux"))
 LINUX_IMG = os.environ.get(
     "ESHINE_LINUX_IMAGE",
-    os.path.expanduser("~/projects/eshine-linux/linux-6.6/arch/arm64/boot/Image"))
+    os.path.join(LINUX_DIR, "linux-6.6", "arch/arm64/boot/Image"))
 INITRAMFS = os.environ.get(
     "ESHINE_INITRAMFS",
-    os.path.expanduser("~/projects/eshine-linux/initramfs.cpio"))
+    os.path.join(LINUX_DIR, "initramfs.cpio"))
 
 
 def send_line(s, data):
@@ -74,24 +80,28 @@ def read_until(s, buf, needle, deadline, sock_timeout=1.0, start=0):
 
 
 def run_scene(name, steps):
-    qemu = subprocess.Popen(
-        [
-            "qemu-system-aarch64",
+    args = [QEMU,
             "-M", "virt,virtualization=on,gic-version=3",
             "-cpu", "cortex-a57", "-m", "512",
             "-smp", "4",
             "-display", "none", "-monitor", "none",
             "-kernel", ELF,
             "-device", "loader,file=%s,addr=0x50000000,force-raw=on" % RTOS_BIN,
-            "-device", "loader,file=%s,addr=0x51000000,force-raw=on" % GUEST2,
-            "-device", "loader,file=%s,addr=0x58080000,force-raw=on" % LINUX_IMG,
-            "-device", "loader,file=%s,addr=0x5C000000,force-raw=on" % INITRAMFS,
-            "-chardev", "socket,id=ser0,path=%s,server=on,wait=on" % SOCK,
-            "-serial", "chardev:ser0",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+            "-device", "loader,file=%s,addr=0x51000000,force-raw=on" % GUEST2]
+    if os.path.exists(LINUX_IMG):
+        args += ["-device",
+                 "loader,file=%s,addr=0x58080000,force-raw=on" % LINUX_IMG]
+    else:
+        print("smoke: Linux Image absent (%s); vm2 scenes will fail" % LINUX_IMG,
+              file=sys.stderr)
+    if os.path.exists(INITRAMFS):
+        args += ["-device",
+                 "loader,file=%s,addr=0x5C000000,force-raw=on" % INITRAMFS]
+    args += ["-chardev", "socket,id=ser0,path=%s,server=on,wait=on" % SOCK,
+             "-serial", "chardev:ser0"]
+    qemu = subprocess.Popen(args,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
     try:
         for _ in range(100):
             if os.path.exists(SOCK):

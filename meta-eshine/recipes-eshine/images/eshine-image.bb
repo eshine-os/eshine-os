@@ -66,9 +66,9 @@ do_deploy () {
 # ${MACHINE}). Usage: ./run.sh [serial-socket-path]
 set -e
 DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-SOCK="\${1:-/tmp/eshine-image-boot.sock}"
+SOCK="\${1:-\$DIR/eshine-release.sock}"
 rm -f "\$SOCK"
-exec qemu-system-aarch64 \\
+exec "\${ESHINE_QEMU:-qemu-system-aarch64}" \\
     -M "${ESHINE_QEMU_MACHINE}" \\
     -cpu "${ESHINE_QEMU_CPU}" -m "${ESHINE_QEMU_MEMORY}" -smp "${ESHINE_QEMU_CPUS}" \\
     -display none -monitor none \\

@@ -11,20 +11,21 @@
 # 用法:bash scripts/make-release.sh
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+. "$REPO/scripts/env.sh"
 VER="$(cat "$REPO/VERSION")"
 OUT="$REPO/release"
-STAGE="$(mktemp -d)"
+STAGE="$(mktemp -d "$ESHINE_TMP_DIR/release-XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 
 echo "== build (3rd x3 + make demos + make -B) =="
 quiet() { local log="$1"; shift; "$@" > "$log" 2>&1 || {
     echo "== $1 failed, tail $log =="; tail -20 "$log"; exit 1; }; }
-quiet /tmp/musl.log bash tools/build-musl.sh
-quiet /tmp/cjson.log bash tools/build-cjson.sh
-quiet /tmp/zlib.log bash tools/build-zlib.sh
-quiet /tmp/demos.log make demos
-quiet /tmp/make.log make -B
-grep -qE "warning:|error:" /tmp/make.log && {
+quiet "$ESHINE_LOG_DIR/musl.log" bash tools/build-musl.sh
+quiet "$ESHINE_LOG_DIR/cjson.log" bash tools/build-cjson.sh
+quiet "$ESHINE_LOG_DIR/zlib.log" bash tools/build-zlib.sh
+quiet "$ESHINE_LOG_DIR/demos.log" make demos
+quiet "$ESHINE_LOG_DIR/make.log" make -B
+grep -qE "warning:|error:" "$ESHINE_LOG_DIR/make.log" && {
     echo "build not clean (warnings/errors in make -B)" >&2; exit 1; }
 
 echo "== assemble release/eshine-os-$VER =="
@@ -57,9 +58,9 @@ cat > "$IMG/run.sh" <<'RUNEOF'
 # Usage: ./run.sh [serial-socket-path]
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
-SOCK="${1:-/tmp/eshine-release-boot.sock}"
+SOCK="${1:-$DIR/eshine-release.sock}"
 rm -f "$SOCK"
-exec qemu-system-aarch64 \
+exec "${ESHINE_QEMU:-qemu-system-aarch64}" \
     -M virt,virtualization=on,gic-version=3 \
     -cpu cortex-a57 -m 512 -smp 4 \
     -display none -monitor none \
@@ -85,9 +86,9 @@ import socket, subprocess, sys, time
 
 img = sys.argv[1]
 run = img + "/run.sh"
-q = subprocess.Popen([run], stdout=subprocess.DEVNULL,
+sock_path = img + "/eshine-release.sock"
+q = subprocess.Popen([run, sock_path], stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL)
-sock_path = "/tmp/eshine-release-boot.sock"
 try:
     dl = time.time() + 30
     s = None

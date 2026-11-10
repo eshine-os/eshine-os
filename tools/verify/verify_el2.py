@@ -5,7 +5,7 @@
 
 用法(2026-11-06 用户令精简,保可靠性):
     python3 tools/verify/verify_el2.py                # 全量 183 门(站收口两连真绿)
-    python3 tools/verify/verify_el2.py --stop-after=44  # 迭代快环:boot+vm0+核心
+    python3 tools/verify/verify_el2.py --stop-after=36  # 迭代快环:boot+vm0+核心
                                                        # rtos 门,门边界干净退出,
                                                        # 判据=PARTIAL-PASS(非真绿)
 每门行尾附 (X.Xs) 计时——慢门/慢段当场可见,后续裁剪有据。
@@ -111,6 +111,7 @@ lowdemo 贴线深旋恰一次 warn,magic 不误伤)/console 延迟冲刷(泊位
 """
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -132,20 +133,29 @@ _verify_q = [None]
 def _gate_print(*args, **kw):
     s = " ".join(str(a) for a in args)
     m = _GATE_RE.match(s)
+    n = None
     if m:
         now = time.time()
         dt = now - _gate_t0[0]
         _gate_t0[0] = now
         n = int(m.group(1))
-        if _stop_after[0] is not None and n > _stop_after[0]:
-            _print_orig("RESULT PARTIAL-PASS gates 1..%d (--stop-after;"
-                        " 全量未跑非真绿;站收口须全量两连)" % _stop_after[0])
-            if _verify_q[0] is not None:
-                _verify_q[0].terminate()
-            sys.exit(0)
         if args and isinstance(args[0], str):
             args = (args[0] + " (%.1fs)" % dt,) + args[1:]
-    return _print_orig(*args, **kw)
+    ret = _print_orig(*args, **kw)
+    # 门行打印=该门判据已过;--stop-after N 必须在本门后立即退出,
+    # 不能等下一门行(下一门可能正是已知挂门,快环会永远等不到)。
+    if n is not None and _stop_after[0] is not None and \
+            (n == _stop_after[0] or n > _stop_after[0]):
+        _print_orig("RESULT PARTIAL-PASS gates 1..%d (--stop-after;"
+                    " 全量未跑非真绿;站收口须全量两连)" % _stop_after[0])
+        if _verify_q[0] is not None:
+            _verify_q[0].terminate()
+            try:
+                _verify_q[0].wait(5)
+            except Exception:
+                _verify_q[0].kill()
+        sys.exit(0)
+    return ret
 
 print = _gate_print
 
@@ -153,18 +163,29 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 ELF = os.path.join(REPO, "eshine.elf")
 RTOS_BIN = os.path.join(REPO, "rtos.bin")   # 站十六:VM0=eshine-rtos
 GUEST2 = os.path.join(REPO, "guest2.bin")
-SOCK = "/tmp/eshine-el2-verify.sock"
+WORK = os.environ.get("ESHINE_WORK", os.path.join(REPO, ".work"))
+RUN_DIR = os.environ.get("ESHINE_RUN_DIR", os.path.join(WORK, "run"))
+os.makedirs(RUN_DIR, exist_ok=True)
+SOCK = os.path.join(RUN_DIR, "verify-%d.sock" % os.getpid())
+QEMU = os.environ.get("ESHINE_QEMU", "qemu-system-aarch64")
+GDB = os.environ.get("ESHINE_GDB", "gdb-multiarch")
+GDB_PORT = int(os.environ.get("ESHINE_GDB_PORT",
+                              str(20000 + os.getpid() % 20000)))
 # 第十四站:Linux guest 内核(槽 2)。可从源构建的工件,不入仓(GPL 隔离),
 # 配方 = scripts/build-linux.sh;缺它则 Linux 判据无从验起,明确指引后 FAIL。
+LINUX_DIR = os.environ.get("ESHINE_LINUX_DIR",
+                           os.path.join(WORK, "linux"))
 LINUX_IMG = os.environ.get(
     "ESHINE_LINUX_IMAGE",
-    os.path.expanduser("~/projects/eshine-linux/linux-6.6/arch/arm64/boot/Image"))
+    os.path.join(LINUX_DIR, "linux-6.6", "arch/arm64/boot/Image"))
 # 第十五站:initramfs(busybox 用户空间)。外部工件同 Image(GPL 隔离),
 # 配方 = scripts/build-initramfs.sh;定长 8MB 槽 @IPA 0x44000000 =
 # 宿主 0x5C000000(stage-2 非恒等映射),与 dts linux,initrd-* 绑死。
 INITRAMFS = os.environ.get(
     "ESHINE_INITRAMFS",
-    os.path.expanduser("~/projects/eshine-linux/initramfs.cpio"))
+    os.path.join(LINUX_DIR, "initramfs.cpio"))
+BB = os.environ.get("ESHINE_BUSYBOX",
+                    os.path.join(REPO, "tools/ramfs/bin/busybox"))
 # VERSION 文件 = 唯一事实源,判据随版本自动同步(docs/VERSIONING.md)
 VER = open(os.path.join(REPO, "VERSION")).read().strip()
 
@@ -367,10 +388,13 @@ def _forensic_gdb():
     ISENABLER0/ISACTIVER0(eoi_drop 陈 active 位即现形);vcpu 帧
     vtimer ctx。宿主 VA 读取须 EL2 语境——thread apply all 全试,
     guest 语境核拒读属预期输出。"""
+    if not shutil.which(GDB):
+        print("--- %s not found; skipping gdb forensics ---" % GDB)
+        return
     cmds = [
         "set pagination off",
-        "file rtos.elf",
-        "target remote :1234",
+        "file %s" % os.path.join(REPO, "rtos.elf"),
+        "target remote :%d" % GDB_PORT,
         "thread apply all x/i $pc",
         "p pool[0].state", "p pool[1].state", "p pool[2].state",
         "p pool[3].state", "p pool[4].state", "p pool[5].state",
@@ -398,12 +422,34 @@ def _forensic_gdb():
         "detach",
     ]
     g = subprocess.run(
-        ["gdb-multiarch", "-q", "-batch"] + sum([["-ex", c] for c in cmds], []),
+        [GDB, "-q", "-batch"] + sum([["-ex", c] for c in cmds], []),
         capture_output=True, text=True, timeout=180)
     print("=== station-28 gdb forensics (gate failure) ===")
     print(g.stdout[-7000:])
     print("--- gdb stderr tail ---")
     print(g.stderr[-2000:])
+
+
+def qemu_args(with_gdb=True, intlog=False):
+    args = [QEMU, "-M", "virt,virtualization=on,gic-version=3",
+            "-cpu", "cortex-a57", "-m", "512", "-smp", "4",
+            "-display", "none", "-monitor", "none",
+            "-kernel", ELF,
+            "-device", "loader,file=%s,addr=0x50000000,force-raw=on" % RTOS_BIN,
+            "-device", "loader,file=%s,addr=0x51000000,force-raw=on" % GUEST2]
+    if os.path.exists(LINUX_IMG):
+        args += ["-device",
+                 "loader,file=%s,addr=0x58080000,force-raw=on" % LINUX_IMG]
+    if os.path.exists(INITRAMFS):
+        args += ["-device",
+                 "loader,file=%s,addr=0x5C000000,force-raw=on" % INITRAMFS]
+    args += ["-chardev", "socket,id=ser0,path=%s,server=on,wait=on" % SOCK,
+             "-serial", "chardev:ser0"]
+    if with_gdb:
+        args += ["-gdb", "tcp::%d" % GDB_PORT]
+    if intlog:
+        args += ["-d", "int"]
+    return args
 
 
 def main():
@@ -423,22 +469,24 @@ def main():
         if not os.path.exists(img):
             print("FAIL: %s not built (run make first)" % img)
             return 1
-    if not os.path.exists(LINUX_IMG):
-        print("FAIL: Linux Image missing: %s" % LINUX_IMG)
-        print("      run scripts/build-linux.sh to build it (station-14 gate "
-              "requires the Linux guest)")
-        return 1
-    if not os.path.exists(INITRAMFS):
-        print("FAIL: initramfs missing: %s" % INITRAMFS)
-        print("      run scripts/build-initramfs.sh (station-15 gate requires "
-              "the busybox userland)")
-        return 1
-    if os.path.getsize(INITRAMFS) != 8 * 1024 * 1024:
-        print("FAIL: initramfs must be exactly 8MB (fixed-slot contract "
-              "with dts linux,initrd-end)")
-        return 1
-    BB = os.path.expanduser("~/projects/eshine-os/tools/ramfs/bin/busybox")
-    if not os.path.exists(BB):
+    need_linux = _stop_after[0] is None or _stop_after[0] >= 62
+    need_busybox = _stop_after[0] is None or _stop_after[0] >= 103
+    if need_linux:
+        if not os.path.exists(LINUX_IMG):
+            print("FAIL: Linux Image missing: %s" % LINUX_IMG)
+            print("      run scripts/build-linux.sh to build it (station-14 "
+                  "gate requires the Linux guest)")
+            return 1
+        if not os.path.exists(INITRAMFS):
+            print("FAIL: initramfs missing: %s" % INITRAMFS)
+            print("      run scripts/build-initramfs.sh (station-15 gate "
+                  "requires the busybox userland)")
+            return 1
+        if os.path.getsize(INITRAMFS) != 8 * 1024 * 1024:
+            print("FAIL: initramfs must be exactly 8MB (fixed-slot contract "
+                  "with dts linux,initrd-end)")
+            return 1
+    if need_busybox and not os.path.exists(BB):
         print("FAIL: musl busybox missing: %s" % BB)
         print("      run tools/build-busybox.sh then re-run "
               "scripts/build-initramfs.sh (station-40 gates require the "
@@ -448,23 +496,8 @@ def main():
         os.unlink(SOCK)
 
     qemu = subprocess.Popen(
-        [
-            "qemu-system-aarch64",
-            "-M", "virt,virtualization=on,gic-version=3",
-            "-cpu", "cortex-a57", "-m", "512",
-            "-smp", "4",                 # 站十九D 三核+站二十 CPU3(vm0.vcpu1 专泵)
-            "-display", "none", "-monitor", "none",
-            "-kernel", ELF,
-            "-device", "loader,file=%s,addr=0x50000000,force-raw=on" % RTOS_BIN,
-            "-device", "loader,file=%s,addr=0x51000000,force-raw=on" % GUEST2,
-            # 槽 2 Linux:Image@PA 0x58080000(基址+text_offset 0x80000)
-            #            initramfs@PA 0x5C000000(IPA 0x44000000 经 stage-2)
-            "-device", "loader,file=%s,addr=0x58080000,force-raw=on" % LINUX_IMG,
-            "-device", "loader,file=%s,addr=0x5C000000,force-raw=on" % INITRAMFS,
-            "-chardev", "socket,id=ser0,path=%s,server=on,wait=on" % SOCK,
-            "-serial", "chardev:ser0",
-            "-s",                       # 站28:门红自动取证的 gdb 桩(无连接零开销)
-        ] + (["-d", "int"] if os.environ.get("ESHINE_INTLOG") else []),
+        qemu_args(with_gdb=True,
+                  intlog=bool(os.environ.get("ESHINE_INTLOG"))),
         stdout=subprocess.DEVNULL,
         stderr=open(os.environ.get("ESHINE_INTLOG", "/dev/null"), "w") if
             os.environ.get("ESHINE_INTLOG") else subprocess.DEVNULL,
@@ -484,21 +517,7 @@ def main():
             os.unlink(SOCK)
         time.sleep(45)
         qemu = subprocess.Popen(
-            [
-                "qemu-system-aarch64",
-                "-M", "virt,virtualization=on,gic-version=3",
-                "-cpu", "cortex-a57", "-m", "512",
-                "-smp", "4",
-                "-display", "none", "-monitor", "none",
-                "-kernel", ELF,
-                "-device", "loader,file=%s,addr=0x50000000,force-raw=on" % RTOS_BIN,
-                "-device", "loader,file=%s,addr=0x51000000,force-raw=on" % GUEST2,
-                "-device", "loader,file=%s,addr=0x58080000,force-raw=on" % LINUX_IMG,
-                "-device", "loader,file=%s,addr=0x5C000000,force-raw=on" % INITRAMFS,
-                "-chardev", "socket,id=ser0,path=%s,server=on,wait=on" % SOCK,
-                "-serial", "chardev:ser0",
-                "-s",
-            ],
+            qemu_args(with_gdb=True, intlog=False),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         _verify_q[0] = qemu         # 精简:重启后句柄同步(stop-after 收尾用)
@@ -859,7 +878,7 @@ def main():
             buf = read_until(s, buf, b"smp: cpu1 gicr1_en=", time.time() + 30, start=p35)
             m = re.search(rb"smp: cpu1 gicr1_en=(\d+)", buf[p35:])
             if not m or int(m.group(1)) != 0x08000001:
-                with open("/tmp/g35buf.log", "wb") as _f:   # 站68F 取证:失败落全会话 console
+                with open(os.path.join(RUN_DIR, "g35buf.log"), "wb") as _f:   # 站68F 取证:失败落全会话 console
                     _f.write(buf)                            # (段界字节干净与否=判传输丢 vs 没发出)
                 raise AssertionError(
                     "secondary frame1 ISENABLER0 readback bad: %r "
@@ -2184,11 +2203,11 @@ def main():
                 raise AssertionError("yocto build failed: %r / %r"
                                      % (rb.stdout[-300:], rb.stderr[-300:]))
             ydeploy = m.group(1)
-            ysock = "/tmp/eshine-yocto-verify.sock"
+            ysock = os.path.join(RUN_DIR, "yocto-%d.sock" % os.getpid())
             if os.path.exists(ysock):
                 os.unlink(ysock)
             yq = subprocess.Popen(
-                ["qemu-system-aarch64",
+                [QEMU,
                  "-M", "virt,virtualization=on,gic-version=3",
                  "-cpu", "cortex-a57", "-m", "512", "-smp", "4",
                  "-display", "none", "-monitor", "none",
@@ -2708,7 +2727,7 @@ def main():
                                          % art["name"])
             print("  [177/183] yocto image aggregate: boot/ 4 artifacts + "
                   "run.sh + manifest.json (sha256 ledger verified)")
-            isock = "/tmp/eshine-image-verify.sock"
+            isock = os.path.join(RUN_DIR, "image-%d.sock" % os.getpid())
             if os.path.exists(isock):
                 os.unlink(isock)
             iq = subprocess.Popen(["bash", os.path.join(imgdir, "run.sh"),

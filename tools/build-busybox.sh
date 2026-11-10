@@ -6,7 +6,7 @@
 # 用法:tools/build-busybox.sh           # 产物落 tools/ramfs/bin/busybox
 #
 # 机制(0 patch 目标):
-# 1) 工具链=站 33 musl 安装(/tmp/musl-build/inst;不存在则先跑
+# 1) 工具链=站 33 musl 安装($ESHINE_MUSL_DIR/inst;不存在则先跑
 #    tools/build-musl.sh)。CC=交叉 gcc+-isystem musl 头(站 33 同律:
 #    musl 头压默认 sysroot,linux/ uapi 头仍由交叉 sysroot 供给——
 #    musl 安装不含内核头)。
@@ -23,11 +23,13 @@
 #    旗舰判据不损:echo/cat/ls/date/md5sum 皆在集内。
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${BUSYBOX_BUILD_DIR:-/tmp/busybox-build}"
-MUSL="${MUSL_BUILD_DIR:-/tmp/musl-build}"
-CROSS=aarch64-linux-gnu-
+. "$REPO/scripts/env.sh"
+WORK="$ESHINE_BUSYBOX_DIR"
+MUSL="$ESHINE_MUSL_DIR"
+CROSS=${CROSS:-aarch64-linux-gnu-}
 VER=1.36.1
-TARBALLS=("$HOME/projects/eshine-linux/busybox-${VER}.tar.bz2")
+TARBALLS=("$ESHINE_DOWNLOAD_DIR/busybox-${VER}.tar.bz2" \
+          "$ESHINE_LINUX_DIR/busybox-${VER}.tar.bz2")
 BB_URL="https://busybox.net/downloads/busybox-${VER}.tar.bz2"
 
 if [ ! -x "$MUSL/inst/bin/musl-gcc" ] || [ ! -f "$MUSL/inst/lib/musl-gcc.specs" ]; then
@@ -38,7 +40,7 @@ SPECS="$MUSL/inst/lib/musl-gcc.specs"
 # musl specs 自带 -nostdinc(站 40 实测):默认 sysroot 整个被摘,
 # busybox 要的 <linux/*.h> uapi 失供。外科修法:只拷交叉 sysroot
 # 的 uapi 三目录作独立 -isystem(零 glibc 头混入,musl 头恒先)。
-SYSROOT=/usr/aarch64-linux-gnu/include
+SYSROOT="${ESHINE_SYSROOT:-/usr/aarch64-linux-gnu/include}"
 mkdir -p "$WORK/uapi"
 for d in linux asm asm-generic mtd scsi sound video rdma xen; do
     [ -d "$SYSROOT/$d" ] || continue
@@ -73,6 +75,8 @@ if [ ! -d "busybox-${VER}" ]; then
             cp "$found" "busybox-${VER}.tar.bz2"
         fi
     fi
+    BB_SHA=$(python3 -c "import json;print(json.load(open('$REPO/tools/artifacts.json'))['busybox']['sha256'])")
+    echo "$BB_SHA  busybox-${VER}.tar.bz2" | sha256sum -c -
     tar xf "busybox-${VER}.tar.bz2"
 fi
 cd "busybox-${VER}"
@@ -143,7 +147,7 @@ make ARCH=arm64 CROSS_COMPILE="$CROSS" CC="$CCFLAGS" \
 
 cp busybox_unstripped busybox
 ${CROSS}strip busybox
-LC_ALL=C aarch64-linux-gnu-readelf -lW busybox | grep -E "LOAD|Entry" | head -8
+LC_ALL=C ${CROSS}readelf -lW busybox | grep -E "LOAD|Entry" | head -8
 sz=$(stat -c %s busybox)
 echo "size: $sz bytes"
 if [ "$sz" -gt 1500000 ]; then

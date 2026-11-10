@@ -2,15 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Julian Chu
 # 站五十九:zlib(1.3.1,上游 Zlib 许可)交叉构建配方——从零可复现。
-# 产物:/tmp/zlib-build/libz.a(静态库,demo 消费者=tools/ramfs-ztest.c
+# 产物:$ESHINE_ZLIB_DIR/libz.a(静态库,demo 消费者=tools/ramfs-ztest.c
 # =slog 压缩落盘:deflate /var/log/slog→/tmp/slog.z+读回 inflate 校验)。
 # 坑记档:免 configure 直编核心源文件表(make libz.a 的内部清单,交叉
 # 语境下最稳——CHOST configure 对 musl specs 语境不友好)。
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${ZLIB_BUILD_DIR:-/tmp/zlib-build}"
-CROSS=aarch64-linux-gnu-
-MUSL="${MUSL_BUILD_DIR:-/tmp/musl-build}"
+. "$REPO/scripts/env.sh"
+WORK="$ESHINE_ZLIB_DIR"
+CROSS=${CROSS:-aarch64-linux-gnu-}
+MUSL="$ESHINE_MUSL_DIR"
 VER=1.3.1
 
 mkdir -p "$WORK"

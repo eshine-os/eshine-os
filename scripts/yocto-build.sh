@@ -9,8 +9,9 @@
 # 变,故 bitbake -e 问真值,不猜路径)。
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-Poky="${ESHINE_POKY_DIR:-$HOME/projects/poky}"
-BUILD="${ESHINE_YOCTO_BUILD:-$HOME/projects/eshine-yocto-build}"
+. "$REPO/scripts/env.sh"
+Poky="$ESHINE_POKY_DIR"
+BUILD="$ESHINE_YOCTO_BUILD"
 
 if [ ! -d "$Poky/bitbake" ] || [ ! -f "$BUILD/conf/local.conf" ]; then
     echo "setup first: $REPO/scripts/setup-yocto.sh" >&2

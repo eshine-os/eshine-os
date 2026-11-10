@@ -12,6 +12,7 @@
 # 用法:bash scripts/docker-build.sh
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+. "$REPO/scripts/env.sh"
 TAG="eshine-build:$(cat "$REPO/VERSION")"
 
 command -v docker > /dev/null || { echo "docker not installed" >&2; exit 2; }
@@ -37,7 +38,8 @@ docker build -q -t "$TAG" -f "$REPO/docker/Dockerfile.build" "$REPO" > /dev/null
 docker run --rm -e GCC_PIN="$GCC_PIN" -e BINUTILS_PIN="$BINUTILS_PIN" \
     -e QEMU_PIN="$QEMU_PIN" \
     --user "$(id -u):$(id -g)" \
-    -v "$REPO":/src -w /src "$TAG" bash -ec '
+    -v "$REPO":/src -v "$ESHINE_WORK":/work -e ESHINE_WORK=/work \
+    -w /src "$TAG" bash -ec '
     quiet() { local log="$1"; shift; "$@" > "$log" 2>&1 || {
         echo "== $1 failed, tail $log =="; tail -20 "$log"; exit 20; }; }
 
@@ -55,12 +57,12 @@ docker run --rm -e GCC_PIN="$GCC_PIN" -e BINUTILS_PIN="$BINUTILS_PIN" \
     echo "pin ok: gcc $gccv / binutils $ldv / qemu $qv"
 
     echo "== rebuild from tree (3rd x3 + make demos + make -B) =="
-    quiet /tmp/musl.log bash tools/build-musl.sh
-    quiet /tmp/cjson.log bash tools/build-cjson.sh
-    quiet /tmp/zlib.log bash tools/build-zlib.sh
-    quiet /tmp/demos.log make demos
-    quiet /tmp/make.log make -B
-    grep -qE "warning:|error:" /tmp/make.log && {
+    quiet /work/logs/musl.log bash tools/build-musl.sh
+    quiet /work/logs/cjson.log bash tools/build-cjson.sh
+    quiet /work/logs/zlib.log bash tools/build-zlib.sh
+    quiet /work/logs/demos.log make demos
+    quiet /work/logs/make.log make -B
+    grep -qE "warning:|error:" /work/logs/make.log && {
         echo "build not clean (warnings/errors in make -B)"; exit 21; }
 
     python3 tools/sbom-check.py

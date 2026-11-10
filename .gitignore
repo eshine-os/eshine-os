@@ -21,3 +21,5 @@ release/
 .claude/
 docs/superpowers/
 docs/baseline-deviations.md
+# 主机无关的单工作根(外部工件/构建态/socket/日志)
+.work/

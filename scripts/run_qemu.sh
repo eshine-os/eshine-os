@@ -3,9 +3,11 @@
 # Copyright (c) 2026 Julian Chu
 set -e
 D="$(cd "$(dirname "$0")/.." && pwd)"
+. "$D/scripts/env.sh"
 # 第十四站:Linux guest 内核(槽 2;Image 存在才装载,几何:PA 0x58080000)
-IMG="${ESHINE_LINUX_IMAGE:-$HOME/projects/eshine-linux/linux-6.6/arch/arm64/boot/Image}"
-INITRD="${ESHINE_INITRAMFS:-$HOME/projects/eshine-linux/initramfs.cpio}"
+IMG="$ESHINE_LINUX_IMAGE"
+INITRD="$ESHINE_INITRAMFS"
+QEMU="${ESHINE_QEMU:-qemu-system-aarch64}"
 EXTRA=""
 if [ -f "$IMG" ]; then
   EXTRA="-device loader,file=$IMG,addr=0x58080000,force-raw=on"
@@ -15,7 +17,7 @@ if [ -f "$INITRD" ]; then
   EXTRA="$EXTRA -device loader,file=$INITRD,addr=0x5C000000,force-raw=on"
 fi
 
-exec qemu-system-aarch64 \
+exec "$QEMU" \
   -M virt,virtualization=on,gic-version=3 \
   -cpu cortex-a57 -m 512 -smp 4 -nographic \
   -kernel "$D/eshine.elf" \

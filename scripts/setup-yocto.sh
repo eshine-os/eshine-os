@@ -7,8 +7,9 @@
 # `bitbake eshine-rtos` 即得部署三镜像。
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-Poky="${ESHINE_POKY_DIR:-$HOME/projects/poky}"
-BUILD="${ESHINE_YOCTO_BUILD:-$HOME/projects/eshine-yocto-build}"
+. "$REPO/scripts/env.sh"
+Poky="$ESHINE_POKY_DIR"
+BUILD="$ESHINE_YOCTO_BUILD"
 PROXY="${ESHINE_PROXY:-}"
 
 # 1) poky(scarthgap LTS,shallow;直连不通时经 ESHINE_PROXY)

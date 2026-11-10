@@ -20,8 +20,9 @@
 #    显式 -lc 不可少;静态 musl hello ≈33KB 文本=musl 小体积名不虚传。
 set -e
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${MUSL_BUILD_DIR:-/tmp/musl-build}"
-CROSS=aarch64-linux-gnu-
+. "$REPO/scripts/env.sh"
+WORK="$ESHINE_MUSL_DIR"
+CROSS=${CROSS:-aarch64-linux-gnu-}
 
 mkdir -p "$WORK"
 cd "$WORK"
@@ -50,7 +51,7 @@ ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
     -specs "$WORK/inst/lib/musl-gcc.specs" \
     -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code \
     -o tools/ramfs/bin/hello tools/ramfs-hello.c -lc
-LC_ALL=C aarch64-linux-gnu-readelf -lW tools/ramfs/bin/hello | head -12
+LC_ALL=C ${CROSS}readelf -lW tools/ramfs/bin/hello | head -12
 echo "== 产物: tools/ramfs/bin/hello =="
 
 echo "== 链接 pt(站35 pthread demo,同窗口脚本)=="
@@ -60,7 +61,7 @@ ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
     -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments \
     -o tools/ramfs/bin/pt tools/ramfs-pt.c -lpthread -lc
 echo "== 产物: tools/ramfs/bin/pt =="
-LC_ALL=C aarch64-linux-gnu-readelf -lW tools/ramfs/bin/pt | grep -c LOAD
+LC_ALL=C ${CROSS}readelf -lW tools/ramfs/bin/pt | grep -c LOAD
 
 echo "== 链接 initmark/beat(站40:inittab sysinit/respawn 活证件)=="
 for prog in initmark beat; do
@@ -87,16 +88,16 @@ bash "$CJSON" >/dev/null
 bash "$ZLIB" >/dev/null
 ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
     -isystem "$WORK/inst/include" \
-    -I"${CJSON_BUILD_DIR:-/tmp/cjson-build}/cJSON-1.7.18" \
+    -I"$ESHINE_CJSON_DIR/cJSON-1.7.18" \
     -specs "$WORK/inst/lib/musl-gcc.specs" \
     -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code \
     -o tools/ramfs/bin/jsontest tools/ramfs-jsontest.c \
-    "${CJSON_BUILD_DIR:-/tmp/cjson-build}/libcjson.a" -lc
+    "$ESHINE_CJSON_DIR/libcjson.a" -lc
 ${CROSS}gcc -static -O2 -fno-asynchronous-unwind-tables \
     -isystem "$WORK/inst/include" \
-    -I"${ZLIB_BUILD_DIR:-/tmp/zlib-build}/zlib-1.3.1" \
+    -I"$ESHINE_ZLIB_DIR/zlib-1.3.1" \
     -specs "$WORK/inst/lib/musl-gcc.specs" \
     -T tools/build-musl-link.lds -Wl,--no-warn-rwx-segments -Wl,-z,noseparate-code \
     -o tools/ramfs/bin/ztest tools/ramfs-ztest.c \
-    "${ZLIB_BUILD_DIR:-/tmp/zlib-build}/libz.a" -lc
+    "$ESHINE_ZLIB_DIR/libz.a" -lc
 echo "== 产物: tools/ramfs/bin/{jsontest,ztest} =="

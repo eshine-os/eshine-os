@@ -6,42 +6,55 @@
 # 槽位契约:恰好 8MB(与 tools/dtb/eshine-linux.dts 的 linux,initrd-end
 # 0x44800000 绑死,改动须同 commit 同步)。
 set -e
-VER=1.36.1
-DIR="${LINUX_DIR:-$HOME/projects/eshine-linux}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+. "$REPO/scripts/env.sh"
+VER=1.36.1
+DIR="$ESHINE_LINUX_DIR"
 SLOT=$((8 * 1024 * 1024))
 BB_URL="https://busybox.net/downloads/busybox-${VER}.tar.bz2"
 CURL="curl -fL --retry 3"
-# busybox.net 直连多半不通,先试直连;失败时经 ESHINE_PROXY(可选)
+# busybox.net 直连多半不通,先试直连;失败时经 ESHINE_PROXY(可选)。
+# 仅在实际需要下载时探测网络;缓存归档存在时全离线。
 curl_head_ok() { curl -sI --max-time 8 "$1" 2>/dev/null | head -1 | grep -q " 200"; }
-if ! curl_head_ok "$BB_URL"; then
-    if [ -n "${ESHINE_PROXY:-}" ]; then
-        CURL="$CURL -x $ESHINE_PROXY"
-    else
-        echo "ERROR: 无法直连 $BB_URL,且未设置 ESHINE_PROXY" >&2
-        exit 1
-    fi
-fi
 
 mkdir -p "$DIR"
 cd "$DIR"
 if [ ! -d "busybox-${VER}" ]; then
     if [ ! -f "busybox-${VER}.tar.bz2" ]; then
+        for cand in "$ESHINE_DOWNLOAD_DIR/busybox-${VER}.tar.bz2" \
+                    "$ESHINE_LINUX_DIR/busybox-${VER}.tar.bz2"; do
+            [ -f "$cand" ] || continue
+            cp --update=none "$cand" "busybox-${VER}.tar.bz2" 2>/dev/null || \
+                cp -n "$cand" "busybox-${VER}.tar.bz2"
+            break
+        done
+    fi
+    if [ ! -f "busybox-${VER}.tar.bz2" ]; then
+        if ! curl_head_ok "$BB_URL"; then
+            if [ -n "${ESHINE_PROXY:-}" ]; then
+                CURL="$CURL -x $ESHINE_PROXY"
+            else
+                echo "ERROR: 无法直连 $BB_URL,且未设置 ESHINE_PROXY" >&2
+                exit 1
+            fi
+        fi
         echo "== 下载 busybox ${VER} =="
         $CURL -o "busybox-${VER}.tar.bz2" "$BB_URL"
     fi
+    BB_SHA=$(python3 -c "import json;print(json.load(open('$REPO/tools/artifacts.json'))['busybox']['sha256'])")
+    echo "$BB_SHA  busybox-${VER}.tar.bz2" | sha256sum -c -
     echo "== 解压 =="
     tar xf "busybox-${VER}.tar.bz2"
 fi
 
 cd "busybox-${VER}"
 echo "== defconfig + STATIC(aarch64 交叉) =="
-make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+make ARCH=arm64 CROSS_COMPILE="$CROSS" defconfig
 sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
 # tc applet 撞新内核头(CBQ 定义自 linux-libc-dev 移除,1.36.1 时代坑),
 # initramfs 用不上;Ubuntu 24.04 头实测
 sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config
-make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)"
+make ARCH=arm64 CROSS_COMPILE="$CROSS" -j"$(nproc)"
 
 ROOT="$DIR/initramfs-root"
 echo "== 组装 rootfs =="
