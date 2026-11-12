@@ -13,6 +13,43 @@ eshine-os 是面向**车载自动驾驶与机器人**的开源操作系统底座
 
 eshine-os is an open-source OS foundation for **automotive autonomous driving and robotics**: ARM64 Type-1 virtualization, a from-scratch real-time kernel, and a real Linux guest running side by side with strong isolation and deterministic timing. Initiated by Julian Chu and built from zero in pair with AI (Claude Code, GLM-5.3, and others), station by station — each with replayable gates and a public engineering log.
 
+## 系统架构 / System architecture
+
+![eshine-os architecture](docs/img/architecture.svg)
+
+一台机器上的混合临界度三域架构，按 **ISO 26262** 功能安全设计：
+
+- **Type-1 hypervisor（ASIL-D）**：直驱硬件、无宿主 OS；per-VM stage-2
+  地址空间隔离、vGIC/vtimer/virtio 设备模型、CPU/内存配额、
+  fail-closed 跨 VM 共享窗。
+- **VM0 管理域（ASIL-D）**：自研 RTOS——确定性调度、三段消息 IPC、
+  故障遏制与健康监控，是系统的安全管理域。
+- **VM1 预留域（QM）**：预留座舱域，未来启动 **Android** 作为
+  中控/仪表等座舱应用（槽位已留，启动目标设计中）。
+- **VM2 Linux 域（ASIL-A/B）**：真实 Linux 6.6 上游内核，承载
+  **智能驾驶应用**与 musl 用户态服务。
+
+> ASIL 分级为架构设计目标，认证路线进行中（见
+> [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) 的诚实边界声明）。
+
+One machine, three domains, mixed criticality — designed against ISO 26262:
+
+- **Type-1 hypervisor (ASIL-D)** — direct hardware control, no host OS;
+  per-VM stage-2 isolation, vGIC/vtimer/virtio, CPU & memory quotas,
+  fail-closed cross-VM shared windows.
+- **VM0 management domain (ASIL-D)** — the from-scratch RTOS:
+  deterministic scheduling, Send/Recv/Reply IPC, fault containment and
+  health monitoring; the safety management domain of the system.
+- **VM1 reserved domain (QM)** — reserved for the cockpit; planned to
+  run **Android** as the center-console / cluster domain.
+- **VM2 Linux domain (ASIL-A/B)** — real upstream Linux 6.6 carrying
+  **intelligent-driving applications** and the musl userland.
+
+## 仓库 / Repositories
+
+- **主仓 / Primary**: <https://github.com/eshine-os/eshine-os.git>
+- **镜像 / Mirror**: <https://gitee.com/eshine-os/eshine-os.git>
+
 ## 命名寓意 / On the name
 
 "eshine" 寄意「铸入底层的恒明之光」：
@@ -36,7 +73,9 @@ In the most risk-prone edge zones, this base layer delivers high reliability and
 
 - **EL2 Type-1 hypervisor**：VM 抽象、vCPU 上下文、GICv3/vGIC、vtimer、virtio-blk/net、DTB 注入、PSCI、per-VM 隔离与配额。
 - **VM0：从零自研 RTOS**：抢占式调度、进程与地址空间（stage-1 页表/ASID/缺页）、三段消息 IPC（Send-Recv-Reply + 脉冲）、signal/futex、rootfs 与 fd 服务、procfs、跨 VM 服务面。
-- **VM1/VM2**：裸机对照 guest 与**真实 Linux 6.6 guest**（busybox initramfs）。
+- **VM1/VM2**：VM1 为**预留座舱域**（现为裸机对照 guest；未来启动 Android
+  作为中控/仪表）；VM2 为**真实 Linux 6.6 guest**（busybox initramfs，
+  目标=智能驾驶应用域）。
 - **真 musl 用户态**：同一份静态 musl ELF 在 VM0（自研内核 + 用户态 loader）与 VM2（真实 Linux）上得到相同输出——同 libc，两个世界，一台 hypervisor。
 - **门禁**：183 道可重放判据，站点收口以两连真绿为准。
 - **构建**：kernel 风格 Makefile；Yocto 层 `meta-eshine` 可从 `git archive` 提交树构建部署件。
