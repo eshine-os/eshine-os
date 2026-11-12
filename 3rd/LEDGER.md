@@ -7,7 +7,7 @@
 | 组件 | 版本 | 许可 | 形态 | 源 | 用途 |
 |------|------|------|------|-----|------|
 | musl | 1.2.5 | MIT | tarball 入仓(3rd/musl-1.2.5.tar.gz) | musl.libc.org | EL0 libc(vm0 ramfs+vm2 initramfs 双 musl 世界,tools/build-musl.sh) |
-| busybox | 1.36.1 | GPL-2.0 | **仓外**(~/projects/eshine-linux;GPL 隔离,站 40 先例) | busybox.net | vm0/vm2 用户态工具(tools/build-busybox.sh 精选集) |
+| busybox | 1.36.1 | GPL-2.0 | **仓外**(legacy 外部工件区,GPL 隔离,站 40 先例;现经 `bootstrap --from` 迁入 `ESHINE_WORK`) | busybox.net | vm0/vm2 用户态工具(tools/build-busybox.sh 精选集) |
 | cJSON | 1.7.18 | MIT | tarball 入仓(3rd/cjson-1.7.18.tar.gz) | github.com/DaveGamble/cJSON | JSON 解析(jsontest demo;RTOS 内核自研最小 JSON 不动,站 51 决策) |
 | zlib | 1.3.1 | Zlib | tarball 入仓(3rd/zlib-1.3.1.tar.gz) | zlib.net(github.com/madler/zlib) | 压缩(ztest demo:slog 压缩落盘) |
 

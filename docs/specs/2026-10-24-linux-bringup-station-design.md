@@ -29,8 +29,8 @@ initramfs/根文件系统。
   virt 必备内建,`make Image`。
 - **内核与 Image 不进 eshine-os 仓**:仓库全 Apache-2.0(deviation #2),
   Linux 内核 GPL-2.0,二进制入库=许可污染;Image 是"可从源构建的
-  工件"(同 guest1.bin 哲学),构建目录 `~/projects/eshine-linux/`
-  (仓外)。仓内存 **scripts/build-linux.sh**(可复现配方)。
+  工件"(同 guest1.bin 哲学),构建目录=legacy 外部工件区(现
+  `ESHINE_WORK`,仓外)。仓内存 **scripts/build-linux.sh**(可复现配方)。
 - 门禁确定性:verify 先验 Image 存在,缺则打"跑 scripts/build-linux.sh"
   明确指引后 FAIL(在本机它将存在,双绿可复验)。
 

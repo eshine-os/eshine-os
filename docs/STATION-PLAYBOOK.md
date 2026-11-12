@@ -21,8 +21,7 @@ A station is closed only when all of the following are true:
    `docs/content/` (README, Zhihu/WeChat, Xiaohongshu, X thread, YouTube).
 6. Commit message has real trailers and passes
    `scripts/check-commit-msg.py`.
-7. VPS mirror synced (see the local push pipeline; never push to GitHub
-   from this host).
+7. Mirror synced through the maintainer's channel.
 8. Memory updated with the non-obvious lesson, not the changelog.
 
 ## Loop
@@ -38,7 +37,7 @@ A station is closed only when all of the following are true:
    gate number, first divergent line, host load, QEMU/GDB state.
 7. **Sync** - three-way update; walk the shell help with the real shell,
    do not sed-splice it.
-8. **Close** - devlog, content package, commit, VPS, memory.
+8. **Close** - devlog, content package, commit, mirror, memory.
 
 ## Batch mode
 
@@ -82,4 +81,5 @@ Record refuted hypotheses. A later session must not re-walk them.
   last.
 - The devlog records what happened; memory records what will change
   future behaviour (a rule, a trap, a decision).
-- Do not push to GitHub from this host; the VPS mirror is the sync path.
+- The public remote is updated only through the maintainer's channel;
+  do not push from development hosts.

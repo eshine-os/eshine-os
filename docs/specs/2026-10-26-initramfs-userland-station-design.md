@@ -66,7 +66,7 @@ vtimer 哲学:**CPACR 归 guest,宿主不再写**(vcpu_run 一行移除)。
   `/dev/console`(c 5 1)节点 + `/proc`、`/sys`、`/etc` 骨架;
 - **cpio 打包器:仓内 python 实现**(tools/mkinitcpio.py,newc 格式,
   设备节点无 root 依赖,fakeroot 本机实测缺;~40 行,从零气质);
-- 产出 `~/projects/eshine-linux/initramfs.cpio`(外部工件区,
+- 产出 `initramfs.cpio`(legacy 外部工件区,现 `ESHINE_WORK`,
   仓内零字节),构建终检 size ≤ 8MB 硬门。
 
 ### 2.4 宿主零改动核验

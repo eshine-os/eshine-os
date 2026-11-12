@@ -26,7 +26,7 @@ eshine-os 从零打造,目标第一周(7-14 小时)交付 **EL2 骨架到真绿*
 |---|---|
 | 本地路径 | `仓库根`(独立命名空间,物理隔离私有目录) |
 | git | init -b master;origin = 用户 镜像机(URL push 时提供;镜像机 无裸仓则 3 行 runbook:`git init --bare` + 权限) |
-| GitHub 演进 | 镜像机 `git push --mirror` 到 `eshine-os/eshine-os`(主仓=产品仓:README 项目首页 + 代码子目录;website 分支不动)。镜像机 侧执行,绕开本机管控 |
+| GitHub 演进 | 镜像机 `git push --mirror` 到 `eshine-os/eshine-os`(主仓=产品仓:README 项目首页 + 代码子目录;website 分支不动);由镜像机侧执行 |
 | License | **Apache-2.0**;全文件 `SPDX-License-Identifier: Apache-2.0` + `Copyright (c) 2026 Julian Chu`;根 NOTICE |
 | Commit 规范 | kernel 模板 / `Signed-off-by: Julian Chu <rootuliux@gmail.com>`(DCO)/ 真实语义 trailer(`Model`/`Assisted-by`/`Reviewed-by`+`Review-Ref`;见 CONTRIBUTING.md) |
 
@@ -110,12 +110,10 @@ vm_transition(vm, new_state);  /* 表驱动;非法转换 panic + 打印当前/�
 
 **CI**(`ci.yml`): ubuntu runner + `apt install gcc-aarch64-linux-gnu qemu-system-arm` → `make` → `verify_el2.py`。本周本地跑(脚本即护栏),GitHub 同步后生效。
 
-## 6. Push 通道(本机管控 现实)
+## 6. Push 通道(维护者私有同步)
 
-本机 `git push` 被 本机管控 挡(2026-10-20 实测: pack-objects 读 `.git/config` 假 EPERM → unpacker error)。通道设计:
-1. 日常: push 到 镜像机(若同样撞 本机管控)
-2. fallback: `git bundle create → scp → 镜像机 侧 pull/am`(对象零损失)
-3. 镜像机 → GitHub: 镜像机 侧 `git push --mirror`(本机管控 不沾身)
+开发机不对公共远端直接执行 `git push`;公共仓由维护者的私有通道
+同步(通道细节属维护者环境,不入公开仓)。
 
 ## 7. Week-1 验收标准(Definition of Done)
 
