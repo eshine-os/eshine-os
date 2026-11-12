@@ -27,10 +27,12 @@
         <h1><a href="/">The eshine-os Project Archives</a></h1>
         <p class="tagline">底层之光，守护生命 · The light beneath, guarding life.</p>
         <nav><ul>
-            <li><a href="#about">About</a></li>
+            <li><a href="#architecture">Architecture</a></li>
+            <li><a href="#roadmap">Roadmap</a></li>
             <li><a href="#featured">Sources</a></li>
             <li><a href="#releases">Releases</a></li>
-            <li><a href="https://github.com/eshine-os">GitHub</a></li>
+            <li><a href="https://github.com/eshine-os/eshine-os">GitHub</a></li>
+            <li><a href="https://gitee.com/eshine-os/eshine-os">Gitee</a></li>
             <li><a href="https://github.com/eshine-os/eshine-os/issues">Contact</a></li>
         </ul></nav>
     </header><!-- /#banner -->
@@ -43,8 +45,12 @@
                     <th>Location</th>
                 </tr>
                 <tr>
-                    <td><a href="https://git-scm.com/">Git</a></td>
+                    <td><a href="https://git-scm.com/">Git</a> &middot; primary</td>
                     <td><a href="https://github.com/eshine-os/eshine-os.git">github.com/eshine-os/eshine-os.git</a></td>
+                </tr>
+                <tr>
+                    <td><a href="https://git-scm.com/">Git</a> &middot; mirror</td>
+                    <td><a href="https://gitee.com/eshine-os/eshine-os.git">gitee.com/eshine-os/eshine-os.git</a></td>
                 </tr>
                 <tr>
                     <td><a href="https://www.ietf.org/rfc/rfc2616.txt">HTTP</a></td>
@@ -89,18 +95,73 @@
                     <td class="ph">[browse]</td>
                 </tr>
             </table>
-            <p class="note">🚧 Open-sourcing in progress &mdash; repositories will be published under the
-                <a href="https://github.com/eshine-os">eshine-os organization</a> as they become ready.
-                26.10 ships the EL2 skeleton: direct-EL2 boot, exception vector table, mini-shell,
+            <p class="note">🚧 Open-sourcing in progress &mdash; repositories are published under the
+                <a href="https://github.com/eshine-os/eshine-os">eshine-os organization on GitHub</a>
+                (primary) and mirrored on
+                <a href="https://gitee.com/eshine-os/eshine-os">Gitee</a>.
+                mainline <strong>27.04-dev</strong>: Type-1 hypervisor at EL2, the from-scratch RTOS
+                management domain, a real Linux 6.6 guest, a Yocto layer and a container/release
+                pipeline &mdash; 68 development stations, 183 replayable verification gates.
+                26.10 shipped the EL2 skeleton: direct-EL2 boot, exception vector table, mini-shell,
                 default-deny VM state machine and the true-green verify gate.</p>
         </article>
     </aside><!-- /#featured -->
+
+    <section id="architecture" class="body">
+        <h2>System Architecture</h2>
+        <img class="arch-diagram" src="assets/architecture.svg"
+             alt="eshine-os system architecture: a Type-1 hypervisor (ASIL-D) running on hardware, with VM0 management domain running the self-developed RTOS (ASIL-D), VM1 reserved cockpit domain (QM, planned Android), and VM2 running Linux for intelligent driving (ASIL-A/B)" />
+        <p>One machine, three domains, mixed criticality &mdash; designed against <strong>ISO 26262</strong>:</p>
+        <ul class="arch-list">
+            <li><strong>Type-1 hypervisor &middot; ASIL-D</strong> &mdash; direct hardware control at EL2,
+                no host OS; per-VM stage-2 address-space isolation, vGIC / vtimer / virtio device
+                models, CPU &amp; memory quotas, fail-closed cross-VM shared windows.</li>
+            <li><strong>VM0 &middot; management domain &middot; ASIL-D</strong> &mdash; the from-scratch RTOS:
+                deterministic scheduling, Send/Recv/Reply IPC, fault containment and health
+                monitoring. The safety management domain of the system.</li>
+            <li><strong>VM1 &middot; reserved domain &middot; QM</strong> &mdash; reserved for the cockpit:
+                planned to boot <strong>Android</strong> as the center-console / cluster domain.</li>
+            <li><strong>VM2 &middot; Linux domain &middot; ASIL-A/B</strong> &mdash; real upstream Linux 6.6
+                carrying <strong>intelligent-driving applications</strong> and the musl userland.</li>
+        </ul>
+        <p class="note">ASIL levels are architecture design targets; the ISO 26262 certification
+            program is in progress &mdash; see the honest boundary statement in
+            <a href="https://github.com/eshine-os/eshine-os/blob/master/docs/KNOWN-ISSUES.md">KNOWN-ISSUES.md</a>.</p>
+    </section><!-- /#architecture -->
+
+    <section id="roadmap" class="body">
+        <h2>Roadmap &mdash; in development, by priority</h2>
+        <ol class="roadmap">
+            <li><span class="prio">1</span>
+                <div class="rd-body"><strong>Functional Safety (ISO 26262)</strong>
+                <span class="rd-desc">ASIL-D hypervisor/RTOS architecture: fault containment,
+                fail-closed isolation, deterministic scheduling; latency determinism baselines
+                and the certification path.</span></div></li>
+            <li><span class="prio">2</span>
+                <div class="rd-body"><strong>Cybersecurity (ISO/SAE 21434)</strong>
+                <span class="rd-desc">Hardened VM isolation, cross-VM access control,
+                security audit and fuzzing of the virtualization boundary.</span></div></li>
+            <li><span class="prio">3</span>
+                <div class="rd-body"><strong>Real-hardware bring-up</strong>
+                <span class="rd-desc">From QEMU virt to an automotive SoC: SMMU, GIC ITS,
+                real timers and multi-core topologies.</span></div></li>
+            <li><span class="prio">4</span>
+                <div class="rd-body"><strong>Deterministic real-time</strong>
+                <span class="rd-desc">Sub-tick hrtimer wake-ups, partitioned CPU/memory budgets,
+                measured wake-up latency on real hardware.</span></div></li>
+            <li><span class="prio">5</span>
+                <div class="rd-body"><strong>Cockpit domain &amp; device ecosystem</strong>
+                <span class="rd-desc">Bring up Android in the reserved VM1 cockpit slot;
+                virtio net/rng devices; user-space service ecosystem.</span></div></li>
+        </ol>
+    </section><!-- /#roadmap -->
 
     <section id="extras" class="body">
         <div class="blogroll">
             <h2>Other resources</h2>
             <ul>
                 <li><a href="https://github.com/eshine-os">GitHub Organization</a></li>
+                <li><a href="https://gitee.com/eshine-os/eshine-os">Gitee Mirror</a></li>
                 <li><a href="https://github.com/eshine-os/eshine-os#readme">README</a></li>
                 <li><a href="https://github.com/eshine-os/eshine-os/issues">Issues</a></li>
                 <li><a href="https://github.com/eshine-os/eshine-os">Source Code</a></li>

@@ -387,3 +387,86 @@ a:active {
         margin: 2em 0.5em;
     }
 }
+
+/* ---------- Architecture & roadmap sections (2026-11-12) ---------- */
+#architecture,
+#roadmap {
+    background: var(--card);
+    margin: 1.5em auto;
+    padding: 1.85em 1.5em;
+    width: 50em;
+    max-width: 100%;
+    border: thin solid;
+    border-color: var(--border-hi) var(--border-mid) var(--border-lo);
+    box-shadow: 0 0.1em 0.3em var(--shadow);
+    border-radius: 0.5em;
+}
+
+#architecture h2,
+#roadmap h2 {
+    margin: 0.2em 0 0.8em 0;
+}
+
+.arch-diagram {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin: 0.5em auto 1em auto;
+}
+
+.arch-list {
+    padding-left: 1.2em;
+}
+
+.arch-list li {
+    margin: 0.5em 0;
+}
+
+ol.roadmap {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+ol.roadmap li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75em;
+    padding: 0.55em 0;
+    border-bottom: 1px dashed var(--border-mid);
+}
+
+ol.roadmap li:last-child {
+    border-bottom: none;
+}
+
+ol.roadmap .prio {
+    flex: 0 0 2.2em;
+    font-family: oswald, helvetica, sans-serif;
+    font-weight: bold;
+    text-align: center;
+    background: var(--accent);
+    color: var(--card);
+    border-radius: 0.3em;
+    padding: 0.1em 0 0.2em 0;
+}
+
+ol.roadmap .rd-body {
+    flex: 1 1 auto;
+}
+
+ol.roadmap .rd-desc {
+    display: block;
+    color: var(--muted);
+    font-size: 92%;
+    margin-top: 0.15em;
+}
+
+@media screen and (max-width: 848px) {
+    #architecture,
+    #roadmap {
+        width: auto;
+        margin: 1em 0.5em;
+        padding: 1em 0.75em;
+    }
+}
