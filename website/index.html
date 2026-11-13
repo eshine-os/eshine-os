@@ -109,22 +109,22 @@
 
     <section id="architecture" class="body">
         <h2>System Architecture</h2>
-        <img class="arch-diagram" src="assets/architecture.svg"
-             alt="eshine-os system architecture: a Type-1 hypervisor (ASIL-D) running on hardware, with VM0 management domain running the self-developed RTOS (ASIL-D), VM1 reserved cockpit domain (QM, planned Android), and VM2 running Linux for intelligent driving (ASIL-A/B)" />
-        <p>One machine, three domains, mixed criticality &mdash; designed against <strong>ISO 26262</strong>:</p>
+        <img class="arch-diagram" src="assets/architecture.svg?v=cal1"
+             alt="eshine-os system architecture: a Type-1 hypervisor (ASIL-D / CAL-4) running on hardware, with VM0 management domain running the self-developed RTOS (ASIL-D / CAL-3), VM1 reserved cockpit domain (QM / CAL-2, planned Android), and VM2 running Linux for intelligent driving (ASIL-A/B / CAL-2)" />
+        <p>One machine, three domains &mdash; designed on two axes: functional safety (<strong>ISO 26262</strong>) and cybersecurity (<strong>ISO/SAE 21434</strong>):</p>
         <ul class="arch-list">
-            <li><strong>Type-1 hypervisor &middot; ASIL-D</strong> &mdash; direct hardware control at EL2,
+            <li><strong>Type-1 hypervisor &middot; ASIL-D / CAL-4</strong> &mdash; direct hardware control at EL2,
                 no host OS; per-VM stage-2 address-space isolation, vGIC / vtimer / virtio device
-                models, CPU &amp; memory quotas, fail-closed cross-VM shared windows.</li>
-            <li><strong>VM0 &middot; management domain &middot; ASIL-D</strong> &mdash; the from-scratch RTOS:
+                models, CPU &amp; memory quotas, fail-closed cross-VM shared windows; the dual root of trust.</li>
+            <li><strong>VM0 &middot; management domain &middot; ASIL-D / CAL-3</strong> &mdash; the from-scratch RTOS:
                 deterministic scheduling, Send/Recv/Reply IPC, fault containment and health
-                monitoring. The safety management domain of the system.</li>
-            <li><strong>VM1 &middot; reserved domain &middot; QM</strong> &mdash; reserved for the cockpit:
+                monitoring. The safety and security management domain of the system.</li>
+            <li><strong>VM1 &middot; reserved domain &middot; QM / CAL-2</strong> &mdash; reserved for the cockpit:
                 planned to boot <strong>Android</strong> as the center-console / cluster domain.</li>
-            <li><strong>VM2 &middot; Linux domain &middot; ASIL-A/B</strong> &mdash; real upstream Linux 6.6
+            <li><strong>VM2 &middot; Linux domain &middot; ASIL-A/B / CAL-2</strong> &mdash; real upstream Linux 6.6
                 carrying <strong>intelligent-driving applications</strong> and the musl userland.</li>
         </ul>
-        <p class="note">ASIL levels are architecture design targets; the ISO 26262 certification
+        <p class="note">ASIL (ISO 26262) and CAL (ISO/SAE 21434) levels are architecture design targets; both certification
             program is in progress &mdash; see the honest boundary statement in
             <a href="https://github.com/eshine-os/eshine-os/blob/master/docs/KNOWN-ISSUES.md">KNOWN-ISSUES.md</a>.</p>
     </section><!-- /#architecture -->
