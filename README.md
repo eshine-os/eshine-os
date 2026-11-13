@@ -17,33 +17,41 @@ eshine-os is an open-source OS foundation for **automotive autonomous driving an
 
 ![eshine-os architecture](docs/img/architecture.svg)
 
-一台机器上的混合临界度三域架构，按 **ISO 26262** 功能安全设计：
+一台机器上的混合临界度三域架构，按 **ISO 26262** 功能安全与
+**ISO/SAE 21434** 信息安全双维度设计：
 
-- **Type-1 hypervisor（ASIL-D）**：直驱硬件、无宿主 OS；per-VM stage-2
-  地址空间隔离、vGIC/vtimer/virtio 设备模型、CPU/内存配额、
-  fail-closed 跨 VM 共享窗。
-- **VM0 管理域（ASIL-D）**：自研 RTOS——确定性调度、三段消息 IPC、
-  故障遏制与健康监控，是系统的安全管理域。
-- **VM1 预留域（QM）**：预留座舱域，未来启动 **Android** 作为
-  中控/仪表等座舱应用（槽位已留，启动目标设计中）。
-- **VM2 Linux 域（ASIL-A/B）**：真实 Linux 6.6 上游内核，承载
-  **智能驾驶应用**与 musl 用户态服务。
+- **Type-1 hypervisor（ASIL-D / CAL-4）**：直驱硬件、无宿主 OS；
+  per-VM stage-2 地址空间隔离、vGIC/vtimer/virtio 设备模型、
+  CPU/内存配额、fail-closed 跨 VM 共享窗——功能安全与信息安全的
+  双根信任基座。
+- **VM0 管理域（ASIL-D / CAL-3）**：自研 RTOS——确定性调度、三段
+  消息 IPC、故障遏制与健康监控，是系统的安全与安保管理域。
+- **VM1 预留域（QM / CAL-2）**：预留座舱域，未来启动 **Android**
+  作为中控/仪表等座舱应用（槽位已留，启动目标设计中）。
+- **VM2 Linux 域（ASIL-A/B / CAL-2）**：真实 Linux 6.6 上游内核，
+  承载**智能驾驶应用**与 musl 用户态服务。
 
-> ASIL 分级为架构设计目标，认证路线进行中（见
+> ASIL（功能安全，ISO 26262）与 CAL（信息安全保证等级，
+> ISO/SAE 21434）分级均为架构设计目标，双认证路线进行中（见
 > [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) 的诚实边界声明）。
 
-One machine, three domains, mixed criticality — designed against ISO 26262:
+One machine, three domains — designed on two axes: functional safety
+(ISO 26262) and cybersecurity (ISO/SAE 21434):
 
-- **Type-1 hypervisor (ASIL-D)** — direct hardware control, no host OS;
-  per-VM stage-2 isolation, vGIC/vtimer/virtio, CPU & memory quotas,
-  fail-closed cross-VM shared windows.
-- **VM0 management domain (ASIL-D)** — the from-scratch RTOS:
+- **Type-1 hypervisor (ASIL-D / CAL-4)** — direct hardware control, no
+  host OS; per-VM stage-2 isolation, vGIC/vtimer/virtio, CPU & memory
+  quotas, fail-closed cross-VM shared windows; the dual root of trust.
+- **VM0 management domain (ASIL-D / CAL-3)** — the from-scratch RTOS:
   deterministic scheduling, Send/Recv/Reply IPC, fault containment and
-  health monitoring; the safety management domain of the system.
-- **VM1 reserved domain (QM)** — reserved for the cockpit; planned to
-  run **Android** as the center-console / cluster domain.
-- **VM2 Linux domain (ASIL-A/B)** — real upstream Linux 6.6 carrying
-  **intelligent-driving applications** and the musl userland.
+  health monitoring; the safety and security management domain.
+- **VM1 reserved domain (QM / CAL-2)** — reserved for the cockpit;
+  planned to run **Android** as the center-console / cluster domain.
+- **VM2 Linux domain (ASIL-A/B / CAL-2)** — real upstream Linux 6.6
+  carrying **intelligent-driving applications** and the musl userland.
+
+> ASIL (ISO 26262) and CAL (ISO/SAE 21434) levels are architecture
+> design targets; both certification tracks are in progress (see
+> [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md)).
 
 ## 仓库 / Repositories
 
