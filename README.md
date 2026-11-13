@@ -101,6 +101,26 @@ In the most risk-prone edge zones, this base layer delivers high reliability and
     scripts/container.sh run        # interactive QEMU in the container
     scripts/container.sh selftest   # container build + fast gates
 
+### 在 Docker 里跑 / Run in Docker
+
+无本地交叉工具链时，一条路是固定镜像（Ubuntu 24.04 + cross gcc + QEMU 8.2 + dtc + gdb）：
+
+    scripts/container.sh build                    # 一次：建 pinned 镜像
+    scripts/container.sh run                      # 交互 QEMU（= 容器内 make run）
+    scripts/container.sh verify --stop-after=36   # 容器内重建 + 快环门禁
+    scripts/container.sh shell                    # 容器内交互 bash
+
+- 仓库挂 `/src`、工作根 `.work` 挂 `/work`：`.work` 在宿主填充一次，容器直接复用。
+- 容器默认 `--network none`，**不能在容器内 fetch**；要容器内从零 bootstrap 用
+  `ESHINE_CONTAINER_NETWORK=bridge`。
+- 支持 podman：`ESHINE_CONTAINER_ENGINE=podman`。
+
+No local toolchain needed: the pinned image builds and runs the same
+tree against the same `.work`. The container defaults to
+`--network none` (populate `.work` on the host, or set
+`ESHINE_CONTAINER_NETWORK=bridge` to bootstrap inside). Details:
+[docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md).
+
 依赖 / deps: cross toolchain and QEMU (or Docker), `python3`; optional `dtc`.
 工作根 / work root: `.work/` (override with `ESHINE_WORK`). See
 [docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md).
