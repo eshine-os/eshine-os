@@ -132,15 +132,16 @@
     <text x="144" y="1209">硬实时 · 确定性调度与分区预算</text>
   </g>
 
-  <!-- AI highlight box -->
-  <rect x="106" y="1232" width="868" height="88" rx="8" fill="#ffffff" stroke="#b30000" stroke-width="2"/>
-  <text x="124" y="1264" font-size="24" font-weight="bold" fill="#33290A">国产 AI 从零构建 RTOS 与 Hypervisor</text>
-  <text x="124" y="1296" font-size="17" fill="#4a4436">GLM-5.3 · DeepSeek 结对开发 · Claude Code（Anthropic）</text>
+  <!-- AI highlight box: frontier-model contrast, honest attribution -->
+  <rect x="106" y="1228" width="868" height="104" rx="8" fill="#ffffff" stroke="#b30000" stroke-width="2"/>
+  <text x="124" y="1259" font-size="15" fill="#6b6350">当最强模型 Fable 5.2 演示『从零写 OS』</text>
+  <text x="124" y="1293" font-size="23" font-weight="bold" fill="#33290A">我们用更便宜的 GLM-5.3 + DeepSeek 写完了</text>
+  <text x="124" y="1318" font-size="13" fill="#6b6350">国产开源模型 · AI 结对 · Claude Code（Anthropic）· 68 站全公开</text>
 
   <g font-size="18" fill="#4a4436">
-    <text x="540" y="1350" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">主仓</tspan> · github.com/eshine-os/eshine-os · Apache-2.0 开源</text>
-    <text x="540" y="1378" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">镜像</tspan> · gitee.com/eshine-os/eshine-os</text>
-    <text x="540" y="1406" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">官网</tspan> · www.eshine-os.org</text>
+    <text x="540" y="1356" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">主仓</tspan> · github.com/eshine-os/eshine-os · Apache-2.0 开源</text>
+    <text x="540" y="1382" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">镜像</tspan> · gitee.com/eshine-os/eshine-os</text>
+    <text x="540" y="1408" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">官网</tspan> · www.eshine-os.org</text>
   </g>
-  <text x="540" y="1432" text-anchor="middle" font-size="13" fill="#8c8368">Technology Preview · 27.04-dev · QEMU virt 上 183 道可重放门禁</text>
+  <text x="540" y="1434" text-anchor="middle" font-size="12.5" fill="#8c8368">Technology Preview · 27.04-dev · QEMU virt 上 183 道可重放门禁</text>
 </svg>

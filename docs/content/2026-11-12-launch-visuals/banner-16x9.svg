@@ -39,11 +39,10 @@
     <text x="94" y="478">硬实时 · 确定性调度与分区预算</text>
   </g>
 
-  <!-- AI highlight box -->
   <rect x="60" y="496" width="474" height="82" rx="8" fill="#ffffff" stroke="#b30000" stroke-width="2"/>
-  <text x="84" y="526" font-size="20" font-weight="bold" fill="#33290A">国产 AI 从零构建 RTOS 与 Hypervisor</text>
-  <text x="84" y="552" font-size="16" fill="#4a4436">GLM-5.3 · DeepSeek 结对开发</text>
-  <text x="84" y="572" font-size="12.5" fill="#6b6350">AI-paired engineering · Claude Code（Anthropic）</text>
+  <text x="84" y="523" font-size="15" fill="#6b6350">当最强模型 Fable 5.2 演示『从零写 OS』</text>
+  <text x="84" y="550" font-size="19" font-weight="bold" fill="#33290A">我们用更便宜的 GLM-5.3 + DeepSeek 写完了</text>
+  <text x="84" y="573" font-size="12.5" fill="#6b6350">国产开源模型 · AI 结对 · Claude Code（Anthropic）· 68 站全公开</text>
 
   <g font-size="16" fill="#4a4436">
     <text x="64" y="606" font-weight="bold" fill="#8c3a3a">主仓</text>
