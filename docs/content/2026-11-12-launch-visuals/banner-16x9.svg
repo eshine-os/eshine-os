@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 675" font-family="Helvetica, 'DejaVu Sans', 'WenQuanYi Zen Hei', sans-serif">
   <!-- SPDX-License-Identifier: Apache-2.0 / Copyright (c) 2026 Julian Chu -->
-  <!-- eshine-os launch banner (16:9) — self-contained; wordmark kept as a modest byline -->
+  <!-- eshine-os announcement banner (16:9) — self-contained; wordmark kept as a modest byline -->
   <defs>
     <radialGradient id="logo-core" cx="50%" cy="50%" r="50%">
       <stop offset="0%" stop-color="#fff4e6"/>
@@ -23,32 +23,35 @@
   </g>
   <text x="136" y="102" font-size="28" font-weight="bold" fill="#8c3a3a">eshine-os</text>
 
-  <!-- hero message -->
   <text x="64" y="190" font-size="40" font-weight="bold" fill="#33290A">车载自动驾驶 · 机器人</text>
   <text x="64" y="238" font-size="40" font-weight="bold" fill="#33290A">开源操作系统底座</text>
   <text x="64" y="284" font-size="24" fill="#b30000">底层之光，守护生命</text>
   <text x="64" y="312" font-size="14" font-style="italic" fill="#8c8368">The light beneath, guarding life.</text>
 
-  <line x1="64" y1="340" x2="540" y2="340" stroke="#d8d2c2" stroke-width="2"/>
+  <line x1="64" y1="338" x2="540" y2="338" stroke="#d8d2c2" stroke-width="2"/>
 
   <g font-size="21" fill="#33290A">
-    <rect x="64" y="368" width="18" height="18" fill="#b30000"/>
-    <text x="94" y="384">Hypervisor + 自研 RTOS — ASIL-D</text>
-    <rect x="64" y="416" width="18" height="18" fill="#d97706"/>
-    <text x="94" y="432">VM2 真实 Linux · 智能驾驶 — ASIL-A/B</text>
-    <rect x="64" y="464" width="18" height="18" fill="#9aa08c"/>
-    <text x="94" y="480">VM1 预留 Android 座舱域 — QM</text>
-    <rect x="60" y="514" width="330" height="36" rx="6" fill="none" stroke="#b30000" stroke-width="2"/>
-    <text x="76" y="538" font-size="19" fill="#b30000">ISO 26262 混合临界 · Apache-2.0 开源</text>
+    <rect x="64" y="366" width="18" height="18" fill="#b30000"/>
+    <text x="94" y="382">ISO 26262 功能安全 — ASIL-D</text>
+    <rect x="64" y="414" width="18" height="18" fill="#d97706"/>
+    <text x="94" y="430">ISO/SAE 21434 信息安全</text>
+    <rect x="64" y="462" width="18" height="18" fill="#9aa08c"/>
+    <text x="94" y="478">硬实时 · 确定性调度与分区预算</text>
   </g>
 
-  <g font-size="17" fill="#4a4436">
-    <text x="64" y="592" font-weight="bold" fill="#8c3a3a">主仓</text>
-    <text x="116" y="592">github.com/eshine-os/eshine-os</text>
-    <text x="64" y="620" font-weight="bold" fill="#8c3a3a">镜像</text>
-    <text x="116" y="620">gitee.com/eshine-os/eshine-os</text>
-    <text x="64" y="648" font-weight="bold" fill="#8c3a3a">官网</text>
-    <text x="116" y="648">www.eshine-os.org</text>
+  <!-- AI highlight box -->
+  <rect x="60" y="496" width="474" height="82" rx="8" fill="#ffffff" stroke="#b30000" stroke-width="2"/>
+  <text x="84" y="526" font-size="20" font-weight="bold" fill="#33290A">国产 AI 从零构建 RTOS 与 Hypervisor</text>
+  <text x="84" y="552" font-size="16" fill="#4a4436">GLM-5.3 · DeepSeek 结对开发</text>
+  <text x="84" y="572" font-size="12.5" fill="#6b6350">AI-paired engineering · Claude Code（Anthropic）</text>
+
+  <g font-size="16" fill="#4a4436">
+    <text x="64" y="606" font-weight="bold" fill="#8c3a3a">主仓</text>
+    <text x="110" y="606">github.com/eshine-os/eshine-os · Apache-2.0 开源</text>
+    <text x="64" y="632" font-weight="bold" fill="#8c3a3a">镜像</text>
+    <text x="110" y="632">gitee.com/eshine-os/eshine-os</text>
+    <text x="64" y="658" font-weight="bold" fill="#8c3a3a">官网</text>
+    <text x="110" y="658">www.eshine-os.org</text>
   </g>
 
   <!-- architecture diagram: inlined (self-contained, no external refs) -->
@@ -146,5 +149,5 @@
   <text x="20" y="524" font-size="10.5" font-style="italic" fill="#8c8368">ASIL levels are architecture design targets; the ISO 26262 certification program is in progress (see KNOWN-ISSUES.md).</text>
   </g>
   <text x="852" y="585" text-anchor="middle" font-size="14" fill="#6b6350">一机三域 · ISO 26262 混合临界架构</text>
-  <text x="852" y="622" text-anchor="middle" font-size="13" fill="#8c8368">Technology Preview · Apache-2.0 · QEMU virt 上 183 道可重放门禁</text>
+  <text x="852" y="622" text-anchor="middle" font-size="13" fill="#8c8368">Type-1 Hypervisor + 自研 RTOS（ASIL-D）· Linux（ASIL-A/B）· Android 座舱（QM）</text>
 </svg>

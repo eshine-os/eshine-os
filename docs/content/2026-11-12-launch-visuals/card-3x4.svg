@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1080 1440" font-family="Helvetica, 'DejaVu Sans', 'WenQuanYi Zen Hei', sans-serif">
   <!-- SPDX-License-Identifier: Apache-2.0 / Copyright (c) 2026 Julian Chu -->
-  <!-- eshine-os launch card (3:4) — self-contained; wordmark kept as a modest byline -->
+  <!-- eshine-os announcement card (3:4) — self-contained; wordmark kept as a modest byline -->
   <defs>
     <radialGradient id="logo-core" cx="50%" cy="50%" r="50%">
       <stop offset="0%" stop-color="#fff4e6"/>
@@ -23,7 +23,6 @@
   </g>
   <text x="540" y="222" text-anchor="middle" font-size="30" font-weight="bold" fill="#8c3a3a">eshine-os</text>
 
-  <!-- hero message -->
   <text x="540" y="278" text-anchor="middle" font-size="38" font-weight="bold" fill="#33290A">车载自动驾驶 · 机器人</text>
   <text x="540" y="324" text-anchor="middle" font-size="38" font-weight="bold" fill="#33290A">开源操作系统底座</text>
   <text x="540" y="368" text-anchor="middle" font-size="26" fill="#b30000">底层之光，守护生命</text>
@@ -124,21 +123,24 @@
   <text x="20" y="524" font-size="10.5" font-style="italic" fill="#8c8368">ASIL levels are architecture design targets; the ISO 26262 certification program is in progress (see KNOWN-ISSUES.md).</text>
   </g>
 
-  <g font-size="24" fill="#33290A">
-    <rect x="110" y="1108" width="22" height="22" fill="#b30000"/>
-    <text x="146" y="1127">Hypervisor + 自研 RTOS — ASIL-D</text>
-    <rect x="110" y="1158" width="22" height="22" fill="#d97706"/>
-    <text x="146" y="1177">VM2 真实 Linux · 智能驾驶 — ASIL-A/B</text>
-    <rect x="110" y="1208" width="22" height="22" fill="#9aa08c"/>
-    <text x="146" y="1227">VM1 预留 Android 座舱域 — QM</text>
-    <rect x="106" y="1252" width="382" height="42" rx="6" fill="none" stroke="#b30000" stroke-width="2"/>
-    <text x="124" y="1280" font-size="21" fill="#b30000">ISO 26262 混合临界 · Apache-2.0 开源</text>
+  <g font-size="22" fill="#33290A">
+    <rect x="110" y="1108" width="20" height="20" fill="#b30000"/>
+    <text x="144" y="1125">ISO 26262 功能安全 — ASIL-D</text>
+    <rect x="110" y="1150" width="20" height="20" fill="#d97706"/>
+    <text x="144" y="1167">ISO/SAE 21434 信息安全</text>
+    <rect x="110" y="1192" width="20" height="20" fill="#9aa08c"/>
+    <text x="144" y="1209">硬实时 · 确定性调度与分区预算</text>
   </g>
 
-  <g font-size="19" fill="#4a4436">
-    <text x="540" y="1340" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">主仓</tspan> · github.com/eshine-os/eshine-os</text>
-    <text x="540" y="1372" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">镜像</tspan> · gitee.com/eshine-os/eshine-os</text>
-    <text x="540" y="1404" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">官网</tspan> · www.eshine-os.org</text>
+  <!-- AI highlight box -->
+  <rect x="106" y="1232" width="868" height="88" rx="8" fill="#ffffff" stroke="#b30000" stroke-width="2"/>
+  <text x="124" y="1264" font-size="24" font-weight="bold" fill="#33290A">国产 AI 从零构建 RTOS 与 Hypervisor</text>
+  <text x="124" y="1296" font-size="17" fill="#4a4436">GLM-5.3 · DeepSeek 结对开发 · Claude Code（Anthropic）</text>
+
+  <g font-size="18" fill="#4a4436">
+    <text x="540" y="1350" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">主仓</tspan> · github.com/eshine-os/eshine-os · Apache-2.0 开源</text>
+    <text x="540" y="1378" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">镜像</tspan> · gitee.com/eshine-os/eshine-os</text>
+    <text x="540" y="1406" text-anchor="middle"><tspan font-weight="bold" fill="#8c3a3a">官网</tspan> · www.eshine-os.org</text>
   </g>
-  <text x="540" y="1432" text-anchor="middle" font-size="14" fill="#8c8368">Technology Preview · Apache-2.0 · QEMU virt 上 183 道可重放门禁</text>
+  <text x="540" y="1432" text-anchor="middle" font-size="13" fill="#8c8368">Technology Preview · 27.04-dev · QEMU virt 上 183 道可重放门禁</text>
 </svg>
