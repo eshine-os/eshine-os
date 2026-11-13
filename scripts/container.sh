@@ -19,8 +19,14 @@ build() {
 
 run() {
     mkdir -p "$ESHINE_WORK/home" "$ESHINE_WORK/tmp"
+    # docker run 默认不挂 stdin:make run 的 QEMU 控制台和 shell 都会
+    # "能看不能敲"。调用方是 tty 时补 -i/-t;CI/脚本管道保持现状。
+    local tty=()
+    if [ -t 0 ]; then tty=(-i); fi
+    if [ -t 0 ] && [ -t 1 ]; then tty=(-i -t); fi
     "$ENGINE" run --rm --network "${ESHINE_CONTAINER_NETWORK:-none}" \
         --user "$(id -u):$(id -g)" \
+        ${tty[@]+"${tty[@]}"} \
         -v "$REPO:/src" -v "$ESHINE_WORK:/work" \
         -e ESHINE_WORK=/work -e HOME=/work/home -e TMPDIR=/work/tmp \
         -e ESHINE_PROXY="${ESHINE_PROXY:-}" \
@@ -31,6 +37,9 @@ case "$cmd" in
     build) build ;;
     make) run make "$@" ;;
     shell) run bash ;;
+    run)
+        # 交互跑 QEMU(make run):.work 从宿主挂载,镜像在容器内启动。
+        run make run ;;
     verify)
         # The verifier's own preflight decides which artifacts this run
         # needs; --stop-after=36 must work on a clean work root.
@@ -45,6 +54,7 @@ case "$cmd" in
 usage: scripts/container.sh <command>
   build                 build the pinned toolchain image
   make [args]           run make inside the container
+  run                   interactive QEMU: make run inside the container
   verify [--stop-after=N]  in-container build + verify (preflight-driven)
   selftest              build image, make -B, verify --stop-after=36
   shell                 interactive shell in the container

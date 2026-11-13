@@ -68,6 +68,7 @@ Requirements: `aarch64-linux-gnu-gcc`, `qemu-system-aarch64`, `python3`,
 
     scripts/container.sh build
     scripts/container.sh make -j"$(nproc)"
+    scripts/container.sh run                  # interactive QEMU (make run)
     scripts/container.sh verify --stop-after=36
     scripts/container.sh selftest
 
@@ -75,6 +76,14 @@ The image (`docker/Dockerfile.build`) pins the cross toolchain, QEMU,
 dtc, python3, gdb-multiarch, and Linux build dependencies. The repo is
 mounted at `/src`; `ESHINE_WORK` is mounted at `/work`. `verify` uses
 `--network none`; `build` needs network for apt.
+
+`run` and `shell` attach `-i -t` when the caller is a terminal, so the
+QEMU console inside the container is fully interactive (echo, vmstat,
+vmrun all work). CI and piped invocations stay non-tty. `.work` is the
+same root as the host, so populate it once on the host (make run
+auto-fetches, or `bootstrap.sh --adopt`); a clean `.work` inside the
+default `--network none` container cannot fetch. To bootstrap inside
+the container, set `ESHINE_CONTAINER_NETWORK=bridge`.
 
 If Docker is unavailable or apt/image pulls are blocked, use the host
 build path (`bootstrap.sh --fetch`, or `--adopt` with explicit legacy

@@ -98,6 +98,7 @@ In the most risk-prone edge zones, this base layer delivers high reliability and
     make verify         # full 183 gates (needs .work artifacts + Yocto)
 
     scripts/container.sh build      # pinned toolchain image
+    scripts/container.sh run        # interactive QEMU in the container
     scripts/container.sh selftest   # container build + fast gates
 
 依赖 / deps: cross toolchain and QEMU (or Docker), `python3`; optional `dtc`.
