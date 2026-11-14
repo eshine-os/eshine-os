@@ -17,7 +17,7 @@ eshine-os is an open-source OS foundation for **automotive autonomous driving an
 
 ## 系统架构 / System architecture
 
-![eshine-os architecture](docs/img/architecture.svg)
+![eshine-os architecture](docs/img/architecture.png)
 
 一台机器上的混合临界度三域架构，按 **ISO 26262** 功能安全与
 **ISO/SAE 21434** 信息安全双维度设计：

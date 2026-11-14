@@ -2,6 +2,8 @@
   <!-- SPDX-License-Identifier: Apache-2.0 -->
   <!-- Copyright (c) 2026 Julian Chu -->
   <!-- eshine-os system architecture (Type-1 hypervisor; ISO 26262 functional safety x ISO/SAE 21434 cybersecurity) -->
+  <!-- Editable source of docs/img/architecture.png (Gitee does not render SVG in
+       markdown). After editing, re-render: rsvg-convert -w 1560 -o docs/img/architecture.png docs/img/architecture.svg -->
 
   <rect x="0" y="0" width="780" height="560" rx="10" fill="#ffffff" stroke="#d8d2c2" stroke-width="1.5"/>
 
