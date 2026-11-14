@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2026 Julian Chu -->
 # 已知问题与边界 / Known issues and scope
 
-更新 / Updated: 2026-11-10
+更新 / Updated: 2026-11-14
 
 本仓处于快速迭代期。以下问题已知、已记录，按优先级持续收敛；门禁全绿不等于没有残余缺陷。
 
@@ -12,6 +12,7 @@ a fully green gate run does not imply the absence of residual defects.
 ## 1. SMP demo 深层污染族
 
 - 门禁 `[37]`/`[38]`（双核 demo）存在深层污染面，已有守卫与全息取证，但根因尚未完全收敛。
+- 2026-11-11 三轮实测升级：门 `[37]` 为签名确定性必死（2/2）而非偶发；root-a（IRQ 出口 requeue 池外 idle）已定谳修真（见 ARCHITECTURE.md 站 68B），root-b/c 武装待续。
 - 现象线索：`sp=0xC`、self-switch `next==old`、CPU1 六拍落在 `ipimain` 栈域。
 
 ## 2. 交互 shell 空格洪水

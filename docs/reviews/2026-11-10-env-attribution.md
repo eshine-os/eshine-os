@@ -2,6 +2,9 @@
 <!-- Copyright (c) 2026 Julian Chu -->
 # Review: host-independent environment and real commit attribution
 
+> Note: the commit SHAs cited in this file no longer resolve in the
+> public history; rely on the descriptions and dates, not the SHAs.
+
 - Date: 2026-11-10
 - Reviewer: deepseek-v4.1-flash (read-only subagent)
 - Model: deepseek-v4.1-flash

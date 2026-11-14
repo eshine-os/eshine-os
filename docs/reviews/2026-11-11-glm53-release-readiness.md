@@ -2,6 +2,9 @@
 <!-- Copyright (c) 2026 Julian Chu -->
 # Review: 发布就绪度第一方复评（glm-5.3）
 
+> ⚠️ 本文引用的提交 SHA 与当前公开历史不对应（已不可解析）；
+> 请以文中描述与日期为准。
+
 - Date: 2026-11-11
 - Reviewer: glm-5.3（harness 上报 `fangzhou/glm-5.3`）
 - Model: glm-5.3

@@ -6,8 +6,8 @@ This file is the single-screen resume point. `scripts/update-state.sh`
 refreshes the generated block; the notes below it are maintained by hand.
 
 <!-- state:begin -->
-- Updated: 2026-11-12T13:09:26Z
-- HEAD: 2fdda49 (docs: release reviews and pre-publish review)
+- Updated: 2026-11-14T00:17:48Z
+- HEAD: 0bbcd34 (content: re-render announcement PNGs with the dual-safety diagram)
 - Version: 27.04-dev
 - Gates: 183 (tools/verify/verify_el2.py)
 - Dev tags: 26.08-1w .. 26.11-2w; release v26.10

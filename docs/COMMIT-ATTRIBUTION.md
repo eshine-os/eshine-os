@@ -66,3 +66,18 @@ an independence statement. Use
 in the same commit (or an earlier one) that carries `Review-Ref`.
 Post-commit reviews are recorded as follow-up artifacts; commits are not
 rewritten to add a review.
+
+## Known exception: 2026-11-12/13 launch batch
+
+Twelve commits dated 2026-11-12 and 2026-11-13 (launch content, the
+CAL architecture diagram, Docker README, and related) carry
+`Reviewed-by: deepseek-v4.1-flash` with
+`Review-Ref: docs/reviews/2026-11-10-env-attribution.md`, although that
+review was performed on the 2026-11-10 working tree and does not cover
+those commits; some of them also carry the same model as both `Model:`
+and `Reviewed-by:`. These trailers were applied as batch attestation
+after the fact, which the real-semantics rules above do not permit.
+
+This exception is recorded here for transparency. From now on every
+new commit must satisfy real review semantics; no further batch
+attestation is allowed.

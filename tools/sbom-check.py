@@ -6,9 +6,10 @@
 校验面(全部绿才算过):
   1. manifest.yaml 每组件字段齐(名/版/许可/来源/in-repo);
   2. in-repo 工件存在且名含钉死版本(版本 pin 面);
-  3. GPL 组件全部 in-repo: false(仓外隔离政策);
-  4. NOTICE 列全组件名(聚合对照);
-  5. LICENSE = Apache-2.0(本体许可)。
+  3. in-repo 工件 sha256 与台账钉死值一致(哈希实算);
+  4. GPL 组件全部 in-repo: false(仓外隔离政策);
+  5. NOTICE 列全组件名(聚合对照);
+  6. LICENSE = Apache-2.0(本体许可)。
 
 用法:python3 tools/sbom-check.py   # 0=全绿;非 0=首红项
 """
@@ -43,6 +44,15 @@ def load_manifest(path):
     return comps
 
 
+def sha256_file(path):
+    """流式 sha256(工件最多 ~1.5MB,无需分块优化)。"""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def main():
     mpath = os.path.join(REPO, "3rd/manifest.yaml")
     comps = load_manifest(mpath)
@@ -65,6 +75,16 @@ def main():
                 print("FAIL: version pin broken: %s vs %s"
                       % (c["version"], c["artifact"]))
                 return 1
+            # sha256 钉死:台账宣称 pin,这里真算真比
+            if "sha256" not in c:
+                print("FAIL: in-repo artifact missing sha256 pin: %s"
+                      % c["name"])
+                return 1
+            actual = sha256_file(art)
+            if actual != c["sha256"]:
+                print("FAIL: sha256 mismatch: %s (ledger %s, actual %s)"
+                      % (c["name"], c["sha256"], actual))
+                return 1
         # GPL 隔离政策
         if c["license"].startswith("GPL") and c["in-repo"] == "true":
             print("FAIL: GPL component in-repo: %s" % c["name"])
@@ -84,7 +104,7 @@ def main():
         return 1
 
     inrepo = [c["name"] for c in comps if c["in-repo"] == "true"]
-    print("sbom: %d components, %d in-repo (pin ok), %d out-repo "
+    print("sbom: %d components, %d in-repo (sha256 ok), %d out-repo "
           "(GPL isolated)" % (len(comps), len(inrepo),
                               len(comps) - len(inrepo)))
     print("sbom: NOTICE aggregated, LICENSE Apache-2.0 — ALL GREEN")

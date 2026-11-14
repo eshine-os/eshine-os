@@ -7,6 +7,8 @@
 eshine.elf
 # Editor swap files
 *.swp
+# macOS Finder metadata
+.DS_Store
 # Generated dependency files (-MMD)
 *.d
 __pycache__/

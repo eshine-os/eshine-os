@@ -5,6 +5,8 @@
 > 底层之光，守护生命。
 > The light beneath, guarding life.
 
+**🌐 官网 / Website: <https://www.eshine-os.org/>** — 架构、路线图、最新发布与镜像 / architecture, roadmap, latest releases and mirrors.
+
 ## 我们做什么 / What we build
 
 **与 AI 组队，从零开发车载自动驾驶与机器人的操作系统。**
@@ -85,7 +87,7 @@ In the most risk-prone edge zones, this base layer delivers high reliability and
   作为中控/仪表）；VM2 为**真实 Linux 6.6 guest**（busybox initramfs，
   目标=智能驾驶应用域）。
 - **真 musl 用户态**：同一份静态 musl ELF 在 VM0（自研内核 + 用户态 loader）与 VM2（真实 Linux）上得到相同输出——同 libc，两个世界，一台 hypervisor。
-- **门禁**：183 道可重放判据，站点收口以两连真绿为准。
+- **门禁**：183 道可重放判据，站点收口以两连真绿为准。⚠️ 现状直报：全量 183 门两连真绿尚未达成，门 [37]/[38] 家族根因未闭合 —— 详见 [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md)。
 - **构建**：kernel 风格 Makefile；Yocto 层 `meta-eshine` 可从 `git archive` 提交树构建部署件。
 - **验证平台**：QEMU virt（ARM64）。真板路线在规划中。
 
@@ -137,7 +139,8 @@ tree against the same `.work`. The container defaults to
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — 架构与关键机制
 - [docs/specs/](docs/specs/) — 逐站设计文档
-- [docs/devlog/](docs/devlog/) — 开发日志（双语）
+- [docs/devlog/](docs/devlog/) — 开发日志（站 00-27、49-68）
+- [docs/devlogs/](docs/devlogs/) — 开发日志（站 28-48）
 - [docs/content/](docs/content/) — 每站技术内容包
 - [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) — 已知问题与边界
 - [docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md) — 工作根、bootstrap、容器

@@ -2,6 +2,9 @@
 <!-- Copyright (c) 2026 Julian Chu -->
 # 发布就绪度评估报告
 
+> ⚠️ 本文引用的提交 SHA 与当前公开历史不对应（已不可解析）；
+> 请以文中描述与日期为准。
+
 - 评估日期：2026-11-11
 - 评估对象：`eshine-os` @ `7ab9c23`（`VERSION` = `27.04-dev`）
 - 评估人：Claude Code（模型 `deepseek-v4.1-flash`）

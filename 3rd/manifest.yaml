@@ -9,9 +9,11 @@ components:
   - name: musl
     version: 1.2.5
     license: MIT
-    source: https://musl.libc.org
+    source: https://launchpad.net/ubuntu/resolute/+source/musl
+    note: Debian 重打包归档(musl_1.2.5.orig.tar.gz);上游项目 https://musl.libc.org
     in-repo: true
     artifact: 3rd/musl-1.2.5.tar.gz
+    sha256: a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4
 
   - name: busybox
     version: 1.36.1
@@ -26,13 +28,16 @@ components:
     source: https://github.com/DaveGamble/cJSON
     in-repo: true
     artifact: 3rd/cjson-1.7.18.tar.gz
+    sha256: 3aa806844a03442c00769b83e99970be70fbef03735ff898f4811dd03b9f5ee5
 
   - name: zlib
     version: 1.3.1
     license: Zlib
-    source: https://zlib.net
+    source: https://github.com/madler/zlib
+    note: GitHub codeload 归档(含 .github/);非 zlib.net 官方发布归档
     in-repo: true
     artifact: 3rd/zlib-1.3.1.tar.gz
+    sha256: 17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c
 
   - name: linux-image
     version: 6.6

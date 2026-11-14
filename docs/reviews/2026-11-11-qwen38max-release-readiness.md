@@ -2,6 +2,9 @@
 <!-- Copyright (c) 2026 Julian Chu -->
 # Review: 发布就绪度跨族复评（qwen3.8-max）
 
+> ⚠️ 本文引用的提交 SHA 与当前公开历史不对应（已不可解析）；
+> 请以文中描述与日期为准。
+
 - Date: 2026-11-11
 - Reviewer: qwen3.8-max（harness 上报 `bailian/qwen3.8-max`）
 - Model: qwen3.8-max

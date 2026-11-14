@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 Julian Chu -->
-# eshine-os Architecture（Week-1 骨架）
+# eshine-os Architecture
 
 ## 启动流（当前）
 
@@ -10,7 +10,7 @@
         v  EL2
     _start (hypervisor/arch/arm64/start.S)
       校验 CurrentEL == EL2，否则 WFI 停车
-      -> DAIF 关中断（本周轮询模型）
+      -> DAIF 关中断（当前轮询模型）
       -> 清 BSS
       -> 装载 VBAR_EL2（.vectors，2KB 对齐）
       -> 设栈（.stack 16KB）
@@ -88,7 +88,7 @@
 | current-EL irq  | el2_trap → el2_irq：26=宿主 tick（重装后 EOIR+DIR）；27=vtimer（注入 LR 后只降优先级）；spurious 不动 EOIR | 已实 |
 | lower-EL sync   | el1_trap 保存帧 → el1_sync：HVC #1/#2/#4（控制类；#0/#3 第六站退役，未知 imm 默认拒绝）+ data abort（EC=0x24 → mmio_dispatch 仿真窗口分发）+ WFI 陷阱（EC=0x01 → VCPU_WAIT）；HVC/MMIO 出口经 resume_or_preempt 查量子（尽则 PREEMPT 弃帧）；其余（含指令中止 EC=0x20）= guest fault → 帧诊断+HPFAR + VM 隔离死 | 已实 |
 | lower-EL irq    | el2_trap_guest：guest 态物理中断宿主栈处理；tick 递减其量子，耗尽置 need_resched；出口查标志 → preempt_save_frame 帧转写 → vcpu_exit（抢占切走） | 已实 |
-| fiq / serror / 其余 lower-EL 槽 | 默认拒绝 panic + ESR | 占位 |
+| fiq / serror / 其余 lower-EL 槽 | 默认拒绝 panic + ESR | 已实（默认拒绝） |
 
 ## Guest fault 隔离（27.04 第三站）
 
@@ -299,7 +299,7 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 路线注记（范围外，记录归属）
 
-- 真板阶段：EL3/ATF 启动链（QEMU virt 无 secure world，本周用 virtualization=on 直进 EL2）
+- 真板阶段：EL3/ATF 启动链（QEMU virt 无 secure world，当前用 virtualization=on 直进 EL2）
 - LR 满兜底（maint PPI 25+UIE+ring）、UART IRQ 优先级/多中断源精细
   调度（当前单 RXIM）、多仿真设备表（当前 vuart 单设备）、CNTVOFF
   per-VM（当前共享 0）、vCPU>1/VM、优先级/实时策略、分配器
@@ -832,7 +832,7 @@ VA 读走当前 CPU 翻译体制=EL2 语境客户内存读空→`monitor xp` 物
 （守卫 2/2+冒烟 2/2 实证）→空队 pick 恒回 idle 被当真任务切进（eret 陈旧
 引导帧）→idle->next 字段撞自家 q[] FP 区→队链写野喷（rdy_tail 野化,
 rt_cur_arr/rt_ticks/壳 sp BSS 多点中弹）→毒帧恢复 ret 进池数据执行→
-SP0 槽=guest_park 静默楔/SP_ELx 槽=rt_sync_fault panic 两脸一dễ;修真
+SP0 槽=guest_park 静默楔/SP_ELx 槽=rt_sync_fault panic;修真
 =rdy_enqueue 池域硬门 rt_task_in_pool（单窒息点）;证效=队列毒五靴全消
 +全案首次完整走通 governed 零开火。**root-b/c 武装待续**：fork 子孤儿
 （READY 而 sp/ksp 全净队不可达,守卫活捉×2,窗=tick26-33 loader 首阻,
@@ -983,7 +983,7 @@ health=demo op RT_U_HEALTH 一屏（uptime tick/活任务/活进程/fp
 43 观测/45 分区/46 崩溃/47 跨 VM 的自证合卷）;发布注记=
 docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 用户管辖）** →
-**站34 yocto 门（[123]——meta-eshine 层入仓：git archive 提交树
+**站34 yocto 门（[133]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=
 零补丁（参考实现六十补丁战争不重演）+一条 bitbake eshine-rtos 到
 部署四件（eshine.elf/rtos.bin/guest2.bin/ramfs.cpio）；判据=
