@@ -583,6 +583,23 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
         rt_puts_hex("x30slot 0x", rt_x30_probe[0], "");
         rt_puts_hex(" x29slot 0x", rt_x30_probe[1], "");
         rt_puts_hex(" chk_sp 0x", rt_x30_probe[2], "\n");
+        /* 站68G-5:EL1h 恢复环回放(旧→新,末 16 条):sp=GPR 块基
+         * (=eret sp-256),elr/psr=该次恢复目标——恢复 sp 漂移
+         * 与错帧原发点的裁决面。 */
+        {
+            u32 k;
+            u32 n = rt_resume_ring_idx < 64 ? rt_resume_ring_idx : 64;
+            u32 show = n < 16 ? n : 16;
+
+            for (k = show; k > 0; k--) {
+                const u64 *e = rt_resume_ring[(rt_resume_ring_idx - k) & 63];
+
+                rt_puts_hex("RES sp 0x", e[0], "");
+                rt_puts_hex(" elr 0x", e[1], "");
+                rt_puts_hex(" psr 0x", e[2], "");
+                rt_puts_hex(" tp ", e[3], "\n");
+            }
+        }
         /* 站68C-14:tick 环四元历史(旧→新)——蹦床值首现 tick
          * =真凶时刻(采样器驻 rt_tick_bookkeep,spsel 双 ferry)。 */
         {

@@ -390,6 +390,9 @@ void rt_wake_rx(void)
 u64 ghost_ring[16][4];
 /* 站68G-3:毒 x30 断案槽探针(vec.S 绊线桩写,打印器读)。 */
 u64 rt_x30_probe[3];
+/* 站68G-5:EL1h 恢复环(vec.S .Lregs 入口写:sp/elr/psr/cpu,64 环)。 */
+u64 rt_resume_ring[64][4];
+u32 rt_resume_ring_idx;
 u32 ghost_ring_idx;
 
 void rt_tick_bookkeep(void)

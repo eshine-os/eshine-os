@@ -146,8 +146,34 @@ IRQ 同任务续跑续推)→IRQ 出口 `rt_irq_dispatch` 返回
 ①IRQ 帧/.Lpop 恢复把 sp 记偏 16B 后深区的毒填窗口被读;
 ②rt_sleep_ticks 的 32B 帧与 rt_sched 保存槽的相邻边界
 (top-96/top-88 与初始帧 x20/x21 槽同址)在某个恢复路径上
-被毒填值回灌。仪器建议:在 rt_sched 的调用点(rt_sleep_ticks
-内联处)与每次 IRQ 恢复后采样 (sp, caller_sp, x29) 三元入环。
+被毒填值回灌。
+
+**第四轮(恢复环)定谳(第 14 轮全息)**:`.Lregs` 入口恢复环
+(64 环,scratch 零成本——入口 GPR 即将被弹栈覆写)实锤:
+
+```
+RES sp 0x40170230 elr 0x4000079c psr 0x80000005 tp 0  (×多次)
+chk_sp 0x40170340 ⇒ 序言帧基 sp_p=0x40170320,保存槽 [20]/[28]
+恢复 eret sp=GPR基+256=0x40170330 = sp_p+16 !!
+```
+
+**结论**:rt_sched 的 wfi 循环实际运行在**比本序言帧高 16B** 的位置
+——序言把 x29/x30 存于 [20]/[28],而循环/尾声按 sp=0x40170330
+执行,epilogue 的 `ldp x29,x30,[sp],#32` 读进 [30]/[38]=初始帧
+x18/x19 槽(**毒填默认值**,rt_frame_init 只写 elr/psr/x0/x1)。
+数学上这只有一种解释:**"序言"与"循环/尾声"分属两次不同的
+rt_sched 调用**——任务被从落后的 IRQ 帧(u_sp=0x40170220,
+打断于 rdy_remove 深度 0x40170330)复活进 routine 的中段,
+而本调用的序言保存在另一深度。**=68C"陈旧帧复活(mid-function
+resurrection)"族的纯粹形**:帧基记账与函数帧基相差 16B。
+
+**下刃(修法候选)**:
+① .Lpop 恢复后校验:eret sp 与 rt_cur 的"预期深度"不符即
+   直落 violation(exected sp 记账=每任务维护 lo/hi 深度带);
+② rt_sched 不前保存在"调用者栈"而改存每核静态槽(消除
+   帧基依赖,循环体与 epilogue 同源)——微小改,消灭整族;
+③ 定位源头:为什么恢复进 0x4000079c 的帧基是 rdy_remove 深度
+   (追踪该 IRQ 的 guest_irq 帧与 rdy_remove 的 sp 关系)。
 
 ## 8. 修复(已落:自切守卫,门未绿——余环见 §7)
 

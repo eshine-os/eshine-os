@@ -902,6 +902,11 @@ extern u32 rt_irq_trace_idx;
  * 读的 x30 保存槽值(sp+248),[1]=x29 槽,[2]=检查点 sp。 */
 extern u64 rt_x30_probe[3];
 
+/* 站68G-5(26.11-3w):EL1h 恢复环——.Lregs 入口写 sp/elr/psr/cpu,
+ * 64 环;绊线打印器回放(恢复 sp 漂移判定面)。 */
+extern u64 rt_resume_ring[64][4];
+extern u32 rt_resume_ring_idx;
+
 /* rt_sched.c */
 void rt_sched(void);             /* 让出点:C 选,asm 换 */
 rt_task_t *rt_pick_ready(void);  /* 就绪摘头;空则 NULL */

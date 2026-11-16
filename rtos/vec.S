@@ -472,6 +472,25 @@ guest_irq:
     mov     sp, x6                 /* SP_EL0 := 帧顶(渡口对岸写) */
     msr     spsel, #1
 .Lregs:
+    /* 站68G-5(26.11-3w):恢复环——本入口所有 GPR 即将被 RT_POP_GPRS
+     * 从帧覆写,scratch(x12-x19)零成本。记录每次 EL1h 恢复四元
+     * (GPR 块基 sp / elr_el1 / spsr_el1 / 本核号),绊线打印器回放:
+     * "恢复 sp 是否比被中断 sp 漂 16B"当场可判(本轮余环)。 */
+    mrs     x12, elr_el1
+    mrs     x13, spsr_el1
+    mrs     x14, tpidr_el1
+    mov     x15, sp
+    ldr     x16, =rt_resume_ring
+    ldr     x17, =rt_resume_ring_idx
+    ldr     w18, [x17]
+    add     w19, w18, #1
+    str     w19, [x17]
+    and     w18, w18, #63
+    add     x16, x16, x18, lsl #5
+    str     x15, [x16]
+    str     x12, [x16, #8]
+    str     x13, [x16, #16]
+    str     x14, [x16, #24]
     RT_POP_GPRS
     eret
 
