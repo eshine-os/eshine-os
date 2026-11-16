@@ -363,6 +363,10 @@ def _forensic_dump():
         _forensic_gdb()
     except Exception as e:
         print("forensics: gdb stage failed: %r" % (e,))
+    try:
+        _forensic_gdb_r37()
+    except Exception as e:
+        print("forensics: r37 gdb stage failed: %r" % (e,))
     # 站42 取证修真:取证尾自收尾(异常在飞时 finally 跳过的清理
     # 在此兑现——孤儿 QEMU 烧核=站38 教训,不可再放)
     try:
@@ -371,7 +375,16 @@ def _forensic_dump():
     except Exception:
         pass
     try:
-        if _FOREN_Q is not None:
+        if os.environ.get("ESHINE_KEEP_ON_FAIL"):
+            # 站 68G 周备件(26.11-3w):失败现场保活——门红后 QEMU
+            # 不收,留 PID/gdb 端口/sock 给手工 gdb 活体解剖(chardev
+            # 停摆族下串口级取证已死,gdb stub 是唯一通道;stub 偶发
+            # 应答超时,保活窗内可重试 attach)。用毕人工收:
+            # kill <pid>。绿门路径不受影响(此函数只在失败路径跑)。
+            print("KEEP_ON_FAIL: qemu pid=%s alive, gdb tcp::%d, "
+                  "sock=%s (kill it manually when done)"
+                  % (_FOREN_Q.pid if _FOREN_Q else "?", GDB_PORT, SOCK))
+        elif _FOREN_Q is not None:
             _FOREN_Q.terminate()
             try:
                 _FOREN_Q.wait(timeout=5)
@@ -379,6 +392,144 @@ def _forensic_dump():
                 _FOREN_Q.kill()
     except Exception:
         pass
+
+
+def _forensic_gdb_r37():
+    """站 68G 追加(周 26.11-3w,[37] 污染族攻坚):门红时 RTOS 侧
+    活体解剖。失败路径专用,绿门零影响——68C"门红自动取证"纪律续。
+
+    采证面:
+    - pool 全槽六元组(name/state/cpu/prio/el0/sp/ksp/entry)——
+      ipimain 槽的 state 与 name 是否已被复用洗白,sp 是否在栈域;
+    - 每个具名任务:帧顶四元(elr/psr/x0/x1)+栈内非 0xA5 毒区
+      跨度表(frame_init 顶部帧在否/毒填从哪里开始——"槽复用毒填
+      窗"与"定点写踩帧"的判别面);
+    - rt_cur_arr/ipi 计数/echo/need_switch/rdy_map/ticks([37]
+      判据与切换簿记现场)。
+
+    读经 thread 1(pCPU0=vm0.vcpu0,guest EL1 语境,MMU 翻译可达
+    rtos.elf VA);串口级取证在 panic 后断流(chardev 停摆,站 25
+    残面)时本通道仍活——gdb stub 独立于 chardev。"""
+    if not shutil.which(GDB):
+        print("--- %s not found; skipping r37 gdb forensics ---" % GDB)
+        return
+    body = r'''
+set pagination off
+file __ELF__
+target remote :__PORT__
+thread 1
+python
+import gdb
+
+inf = gdb.selected_inferior()
+
+
+def ev(e):
+    try:
+        return int(gdb.parse_and_eval(e))
+    except Exception:
+        return -1
+
+
+def span_non_poison(base, size):
+    """栈内非 0xA5 区段表:判别毒填窗(整栈毒)与定点写(局部)。"""
+    try:
+        mem = bytes(inf.read_memory(base, size))
+    except Exception:
+        return None, []
+    pat = b"\xa5" * 8
+    spans = []
+    i = 0
+    while i < size:
+        if mem[i:i + 8] != pat:
+            j = i
+            while j < size and mem[j:j + 8] != pat:
+                j += 8
+            if len(spans) < 10:
+                spans.append((i, (j - i) // 8))
+            i = j
+        else:
+            i += 8
+    return mem, spans
+
+
+try:
+    npool = int(gdb.parse_and_eval('RT_POOL_MAX'))
+except Exception:
+    npool = 20
+live = []
+for i in range(npool):
+    try:
+        t = gdb.parse_and_eval('pool[%d]' % i)
+    except Exception:
+        continue
+    try:
+        nm = bytes(int(t['name'][j]) for j in range(12)).split(b'\0')[0]
+    except Exception:
+        nm = b'?'
+    state = int(t['state'])
+    sp = int(t['sp'])
+    ksp = int(t['ksp'])
+    el0 = int(t['el0'])
+    cpu = int(t['cpu'])
+    prio = int(t['prio'])
+    entry = int(t['entry'])
+    print('R37 SLOT %d name=%r state=%d cpu=%d prio=%d el0=%d '
+          'sp=0x%x ksp=0x%x entry=0x%x'
+          % (i, nm, state, cpu, prio, el0, sp, ksp, entry))
+    if nm:
+        live.append((i, nm, state, sp, ksp, el0, entry))
+
+print('R37 cur0=0x%x cur1=0x%x' % (ev('rt_cur_arr[0]'),
+                                   ev('rt_cur_arr[1]')))
+print('R37 ipi_rx0=%d ipi_rx1=%d echo=%d nsw0=%d nsw1=%d ticks=%d'
+      % (ev('ipi_rx_count[0]'), ev('ipi_rx_count[1]'),
+         ev('rt_ipi_echo'), ev('need_switch[0]'),
+         ev('need_switch[1]'), ev('rt_ticks')))
+print('R37 rdy_map0=0x%x rdy_map1=0x%x'
+      % (ev('rdy_map[0]'), ev('rdy_map[1]')))
+
+STKSZ = 4368
+for i, nm, state, sp, ksp, el0, entry in live:
+    try:
+        stkbase = int(gdb.parse_and_eval(
+            '(unsigned long)&task_stacks[%d][0]' % i))
+    except Exception:
+        print('R37 STK %d(%r) task_stacks read fail' % (i, nm))
+        continue
+    mem, spans = span_non_poison(stkbase, STKSZ)
+    if mem is None:
+        print('R37 STK %d(%r) read fail at 0x%x' % (i, nm, stkbase))
+        continue
+    print('R37 STK %d(%r) base=0x%x non_poison_spans(offset,words)=%r'
+          % (i, nm, stkbase, spans))
+    inrange = stkbase <= sp <= stkbase + STKSZ
+    print('R37 STK %d(%r) sp_in_range=%s sp_off_from_top=%d'
+          % (i, nm, inrange, stkbase + STKSZ - sp))
+    try:
+        fm = bytes(inf.read_memory(sp, 40))
+        elr = int.from_bytes(fm[0:8], 'little')
+        psr = int.from_bytes(fm[8:16], 'little')
+        x0 = int.from_bytes(fm[16:24], 'little')
+        x1 = int.from_bytes(fm[32:40], 'little')
+        print('R37 FRAME %d(%r) elr=0x%x psr=0x%x x0=0x%x x1=0x%x'
+              % (i, nm, elr, psr, x0, x1))
+    except Exception as e:
+        print('R37 FRAME %d(%r) read fail %r' % (i, nm, e))
+end
+detach
+quit
+'''
+    gscript = os.path.join(RUN_DIR, "forensic-r37.gdb")
+    with open(gscript, "w", encoding="utf-8") as f:
+        f.write(body.replace("__ELF__", os.path.join(REPO, "rtos.elf"))
+                    .replace("__PORT__", str(GDB_PORT)))
+    g = subprocess.run([GDB, "-q", "-batch", "-x", gscript],
+                       capture_output=True, text=True, timeout=180)
+    print("=== station-68G r37 forensics (gate failure) ===")
+    print(g.stdout[-12000:])
+    print("--- r37 gdb stderr tail ---")
+    print(g.stderr[-1500:])
 
 
 def _forensic_gdb():

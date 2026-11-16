@@ -6,11 +6,11 @@ This file is the single-screen resume point. `scripts/update-state.sh`
 refreshes the generated block; the notes below it are maintained by hand.
 
 <!-- state:begin -->
-- Updated: 2026-11-14T00:17:48Z
-- HEAD: 0bbcd34 (content: re-render announcement PNGs with the dual-safety diagram)
+- Updated: 2026-11-16T06:31:20Z
+- HEAD: 39d8e7f (content: weekly dynamic package for the open-source week)
 - Version: 27.04-dev
 - Gates: 183 (tools/verify/verify_el2.py)
-- Dev tags: 26.08-1w .. 26.11-2w; release v26.10
+- Dev tags: 26.08-1w .. 26.11-3w; release v26.10
 <!-- state:end -->
 
 ## Current shape
@@ -35,15 +35,29 @@ refreshes the generated block; the notes below it are maintained by hand.
 
 ## Next action
 
-After the 2026-11-10 attribution/isolation batch:
+Week 26.11-3w (from 2026-11-16). Ordered by the defect-budget rule:
+known P0-class defects close before new feature stations.
 
-1. Run the full 183-gate suite twice in a quiet window and record both
-   RESULT lines; do not substitute a partial run; the fast loop stops at 36, before the known [37]/[38] family.
-2. Triage `[37]`/`[38]` and the `bsh` space flood with the existing
-   guards; apply the defect-budget rule in
-   [KNOWN-ISSUES.md](../KNOWN-ISSUES.md).
-3. Resume the station sequence from the last station devlog
-   (`docs/devlog/2026-11-06-station68-ghost-birth-chain.md`).
+1. Close the `[37]`/`[38]` dual-core contamination family. Root-a is
+   fixed; root-b/root-c forensics are armed (leads: `sp=0xC`,
+   self-switch `next==old`, CPU1 six-beat window in the `ipimain`
+   stack region). Gate `[37]` is currently a deterministic signature
+   failure (2/2), which blocks any full double-green run.
+2. After the family closes: full 183-gate suite, two consecutive
+   green runs in a quiet window, both RESULT lines recorded. The fast
+   loop stops at 36 by design and is not a release criterion.
+3. `bsh` space-flood face (~1/3 of runs): triage with the existing
+   tripwire; a self-confessed root cause closes KNOWN-ISSUES #2.
+4. Station 69 candidates, picked once the defect budget clears
+   (see the roadmap priorities on the project homepage):
+   - security line: harness-driven fuzzing of the EL2
+     syscall/virtualization boundary;
+   - determinism line: sub-tick hrtimer wake-ups;
+   - real-hardware line: SMMU / GIC-ITS bring-up study.
+5. Release face: keep the weekly dev-tag ritual
+   (`scripts/tag-dev-week.py`, Monday), the weekly dynamic content
+   package, and mirror sync health (GitHub/Gitee pushes remain
+   manual).
 
 ## Where things live
 

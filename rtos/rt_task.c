@@ -56,7 +56,25 @@ static rt_task_t *task_alloc_kernel(const char *name, void (*entry)(void *),
          * 复用——pt leader 被后到 clone 覆写,无声蒸发(gdb 池像
          * 定谳:"thr"落 leader 槽 tid=0x101)。素槽由开机清池显式
          * 置 RT_FREE(bss 零态与 RT_READY 同貌,不可再当判据)。 */
+        /* 站68G(root-b 第五道,26.11-3w):死槽现役闸——DEAD 任务
+         * 若仍是某核 rt_cur,其栈正在被顶层 idle 轮询使用(全灭
+         * 兜底 rt_task_exit→rt_idle_loop 在死者栈上转入 rt_sched
+         * 空转,rt_cur 保持指向死者)。此时复用槽=create 毒填覆写
+         * 该栈上的活帧(x30 保存槽 → 0xA5A5 → 唤醒切换时 epilogue
+         * 弹毒 → ret 跳 0xa5a5,root-b 断案槽+恢复环实锤链;68C
+         * "rt_cur=已退池任务 st 0"原句同根)。rt_cur 改指他任务
+         * (idle 让位/切换成功)前不得复用。 */
         if (pool[i].state == RT_FREE || pool[i].state == RT_DEAD) {
+            unsigned int c;
+            int hosting = 0;
+
+            if (pool[i].state == RT_DEAD) {
+                for (c = 0; c < RT_NCPU; c++)
+                    if (rt_cur_arr[c] == &pool[i])
+                        hosting = 1;
+                if (hosting)
+                    continue;      /* 栈现役:本轮跳过,换下一槽 */
+            }
             t = &pool[i];
             slot = i;              /* 栈下标=池槽位,与名字长度无关
                                      * (站 16 潜伏 bug:名字循环曾复用
@@ -502,6 +520,21 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
         puts_uart(old->name);
         rt_puts_hex(" st 0x", old->state, "");
         rt_puts_hex(" el0 ", old->el0, "\n");
+        /* 站68G 第二轮(26.11-3w):true next 身份——rt_switch_to 入口
+         * 绊线的裁决面(切向谁/池外值)。 */
+        {
+            rt_task_t *n = (rt_task_t *)(unsigned long)next;
+
+            if (n >= pool && n < pool + RT_POOL_MAX &&
+                ((const char *)n - (const char *)pool) % (long)sizeof(*n) == 0) {
+                puts_uart("next: ");
+                puts_uart(n->name);
+                rt_puts_hex(" st 0x", n->state, "");
+                rt_puts_hex(" sp 0x", n->sp, "\n");
+            } else {
+                rt_puts_hex("next(out-of-pool) 0x", next, "\n");
+            }
+        }
         rt_puts_hex("site 0x", site, "\n");
         rt_puts_hex(" sp 0x", poison_sp, "");
         rt_puts_hex(" dom 0x", ksp - 4096, "-0x");
@@ -563,6 +596,28 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
         rt_puts_hex("cur0 0x", (u64)rt_cur_arr[0], "");
         rt_puts_hex(" cur1 0x", (u64)rt_cur_arr[1], "");
         rt_puts_hex(" ticks ", rt_ticks, "\n");
+        /* 站68G-3:断案槽探针(出生绊线桩写:epilogue 读的 x30 保存槽/
+         * x29 槽/检查点 sp)——槽毒=序言保存后被覆写;槽净=x30 另源。 */
+        rt_puts_hex("x30slot 0x", rt_x30_probe[0], "");
+        rt_puts_hex(" x29slot 0x", rt_x30_probe[1], "");
+        rt_puts_hex(" chk_sp 0x", rt_x30_probe[2], "\n");
+        /* 站68G-5:EL1h 恢复环回放(旧→新,末 16 条):sp=GPR 块基
+         * (=eret sp-256),elr/psr=该次恢复目标——恢复 sp 漂移
+         * 与错帧原发点的裁决面。 */
+        {
+            u32 k;
+            u32 n = rt_resume_ring_idx < 64 ? rt_resume_ring_idx : 64;
+            u32 show = n < 16 ? n : 16;
+
+            for (k = show; k > 0; k--) {
+                const u64 *e = rt_resume_ring[(rt_resume_ring_idx - k) & 63];
+
+                rt_puts_hex("RES sp 0x", e[0], "");
+                rt_puts_hex(" elr 0x", e[1], "");
+                rt_puts_hex(" psr 0x", e[2], "");
+                rt_puts_hex(" tp ", e[3], "\n");
+            }
+        }
         /* 站68C-14:tick 环四元历史(旧→新)——蹦床值首现 tick
          * =真凶时刻(采样器驻 rt_tick_bookkeep,spsel 双 ferry)。 */
         {
@@ -577,6 +632,32 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
                 rt_puts_hex(" sel ", ghost_ring[s][1], "");
                 rt_puts_hex(" tp ", ghost_ring[s][2], "");
                 rt_puts_hex(" @", ghost_ring[s][3], "\n");
+            }
+        }
+        /* 站68G 第二轮:IRQ 出口轨迹环回放(旧→新):每次 dispatch
+         * 的 cur(切换前状态)/pick/是否真切——rt_cur 失同步的时间线。 */
+        {
+            u32 k;
+            u32 n = rt_irq_trace_idx < RT_IRQ_TRACE_N ?
+                    rt_irq_trace_idx : RT_IRQ_TRACE_N;
+
+            for (k = n; k > 0; k--) {
+                const struct rt_irq_trace_ent *e =
+                    &rt_irq_trace[(rt_irq_trace_idx - k) &
+                                  (RT_IRQ_TRACE_N - 1)];
+                rt_task_t *c = (rt_task_t *)(unsigned long)e->cur;
+                rt_task_t *x = (rt_task_t *)(unsigned long)e->next;
+
+                rt_puts_hex("IRQ @", e->tick, "");
+                rt_puts_hex(" iar ", e->iar, "");
+                puts_uart(" cur ");
+                puts_uart(c >= pool && c < pool + RT_POOL_MAX ? c->name : "?");
+                rt_puts_hex(" st ", e->cur_state, "");
+                puts_uart(" pick ");
+                puts_uart(x >= pool && x < pool + RT_POOL_MAX ?
+                          x->name : (e->next ? "?" : "null"));
+                rt_puts_hex(" st ", e->next_state, "");
+                rt_puts_hex(" sw ", e->switched, "\n");
             }
         }
     }

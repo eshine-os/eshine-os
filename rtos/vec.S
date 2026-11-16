@@ -193,6 +193,55 @@ guest_park:
     ldr     x11, [x0, #RT_KSTK_OFF]
     b       .Lbk_viol
 
+/* 站68G(root-b 绊线,26.11-3w):RT_EL0_RET 侧毒 elr 桩(68C-20
+ * 镜像,site 分址可辨)。RET 语境无 next 概念——受害者=rt_cur
+ * (x2 承;x6 桩位承同值免"next"误读),毒 elr 先承 x3(x0 覆写
+ * 前),x11=受害者 ksp,site 已由检查点 adr 装入 x4。 */
+.Lbk_viol_elr_ret:
+    mov     x3, x0                 /* x3 = 毒 elr(x0 检查点原值) */
+    ldr     x2, =rt_cur_arr
+    mrs     x9, tpidr_el1
+    ldr     x2, [x2, x9, lsl #3]  /* x2 = 受害者(rt_cur) */
+    ldr     x11, [x2, #RT_KSTK_OFF]
+    mov     x0, x2
+    b       .Lbk_viol
+
+/* 站68G(root-b 第四道,26.11-3w):协作压栈 x30 毒值桩。x30=毒值
+ * (出生/消费两端同源:帧的 x30 槽),受害者=rt_cur,x11=ksp,
+ * site 已由检查点 adr 装入 x4;x0=受害者自身(RET/入口语境无
+ * 切换目标,桩位免误读)。 */
+.Lbk_x30_coop:
+    mov     x3, x30                /* x3 = 毒 x30 */
+    /* 站68G-3 断案槽探针(判定前置版):sp=caller_sp 未压栈,
+     * epilogue 读的 x30 保存槽=[sp-24],x29 槽=[sp-32];sp 现值同录。
+     * 槽毒=帧被覆写;槽净而 x30 毒=epilogue sp 漂移。 */
+    mov     x7, sp
+    ldr     x5, [sp, #-8]          /* =[caller_sp-24] x30 保存槽 */
+    ldr     x6, [sp, #-16]         /* =[caller_sp-32] x29 保存槽 */
+    ldr     x10, =rt_x30_probe
+    str     x5, [x10]
+    str     x6, [x10, #8]
+    str     x7, [x10, #16]
+    ldr     x2, =rt_cur_arr
+    mrs     x9, tpidr_el1
+    ldr     x2, [x2, x9, lsl #3]
+    ldr     x11, [x2, #RT_KSTK_OFF]
+    /* x0 保留=rt_switch_to 真入参(被切向的 next)——68G 第二轮:
+     * 首轮桩把 x0 覆盖成 victim,"选谁"证据永失;true next 是
+     * rt_cur 失同步与否的裁决面。 */
+    b       .Lbk_viol
+
+/* 站68G(消费端,26.11-3w):.Lcoop_ret 处毒 x30 桩(sp 已多 16B
+ * 保存槽,与出生端分门)。x4=site 由检查点 adr 装入;x0 非切换
+ * 语义,原样交桩(打印器对池外值有闸)。 */
+.Lbk_x30_consume:
+    mov     x3, x30
+    ldr     x2, =rt_cur_arr
+    mrs     x9, tpidr_el1
+    ldr     x2, [x2, x9, lsl #3]
+    ldr     x11, [x2, #RT_KSTK_OFF]
+    b       .Lbk_viol
+
 /* 站68C:簿记域检违例桩(三展开点共用)。x2=old 任务,x3=毒 sp,
  * x11=ksp,x4=案发展开点,x0=next(簿记的切换目标)。当前 sp=毒值
  * (蹦床域)不可用,换引导栈调 C 打印器;noreturn(打印+park)。
@@ -423,6 +472,25 @@ guest_irq:
     mov     sp, x6                 /* SP_EL0 := 帧顶(渡口对岸写) */
     msr     spsel, #1
 .Lregs:
+    /* 站68G-5(26.11-3w):恢复环——本入口所有 GPR 即将被 RT_POP_GPRS
+     * 从帧覆写,scratch(x12-x19)零成本。记录每次 EL1h 恢复四元
+     * (GPR 块基 sp / elr_el1 / spsr_el1 / 本核号),绊线打印器回放:
+     * "恢复 sp 是否比被中断 sp 漂 16B"当场可判(本轮余环)。 */
+    mrs     x12, elr_el1
+    mrs     x13, spsr_el1
+    mrs     x14, tpidr_el1
+    mov     x15, sp
+    ldr     x16, =rt_resume_ring
+    ldr     x17, =rt_resume_ring_idx
+    ldr     w18, [x17]
+    add     w19, w18, #1
+    str     w19, [x17]
+    and     w18, w18, #63
+    add     x16, x16, x18, lsl #5
+    str     x15, [x16]
+    str     x12, [x16, #8]
+    str     x13, [x16, #16]
+    str     x14, [x16, #24]
     RT_POP_GPRS
     eret
 
@@ -527,6 +595,21 @@ guest_sync:
      * 硬件掩,重复掩为幂等 no-op。 */
     msr     daifset, #0xf
     ldp     x0, x1, [sp], #16      /* elr/psr(硬件现值覆写回帧语义) */
+    /* 站68G(root-b 绊线,26.11-3w):本尾巴是全系统唯一无 elr 窗检
+     * 的装帧 eret 路径(68C-20 只罩 .Lpop)——[37] 污染族的毒投递
+     * (esr=0x21/0x86000004,elr=psr=0xa5a5..,落点 EL1h@0xa5a5,
+     * -d int 全息实证)唯一逃窗通道即此。违例=毒帧消费的出生瞬间:
+     * 受害者=rt_cur(本路径无 next 概念,桩协议 x2 承),毒 elr=x0
+     * 承 x3,site 经 adr 分址(.Lpop 检查形镜像;合法 elr=用户窗
+     * PC/sigreturn 面,x4/x11/x12 弹前死寄存器)。 */
+    movz    x11, #0x4000, lsl #16
+    cmp     x0, x11
+    adr     x4, 68f
+    b.lo    .Lbk_viol_elr_ret
+    movz    x12, #0x8000, lsl #16
+    cmp     x0, x12
+    b.hs    .Lbk_viol_elr_ret
+68:
     msr     elr_el1, x0
     msr     spsr_el1, x1
     /* 先抓 GPR 块地址(bank 无关):阻塞唤醒路径以 SPSel=1 抵此
@@ -635,6 +718,23 @@ rt_switch_to:
      * push 之后、psr 伪造之前——x1 捕获在 push 后取帧槽无损。
      * 站28 契约不破:泊位 pstate 由 C 侧显式写帧,与此掩无涉;
      * .Lcoop_ret 续跑 eret 携 psr(掩前捕获)自动回开中断态。 */
+    /* 站68G(root-b 第四道,26.11-3w):协作入口 x30 毒值绊线(出生
+     * 点直捕)。判定前置到压栈之前:此刻 sp=caller_sp,epilogue
+     * (ldp x29,x30,[sp],#32)读过的保存槽仍在 [sp-32]/[sp-24] 原位
+     * (压栈的 x29/x28 槽会覆写同址),能分开二假说:
+     *   槽[sp-24]=毒 → 序言保存后被覆写(帧重叠);
+     *   槽净而 x30 毒 → epilogue 的 sp 错位(读了别处)。
+     * x30 不被压栈改变;x12 未压栈先动=自由 scratch(本帧此后才
+     * 推入 x12,值即被保存)。零误报前提:健康上下文不会出现恰
+     * 为水位模式的 64 位常量。 */
+    stp     x12, x13, [sp, #-16]!  /* 判定 scratch 保护:x12/x13 随后
+                                    * 才被压帧(x29/x30 槽同址,弹回无误) */
+    ldr     x12, =0xa5a5a5a5a5a5a5a5
+    cmp     x30, x12
+    adr     x4, 66f
+    b.eq    .Lbk_x30_coop
+    ldp     x12, x13, [sp], #16
+66:
     RT_PUSH_GPRS
     mrs     x1, daif
     and     x1, x1, #0x3c0          /* 保 DAIF 位 */
@@ -647,7 +747,17 @@ rt_switch_to:
     RT_SWITCH_BOOKKEEP
     b       .Lpop
 .Lcoop_ret:
+    /* 站68G(消费端绊线,26.11-3w):.Lpop 只检 elr 槽,GPR 弹栈
+     * 无检——毒 x30 在这里即将引爆(ret)。x12/x13 全活,压栈
+     * 保存后借用(违例走主桩,不恢复)。 */
+    stp     x12, x13, [sp, #-16]!
+    ldr     x12, =0xa5a5a5a5a5a5a5a5
+    cmp     x30, x12
+    adr     x4, 67f
+    b.eq    .Lbk_x30_consume
+    ldp     x12, x13, [sp], #16
     ret
+67:
 
 /* 新任务首帧伪造:帧同构,elr=rt_trampoline,x0=arg,x1=entry。
  * 其余槽位留给静态阵列的零值(x1 槽在 +32,x0 槽后带 8B hole)。 */
