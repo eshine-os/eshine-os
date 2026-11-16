@@ -193,6 +193,19 @@ guest_park:
     ldr     x11, [x0, #RT_KSTK_OFF]
     b       .Lbk_viol
 
+/* 站68G(root-b 绊线,26.11-3w):RT_EL0_RET 侧毒 elr 桩(68C-20
+ * 镜像,site 分址可辨)。RET 语境无 next 概念——受害者=rt_cur
+ * (x2 承;x6 桩位承同值免"next"误读),毒 elr 先承 x3(x0 覆写
+ * 前),x11=受害者 ksp,site 已由检查点 adr 装入 x4。 */
+.Lbk_viol_elr_ret:
+    mov     x3, x0                 /* x3 = 毒 elr(x0 检查点原值) */
+    ldr     x2, =rt_cur_arr
+    mrs     x9, tpidr_el1
+    ldr     x2, [x2, x9, lsl #3]  /* x2 = 受害者(rt_cur) */
+    ldr     x11, [x2, #RT_KSTK_OFF]
+    mov     x0, x2
+    b       .Lbk_viol
+
 /* 站68C:簿记域检违例桩(三展开点共用)。x2=old 任务,x3=毒 sp,
  * x11=ksp,x4=案发展开点,x0=next(簿记的切换目标)。当前 sp=毒值
  * (蹦床域)不可用,换引导栈调 C 打印器;noreturn(打印+park)。
@@ -527,6 +540,21 @@ guest_sync:
      * 硬件掩,重复掩为幂等 no-op。 */
     msr     daifset, #0xf
     ldp     x0, x1, [sp], #16      /* elr/psr(硬件现值覆写回帧语义) */
+    /* 站68G(root-b 绊线,26.11-3w):本尾巴是全系统唯一无 elr 窗检
+     * 的装帧 eret 路径(68C-20 只罩 .Lpop)——[37] 污染族的毒投递
+     * (esr=0x21/0x86000004,elr=psr=0xa5a5..,落点 EL1h@0xa5a5,
+     * -d int 全息实证)唯一逃窗通道即此。违例=毒帧消费的出生瞬间:
+     * 受害者=rt_cur(本路径无 next 概念,桩协议 x2 承),毒 elr=x0
+     * 承 x3,site 经 adr 分址(.Lpop 检查形镜像;合法 elr=用户窗
+     * PC/sigreturn 面,x4/x11/x12 弹前死寄存器)。 */
+    movz    x11, #0x4000, lsl #16
+    cmp     x0, x11
+    adr     x4, 68f
+    b.lo    .Lbk_viol_elr_ret
+    movz    x12, #0x8000, lsl #16
+    cmp     x0, x12
+    b.hs    .Lbk_viol_elr_ret
+68:
     msr     elr_el1, x0
     msr     spsr_el1, x1
     /* 先抓 GPR 块地址(bank 无关):阻塞唤醒路径以 SPSel=1 抵此
