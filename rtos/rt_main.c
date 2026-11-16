@@ -172,9 +172,33 @@ void (*rt_irq_swap_uart(void (*isr)(void)))(void)
     return rt_irq_register(GUEST_INTID_UART, isr, RT_RX_BIT);
 }
 
+/* 站68G 第二轮(26.11-3w):IRQ 出口轨迹环——最近 16 次 dispatch 的
+ * (tick/iar/cur 切换前状态/pick 结果/是否真切)。rt_cur 失同步类
+ * 案发现场的时间线由本环回放(gdb 只能看终态,环给因果序)。 */
+/* RT_IRQ_TRACE_N / struct rt_irq_trace_ent 定义在 rtos.h(共享给
+ * 打印器回放)。 */
+struct rt_irq_trace_ent rt_irq_trace[RT_IRQ_TRACE_N];
+u32 rt_irq_trace_idx;
+
+static void rt_irq_trace_add(u32 iar, u32 cur_st, rt_task_t *next, u32 sw)
+{
+    struct rt_irq_trace_ent *e =
+        &rt_irq_trace[rt_irq_trace_idx++ & (RT_IRQ_TRACE_N - 1)];
+
+    e->tick = rt_ticks;
+    e->iar = iar;
+    e->switched = sw;
+    e->cur = (u64)(unsigned long)rt_cur;
+    e->next = (u64)(unsigned long)next;
+    e->cur_state = cur_st;
+    e->next_state = next ? next->state : 0xffu;
+}
+
 rt_task_t *rt_irq_dispatch(void)
 {
     u64 iar = gic_claim();
+    u32 cur_st = rt_cur->state;
+    rt_task_t *next = NULL, *res = NULL;
     unsigned int i;
     int hit = 0;
 
@@ -211,17 +235,28 @@ rt_task_t *rt_irq_dispatch(void)
      * 在队才没必现,即 [41] 闪断的真身);后者醒来直接回调用者,残
      * 留令牌由各阻塞位点的 rdy_remove 清除,不残留不占位。 */
     if (rt_need_switch() || rt_cur->state != RT_RUN) {
-        rt_task_t *next = rt_pick_ready();
+        next = rt_pick_ready();
 
         if (next) {
+            /* 站68G(root-b 定谳,26.11-3w):摘了自己又选回自己=回流
+             * 令牌兑付,不得走切换簿记——rt_sched 同位守卫站19 已设
+             * (摘己选己只回队不碰状态),IRQ 出口旧漏:自切照返
+             * next → 切片簿记把本帧 sp 存进 t->sp 又把 RUN 中任务
+             * 令牌二次入队 → 双上下文/半推帧错位消费 → 毒 GPR
+             * 弹栈(x30)→ elr=0xa5a5.. 取指中止(站68G 活体解剖
+             * 定谳)。同律:只回队不碰状态,按"不切"返回,由
+             * 调用侧 .Lpop_same 续弹本轮 IRQ 帧。 */
             rt_ready_requeue(next);
-            next->state = RT_RUN;
-            if (next != rt_cur && rt_cur->state == RT_RUN)
-                rt_preempt_requeue(rt_cur);  /* 被抢占者恒单份回队 */
-            return next;
+            if (next != rt_cur) {
+                next->state = RT_RUN;
+                if (rt_cur->state == RT_RUN)
+                    rt_preempt_requeue(rt_cur);  /* 被抢占者恒单份回队 */
+                res = next;
+            }
         }
     }
-    return NULL;
+    rt_irq_trace_add((u32)iar, cur_st, next, res ? 1u : 0u);
+    return res;
 }
 
 static rt_task_t *shell_task;        /* 站24A:心跳判别器——壳自主睡

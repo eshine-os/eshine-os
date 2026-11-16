@@ -883,6 +883,25 @@ unsigned long rt_ipi_rx(u32 cpu);      /* 每核收到的 IPI 拍数(demo 判据
 extern volatile unsigned int rt_ipi_echo; /* 站二十:ipidemo 回合窗(核 1
                                            * handler 见 1 回发核 0) */
 
+/* 站68G 第二轮(26.11-3w):IRQ 出口轨迹环——rt_main.c 定义,
+ * panic 打印器回放(rt_cur 失同步类案的时间线:gdb 只见终态)。 */
+#define RT_IRQ_TRACE_N 16
+struct rt_irq_trace_ent {
+    u64 tick;
+    u32 iar;
+    u32 switched;
+    u64 cur;
+    u64 next;
+    u32 cur_state;
+    u32 next_state;
+};
+extern struct rt_irq_trace_ent rt_irq_trace[RT_IRQ_TRACE_N];
+extern u32 rt_irq_trace_idx;
+
+/* 站68G-3(26.11-3w):毒 x30 断案槽探针——绊线桩写入 [0]=epilogue
+ * 读的 x30 保存槽值(sp+248),[1]=x29 槽,[2]=检查点 sp。 */
+extern u64 rt_x30_probe[3];
+
 /* rt_sched.c */
 void rt_sched(void);             /* 让出点:C 选,asm 换 */
 rt_task_t *rt_pick_ready(void);  /* 就绪摘头;空则 NULL */

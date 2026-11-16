@@ -388,6 +388,8 @@ void rt_wake_rx(void)
  * 存 SP_EL1/spsel/tpidr 四元入 16 槽环(蹦床值首现的 tick=真凶时刻,
  * 出生检查开火时整环打印)。spsel 双 ferry 读 bank(直读 UNDEF,站28)。 */
 u64 ghost_ring[16][4];
+/* 站68G-3:毒 x30 断案槽探针(vec.S 绊线桩写,打印器读)。 */
+u64 rt_x30_probe[3];
 u32 ghost_ring_idx;
 
 void rt_tick_bookkeep(void)

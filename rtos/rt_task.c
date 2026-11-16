@@ -502,6 +502,21 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
         puts_uart(old->name);
         rt_puts_hex(" st 0x", old->state, "");
         rt_puts_hex(" el0 ", old->el0, "\n");
+        /* 站68G 第二轮(26.11-3w):true next 身份——rt_switch_to 入口
+         * 绊线的裁决面(切向谁/池外值)。 */
+        {
+            rt_task_t *n = (rt_task_t *)(unsigned long)next;
+
+            if (n >= pool && n < pool + RT_POOL_MAX &&
+                ((const char *)n - (const char *)pool) % (long)sizeof(*n) == 0) {
+                puts_uart("next: ");
+                puts_uart(n->name);
+                rt_puts_hex(" st 0x", n->state, "");
+                rt_puts_hex(" sp 0x", n->sp, "\n");
+            } else {
+                rt_puts_hex("next(out-of-pool) 0x", next, "\n");
+            }
+        }
         rt_puts_hex("site 0x", site, "\n");
         rt_puts_hex(" sp 0x", poison_sp, "");
         rt_puts_hex(" dom 0x", ksp - 4096, "-0x");
@@ -563,6 +578,11 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
         rt_puts_hex("cur0 0x", (u64)rt_cur_arr[0], "");
         rt_puts_hex(" cur1 0x", (u64)rt_cur_arr[1], "");
         rt_puts_hex(" ticks ", rt_ticks, "\n");
+        /* 站68G-3:断案槽探针(出生绊线桩写:epilogue 读的 x30 保存槽/
+         * x29 槽/检查点 sp)——槽毒=序言保存后被覆写;槽净=x30 另源。 */
+        rt_puts_hex("x30slot 0x", rt_x30_probe[0], "");
+        rt_puts_hex(" x29slot 0x", rt_x30_probe[1], "");
+        rt_puts_hex(" chk_sp 0x", rt_x30_probe[2], "\n");
         /* 站68C-14:tick 环四元历史(旧→新)——蹦床值首现 tick
          * =真凶时刻(采样器驻 rt_tick_bookkeep,spsel 双 ferry)。 */
         {
@@ -577,6 +597,32 @@ void rt_bookkeep_violation(rt_task_t *old, u64 poison_sp, u64 ksp, u64 site,
                 rt_puts_hex(" sel ", ghost_ring[s][1], "");
                 rt_puts_hex(" tp ", ghost_ring[s][2], "");
                 rt_puts_hex(" @", ghost_ring[s][3], "\n");
+            }
+        }
+        /* 站68G 第二轮:IRQ 出口轨迹环回放(旧→新):每次 dispatch
+         * 的 cur(切换前状态)/pick/是否真切——rt_cur 失同步的时间线。 */
+        {
+            u32 k;
+            u32 n = rt_irq_trace_idx < RT_IRQ_TRACE_N ?
+                    rt_irq_trace_idx : RT_IRQ_TRACE_N;
+
+            for (k = n; k > 0; k--) {
+                const struct rt_irq_trace_ent *e =
+                    &rt_irq_trace[(rt_irq_trace_idx - k) &
+                                  (RT_IRQ_TRACE_N - 1)];
+                rt_task_t *c = (rt_task_t *)(unsigned long)e->cur;
+                rt_task_t *x = (rt_task_t *)(unsigned long)e->next;
+
+                rt_puts_hex("IRQ @", e->tick, "");
+                rt_puts_hex(" iar ", e->iar, "");
+                puts_uart(" cur ");
+                puts_uart(c >= pool && c < pool + RT_POOL_MAX ? c->name : "?");
+                rt_puts_hex(" st ", e->cur_state, "");
+                puts_uart(" pick ");
+                puts_uart(x >= pool && x < pool + RT_POOL_MAX ?
+                          x->name : (e->next ? "?" : "null"));
+                rt_puts_hex(" st ", e->next_state, "");
+                rt_puts_hex(" sw ", e->switched, "\n");
             }
         }
     }
