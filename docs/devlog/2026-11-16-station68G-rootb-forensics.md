@@ -175,6 +175,30 @@ resurrection)"族的纯粹形**:帧基记账与函数帧基相差 16B。
 ③ 定位源头:为什么恢复进 0x4000079c 的帧基是 rdy_remove 深度
    (追踪该 IRQ 的 guest_irq 帧与 rdy_remove 的 sp 关系)。
 
+**终章(第五道修真,门级闭案)**:全息链回读闭环——毒不是"覆写未写槽"
+而是**一次真实的 create 毒填**:死槽现役缺陷。`rt_task_exit()` 全灭
+兜底在**刚 DEAD 的任务栈上**转入 `rt_idle_loop()` 空转(rt_cur 保持
+指向死者),而槽复用判=FREE/DEAD 立刻放行——新任务的 create 把
+task_stacks[slot][272,4368) **整片毒填**,正覆写该栈上 idle 语境
+的活帧(rt_sched 序言保存槽 → 0xA5A5 → wake 切换时 epilogue 弹毒
+→ ret 跳 0xa5a5)。68C 记档原句"rt_cur=已退池任务 st 0"即此景
+(绊线 old 名=同址新对象,旧死者已复用改名)。
+
+**修(rt_task.c task_alloc_kernel 死槽现役闸)**:DEAD 槽若仍是
+某核 rt_cur(栈现役)则本轮跳过不复用;rt_cur 改指他任务(成功
+让位)后自然放行。
+
+**验证**:
+- 门 [37] 首绿 ×2 连过:`ipidemo: 21 SGI roundtrips + 3 cross-core
+  wakes, window quiet`;门 [38] 双精确 ×2;
+- `--stop-after=38` 两连 RESULT PARTIAL-PASS(快环判据);
+- 站收口=全量 183 门两连(安静窗,待跑)。
+
+**教训**:毒填是"新生命"的仪式,却是"旧生命残帧"的毒药——**复用
+判据必须与栈现役判据同源**;DEAD≠可复用,当 DEAD 仍是当前执行
+语境时。
+
+
 ## 8. 修复(已落:自切守卫,门未绿——余环见 §7)
 
 **病灶一行**:`rt_irq_dispatch()`(IRQ 出口)缺 `rt_sched()` 的

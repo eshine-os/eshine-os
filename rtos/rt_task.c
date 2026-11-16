@@ -56,7 +56,25 @@ static rt_task_t *task_alloc_kernel(const char *name, void (*entry)(void *),
          * 复用——pt leader 被后到 clone 覆写,无声蒸发(gdb 池像
          * 定谳:"thr"落 leader 槽 tid=0x101)。素槽由开机清池显式
          * 置 RT_FREE(bss 零态与 RT_READY 同貌,不可再当判据)。 */
+        /* 站68G(root-b 第五道,26.11-3w):死槽现役闸——DEAD 任务
+         * 若仍是某核 rt_cur,其栈正在被顶层 idle 轮询使用(全灭
+         * 兜底 rt_task_exit→rt_idle_loop 在死者栈上转入 rt_sched
+         * 空转,rt_cur 保持指向死者)。此时复用槽=create 毒填覆写
+         * 该栈上的活帧(x30 保存槽 → 0xA5A5 → 唤醒切换时 epilogue
+         * 弹毒 → ret 跳 0xa5a5,root-b 断案槽+恢复环实锤链;68C
+         * "rt_cur=已退池任务 st 0"原句同根)。rt_cur 改指他任务
+         * (idle 让位/切换成功)前不得复用。 */
         if (pool[i].state == RT_FREE || pool[i].state == RT_DEAD) {
+            unsigned int c;
+            int hosting = 0;
+
+            if (pool[i].state == RT_DEAD) {
+                for (c = 0; c < RT_NCPU; c++)
+                    if (rt_cur_arr[c] == &pool[i])
+                        hosting = 1;
+                if (hosting)
+                    continue;      /* 栈现役:本轮跳过,换下一槽 */
+            }
             t = &pool[i];
             slot = i;              /* 栈下标=池槽位,与名字长度无关
                                      * (站 16 潜伏 bug:名字循环曾复用
