@@ -39,6 +39,13 @@ case "$cmd" in
     shell) run bash ;;
     run)
         # 交互跑 QEMU(make run):.work 从宿主挂载,镜像在容器内启动。
+        # 容器默认 --network none:bootstrap 的网络面(下载 pinned 源)
+        # 必须在宿主侧完成——先补齐工作根再进容器,容器内 make run 的
+        # --check 即过、零网络需求(工作根本来就是挂载进去的)。
+        if ! "$REPO/scripts/bootstrap.sh" --check >/dev/null 2>&1; then
+            echo "== work root incomplete; bootstrap --fetch on the host (the container runs with --network none) ==" >&2
+            "$REPO/scripts/bootstrap.sh" --fetch || exit 1
+        fi
         run make run ;;
     verify)
         # The verifier's own preflight decides which artifacts this run

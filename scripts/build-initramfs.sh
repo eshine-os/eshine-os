@@ -33,13 +33,16 @@ if [ ! -d "busybox-${VER}" ]; then
         if ! curl_head_ok "$BB_URL"; then
             if [ -n "${ESHINE_PROXY:-}" ]; then
                 CURL="$CURL -x $ESHINE_PROXY"
-            else
-                echo "ERROR: 无法直连 $BB_URL,且未设置 ESHINE_PROXY" >&2
+            elif ! wget -q -T 20 --spider "$BB_URL"; then
+                echo "ERROR: 无法直连 $BB_URL(curl/wget 均不通;可设 ESHINE_PROXY)" >&2
                 exit 1
             fi
         fi
         echo "== 下载 busybox ${VER} =="
-        $CURL -o "busybox-${VER}.tar.bz2" "$BB_URL"
+        if ! $CURL -o "busybox-${VER}.tar.bz2" "$BB_URL"; then
+            rm -f "busybox-${VER}.tar.bz2"
+            wget -q -T 120 -O "busybox-${VER}.tar.bz2" "$BB_URL"
+        fi
     fi
     BB_SHA=$(python3 -c "import json;print(json.load(open('$REPO/tools/artifacts.json'))['busybox']['sha256'])")
     echo "$BB_SHA  busybox-${VER}.tar.bz2" | sha256sum -c -

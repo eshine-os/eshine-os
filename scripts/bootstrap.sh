@@ -101,14 +101,37 @@ download() {  # download <key> <dst>
     local url
     url=$(url_of "$1")
     mkdir -p "$(dirname "$2")"
+    # 拉取链:curl 直连 → wget 回退(部分环境 curl 解析异常而 wget 走
+    # glibc 解析器正常,2026-11-16 实测)→ ESHINE_PROXY 下 curl、wget
+    # (仅 http(s) 代理;wget 不支持 socks)各试一遍。
+    # pin 工具链容器默认 --network none,DNS 不存在,任何工具都拉不了
+    # ——网络面归宿主(make bootstrap / container.sh run 的预检)。
     if curl -fL --retry 3 -o "$2" "$url" 2>/dev/null; then
         return 0
     fi
-    if [ -n "${ESHINE_PROXY:-}" ]; then
-        curl -fL --retry 3 -x "$ESHINE_PROXY" -o "$2" "$url"
+    rm -f "$2"
+    if wget -q -T 120 -O "$2" "$url"; then
         return 0
     fi
-    echo "ERROR: cannot download $url (set ESHINE_PROXY)" >&2
+    rm -f "$2"
+    if [ -n "${ESHINE_PROXY:-}" ]; then
+        if curl -fL --retry 3 -x "$ESHINE_PROXY" -o "$2" "$url" 2>/dev/null; then
+            return 0
+        fi
+        rm -f "$2"
+        case "$ESHINE_PROXY" in
+            http://*|https://*)
+                if wget -q -T 120 -e "https_proxy=$ESHINE_PROXY" \
+                     -e "http_proxy=$ESHINE_PROXY" -O "$2" "$url"; then
+                    return 0
+                fi
+                rm -f "$2"
+                ;;
+        esac
+    fi
+    echo "ERROR: cannot download $url (tried curl, wget${ESHINE_PROXY:+, ESHINE_PROXY})" >&2
+    echo "  the pinned container runs with --network none: no DNS by design" >&2
+    echo "  run 'make bootstrap' on the HOST, then retry" >&2
     return 1
 }
 
@@ -187,7 +210,7 @@ check() {
             echo "MISSING/BAD: initramfs must be 8 MiB, got $size" >&2; rc=1; }
     fi
     if [ "$WITH_YOCTO" = 1 ] && [ ! -d "$ESHINE_POKY_DIR/bitbake" ]; then
-        echo "MISSING: $ESHINE_POKY_DIR/bitbake (ynocto)" >&2; rc=1
+        echo "MISSING: $ESHINE_POKY_DIR/bitbake (yocto)" >&2; rc=1
     fi
     [ "$rc" = 0 ] && echo "work root ready: $ESHINE_WORK"
     return "$rc"

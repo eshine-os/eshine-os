@@ -26,7 +26,10 @@ if [ ! -f "linux-${VER}.tar.xz" ]; then
 fi
 if [ ! -f "linux-${VER}.tar.xz" ]; then
     echo "== 下载 ${VER} =="
-    curl -fL --retry 3 -o "linux-${VER}.tar.xz" "$URL"
+    if ! curl -fL --retry 3 -o "linux-${VER}.tar.xz" "$URL"; then
+        rm -f "linux-${VER}.tar.xz"
+        wget -q -T 120 -O "linux-${VER}.tar.xz" "$URL"
+    fi
 fi
 LINUX_SHA=$(python3 -c "import json;print(json.load(open('$REPO/tools/artifacts.json'))['linux']['sha256'])")
 echo "$LINUX_SHA  linux-${VER}.tar.xz" | sha256sum -c -
