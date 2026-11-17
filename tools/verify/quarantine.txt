@@ -1,0 +1,4 @@
+# Gates excluded from the `green` suite until their red classification is
+# resolved.  Format: <id> <classification> <reason> <review-by>
+# Classifications: REAL-DEFECT | LOAD-FLAKE | ENV | OBSOLETE
+# `--suite all` still runs these; `--list` shows them.

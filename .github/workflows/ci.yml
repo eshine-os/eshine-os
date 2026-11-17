@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Julian Chu
 #
-# Minimal cloud CI. The 183-gate suite stays a local/release gate
-# (`make verify`); cloud CI runs the smoke tier only: build, static
-# checks, and gates 1..18 (hypervisor boot + VM0 RTOS up). Everything
-# below is driven by scripts/ci-smoke.sh, which Gitee Go runs too.
+# Fixture-based CI. Gates run independently (a fresh QEMU per gate, or a
+# scenario fixture for stateful families), so one red gate cannot block
+# the rest. `smoke` is the fast host+VM0 boot tier; `green` runs every
+# active non-heavy gate with the external Linux/busybox artifacts built
+# (and cached) here. Yocto/image gates are local/release only.
 #
 # Runner pin: ubuntu-24.04. The QEMU shipped by ubuntu-latest
 # (26.04 at the time of writing, qemu-system-arm 10.2.1) takes an EL2
@@ -33,7 +34,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu \
             device-tree-compiler python3 qemu-system-arm gdb-multiarch
-      - name: build + static checks + smoke gates
+      - name: smoke (host + VM0 boot, gates 1..18)
         run: bash scripts/ci-smoke.sh
       - name: trailer validation
         run: |
@@ -53,6 +54,50 @@ jobs:
       - name: host independence
         run: scripts/check-host-independence.sh
 
+  green:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - name: install toolchain + guest build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu device-tree-compiler python3 \
+            qemu-system-arm gdb-multiarch bc bison flex libssl-dev \
+            libelf-dev cpio xz-utils bzip2 wget curl git
+      - name: restore guest artifact cache
+        id: work-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .work
+            tools/ramfs/bin/busybox
+          key: eshine-work-${{ runner.os }}-${{ hashFiles('tools/artifacts.json', 'scripts/build-linux.sh', 'scripts/build-initramfs.sh', 'tools/build-musl.sh', 'tools/build-cjson.sh', 'tools/build-zlib.sh', 'tools/build-busybox.sh') }}
+      - name: prepare (build + Linux/initramfs/busybox)
+        env:
+          CI_SKIP_FETCH: ${{ steps.work-cache.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: bash scripts/ci-gates.sh prepare
+      - name: save guest artifact cache
+        if: steps.work-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .work
+            tools/ramfs/bin/busybox
+          key: eshine-work-${{ runner.os }}-${{ hashFiles('tools/artifacts.json', 'scripts/build-linux.sh', 'scripts/build-initramfs.sh', 'tools/build-musl.sh', 'tools/build-cjson.sh', 'tools/build-zlib.sh', 'tools/build-busybox.sh') }}
+      - name: green suite (all active non-heavy gates)
+        run: bash scripts/ci-gates.sh run
+      - name: upload gate evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-logs
+          path: |
+            .work/logs
+            .work/logs/gates-summary.json
+          if-no-files-found: warn
+
   container:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -62,7 +107,7 @@ jobs:
         run: docker build -t eshine-build:ci -f docker/Dockerfile.build .
       - name: prepare work root
         run: mkdir -p "$RUNNER_TEMP/work/home" "$RUNNER_TEMP/work/tmp"
-      - name: container build + static checks + smoke gates
+      - name: container smoke
         run: |
           docker run --rm --network none \
             --user "$(id -u):$(id -g)" \
