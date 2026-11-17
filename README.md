@@ -87,7 +87,7 @@ In the most risk-prone edge zones, this base layer delivers high reliability and
   作为中控/仪表）；VM2 为**真实 Linux 6.6 guest**（busybox initramfs，
   目标=智能驾驶应用域）。
 - **真 musl 用户态**：同一份静态 musl ELF 在 VM0（自研内核 + 用户态 loader）与 VM2（真实 Linux）上得到相同输出——同 libc，两个世界，一台 hypervisor。
-- **门禁**：183 道可重放判据，站点收口以两连真绿为准。⚠️ 现状直报：全量 183 门两连真绿尚未达成，门 [37]/[38] 家族根因未闭合 —— 详见 [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md)。
+- **门禁**：编号空间 1..183 的可重放判据，现为**独立 fixture 门禁套件**——普通门各自新起 QEMU，状态型家族用自包含场景；红门互不阻塞，逐门报告。active 数以 `gate_suite.py --count` 为准；站点收口以绿套件两连为准。⚠️ 现状直报：历史全量两连绿尚未达成，门 [37]/[38] 家族根因未闭合 —— 详见 [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md)。
 - **构建**：kernel 风格 Makefile；Yocto 层 `meta-eshine` 可从 `git archive` 提交树构建部署件。
 - **验证平台**：QEMU virt（ARM64）。真板路线在规划中。
 
@@ -104,8 +104,9 @@ In the most risk-prone edge zones, this base layer delivers high reliability and
     make                # build eshine.elf + rtos.bin + guest2.bin
     make bootstrap      # populate .work (fetch pins; see --adopt for existing)
     make run            # QEMU virt; auto-fetches missing .work artifacts
-    make verify-fast    # fast loop (gates 1-36; stops before the open [37]/[38] family)
-    make verify         # full 183 gates (needs .work artifacts + Yocto)
+    make verify-fast    # smoke: host + VM0 boot (gates 1-18), no external artifacts
+    make verify         # green suite: all active non-heavy gates (needs .work artifacts)
+    make verify-heavy   # Yocto/image gates + Docker static (local/release)
 
     scripts/container.sh build      # pinned toolchain image
     scripts/container.sh run        # interactive QEMU in the container

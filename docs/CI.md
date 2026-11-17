@@ -1,59 +1,114 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 Julian Chu -->
-# CI
+# CI and the gate suite
 
 ## Topology
 
 | where | config | what runs |
 |---|---|---|
-| GitHub Actions | `.github/workflows/ci.yml` | build + static checks + smoke gates 1..18 |
-| Gitee Go | `.gitee-ci.yml` | same battery via `scripts/ci-smoke.sh` |
-| local | `make verify` | full 183-gate suite (release gate) |
+| GitHub Actions | `.github/workflows/ci.yml` | smoke (gates 1..18) + green (active non-heavy minus quarantined reds) |
+| Gitee Go | `.gitee-ci.yml` | the same green suite via `scripts/ci-gates.sh` |
+| local | `make verify` | green suite; two consecutive runs close a station |
+| local fast | `make verify-fast` / `make ci-smoke` | smoke (gates 1..18) |
+| local heavy | `make verify-heavy` | Yocto/image gates (133/177/178) + Docker static (180) |
 
-Cloud CI is intentionally minimal. The full suite is timing-sensitive on
-shared runners and is closed on a quiet local host with two consecutive
-full runs, as the station playbook requires. Cloud CI answers one
-question: does the tree still build and boot the hypervisor plus the VM0
-RTOS?
+The suite is fixture-based. Every ordinary gate runs against a fresh
+QEMU session, so a red gate cannot block the others and failures are
+reported individually. A few families are inherently stateful (RTOS boot
+stream, mutex mid-hold, VM1 lifecycle, Linux boot, multi-VM hotkeys, ACL,
+logging, HAM) and run as one scenario fixture with several ordered gate
+results. A failed scenario check is retried on a fresh fixture like an
+ordinary gate; if it still fails, that gate is FAIL and the rest of that
+scenario SKIP, while other fixtures keep running.
 
-The shared battery (`scripts/ci-smoke.sh`, also `make ci-smoke`):
+Gate IDs are stable documentation anchors. The historical namespace is
+1..183; retired gates leave gaps (`--list --include-retired`) and new
+gates start at 184. The runner keeps the `[N/183]` line format for
+existing tooling.
 
-1. `make -j$(nproc)`
-2. shell syntax + Python byte-compile checks
-3. `verify_el2.py --stop-after=18` (banner, prompt, secondary cores,
-   timer, VM create/run, FDT probes, RTOS up)
+## Commands
 
-Gates above 18 are excluded on purpose: the first GitHub container run
-passed 1..18 and then timed out at gate 19 (the RX wake chain) on a
-loaded runner, with the guest alive and its services running. Raise the
-cap with `CI_SMOKE_GATES=<n>` when the runner-load flakiness is gone.
-`gen_ramfs` warns that `/bin/busybox` is missing in a clean checkout; the
-smoke tier never reaches the busybox gates, so the warning is harmless.
+    python3 tools/verify/gate_suite.py --suite smoke
+    python3 tools/verify/gate_suite.py --suite green --retries 3
+    python3 tools/verify/gate_suite.py --gates 1-18,20,27-29
+    python3 tools/verify/gate_suite.py --fixture vm0
+    python3 tools/verify/gate_suite.py --list
+    python3 tools/verify/gate_suite.py --count
+    python3 tools/verify/gate_suite.py --validate
 
-## GitHub Actions
+Every gate has a wall-clock cap (`--gate-cap`, default 300s; scenarios
+`--scenario-cap`, default 1800s) so a hung SUT fails the gate instead of
+stalling the run. The ported per-gate reads use observed-scale budgets,
+not the old serial-suite timings.
 
-Runs on pushes to `master` and weekly `dev/**` branches, on pull
-requests, and on manual dispatch. Both jobs run on `ubuntu-24.04`, not
-`ubuntu-latest`.
+Statuses: `PASS`, `FLAKY` (passed on a retry, visible), `FAIL`, `SKIP`
+(not selected / blocked downstream of a scenario failure / missing
+artifact in non-strict mode), `BLOCKED` (missing artifact in strict mode
+or a fixture that could not be established). The final line is
+`RESULT PASS|FAIL|PARTIAL-PASS ... red=[ids]`.
 
-The failure that motivated the pin: `ubuntu-latest` moved to 26.04,
-whose `qemu-system-arm` is 10.2.1. Under QEMU 10.2.1 the RTOS takes an
-EL2 alignment fault during boot (`ESR_EL2=0x96000061`, DFSC=alignment
-fault) and halts in the exception handler before printing `eshine>`.
-Runs `43535269610`, `43562198218`, `43811739099`, `43853221275`,
-`43853673774` and `43854057149` all failed this way or at gate 19.
-24.04 ships QEMU 8.2.2, the version the gates were developed against
-(see `3rd/manifest.yaml`).
+Fixture keys: `host`, `vm0` (VM0 attached), `vm0ready` (VM0 booted,
+console host), `vm0boot`, `vm1`, `dual` (VM0 running + VM1 booted),
+`vm2` (Linux attached), `vm2boot` (Linux booting), `vm2boot0`, `multi`
+(all three VMs).
 
-The `container` job repeats the battery inside
-`docker/Dockerfile.build` (Ubuntu 24.04, `--network none`), so the CI
-result does not depend on the runner image's toolchain.
+Known boot families are handled at the fixture level: zero-byte chardev
+boots restart the QEMU (4 attempts in CI via `CI_BOOT_RETRIES`, 45s
+cooldown; the CLI default is 3); the all-space flood
+(`wvtrip: all-space chunk`) raises `FloodError` and a fresh fixture is
+tried; a fixture that cannot reach its readiness anchors is retried the
+same way. These retries are visible as `FLAKY` when a gate eventually
+passes.
+
+## Cloud artifacts
+
+The green suite needs the GPL-isolated artifacts that are never
+committed: the Linux Image, the exactly-8MiB initramfs and the musl
+busybox. `scripts/ci-gates.sh prepare` runs `scripts/bootstrap.sh --fetch`
+(builds Linux/musl/cJSON/zlib/busybox/initramfs) and the base `make`;
+GitHub Actions caches `.work` and `tools/ramfs/bin/busybox` keyed by
+`tools/artifacts.json` plus the build scripts, so subsequent runs skip
+the Linux build. `CI_SKIP_FETCH=1` is set on a cache hit. The run step
+uses `--strict-artifacts`: a missing required artifact is BLOCKED (CI
+fails) rather than silently skipped.
+
+The container job runs only the smoke tier: the pinned container has no
+network and therefore cannot fetch the guest artifacts. It still proves
+that the pinned Ubuntu 24.04 toolchain boots the hypervisor and VM0.
+
+## Red-gate policy
+
+Red gates are not hidden. They are either:
+- `quarantined` in `tools/verify/quarantine.txt` (`id classification
+  reason review-by`), excluded from the green suite but still run by
+  `--suite all`; or
+- `heavy` (Yocto/image/Docker), excluded from cloud CI by design and run
+  by `make verify-heavy`; or
+- `retired` when their surface is folded into a canonical gate (IDs are
+  never reused).
+
+The classification labels are `REAL-DEFECT`, `LOAD-FLAKE`, `MIGRATION-BUG`,
+`ENV` and `OBSOLETE`. A red gate is evaluated one by one; the evidence is
+the failing gate line plus the per-gate log under `.work/logs/`. The
+first triage pass (five entries, with evidence and options) is recorded
+in [GATE-TRIAGE.md](GATE-TRIAGE.md).
+
+## Runner pin and QEMU
+
+Both GitHub jobs run on `ubuntu-24.04`, not `ubuntu-latest`. The
+`ubuntu-latest` image moved to 26.04, whose `qemu-system-arm` is 10.2.1.
+Under QEMU 10.2.1 the RTOS takes an EL2 alignment fault during boot
+(`ESR_EL2=0x96000061`, DFSC=alignment fault) and halts before printing
+`eshine>`. Runs `43535269610`, `43562198218`, `43811739099`,
+`43853221275`, `43853673774` and `43854057149` all failed this way or at
+the load-sensitive gate 19. 24.04 ships QEMU 8.2.2, the version the gates
+were developed against (see `3rd/manifest.yaml`).
 
 ## Gitee Go
 
-The Gitee repository is a mirror of GitHub; `.gitee-ci.yml` arrives with
-the mirror sync. Gitee Go is UI-configured and disabled by default, so
-one manual step is required:
+The Gitee repository mirrors GitHub; `.gitee-ci.yml` arrives with the
+mirror sync. Gitee Go is UI-configured and disabled by default, so one
+manual step is required:
 
 1. Gitee repository page -> 服务 (Services) -> Gitee Go -> enable.
 2. The pipeline `ci` appears from `.gitee-ci.yml`; triggers are push to
@@ -62,17 +117,7 @@ one manual step is required:
    the repository file rather than the UI draft.
 
 The pipeline uses the `build@gcc` step (Ubuntu-based shell environment)
-and installs the cross toolchain plus QEMU from apt before calling
-`scripts/ci-smoke.sh`. If the Gitee image cannot reach apt or ships an
-incompatible QEMU, switch the step to 基于镜像的脚本执行 (image-based
-script execution) with image `ubuntu:24.04` and the same commands; this
-keeps the QEMU 8.2.2 pin that GitHub Actions uses.
-
-## Local
-
-    make ci-smoke     # build + static checks + gates 1..18
-    make verify       # full suite (release gate)
-    make verify-fast  # gates 1..36, iteration loop
-
-`CI_SMOKE_GATES` and `CI_NO_BUILD=1` control `scripts/ci-smoke.sh`
-directly when a different environment needs a different cap.
+and runs `scripts/ci-gates.sh all` with `CI_SUITE=green`. If the Gitee
+image cannot reach apt or ships an incompatible QEMU, switch the step to
+基于镜像的脚本执行 (image-based script execution) with image
+`ubuntu:24.04` and the same commands; this keeps the QEMU 8.2.2 pin.

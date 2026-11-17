@@ -325,14 +325,16 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-**精简分层（2026-11-06 用户令：耗时过长，保可靠性精简）**：全量 183 门
-（站收口两连真绿纪律不变）+ `--stop-after=36` 迭代快环（止于已知 [37]/[38] 族之前）（boot+vm0+核心
-rtos 门，门边界干净退出，判据行=PARTIAL-PASS 明示非真绿）；每门行尾
-(X.Xs) 计时，慢门/慢段当场可见（后续裁剪有据）。慢段大头：vm2 真
-Linux 引导（[61] 起段）与电池类真实等待——迭代改 rtos 侧时 1..36 快环
-即覆盖改动面（[37]/[38] 已知族除外）。
+**独立 fixture 分层（2026-11-17 用户令：拆开门禁，稳定可靠，不重复验证）**：
+门禁为独立套件——普通门各自新起 QEMU，状态型家族（RTOS 引导流、
+mutex 半场、VM1 生命周期、Linux 引导、多 VM 热键、ACL、日志、HAM）
+用自包含场景；红门互不阻塞，逐门 PASS/FLAKY/FAIL/SKIP/BLOCKED 报告。
+编号空间 1..183 稳定（新门 184+，退役留空号）。套件：`smoke`（1..18，
+本地快环）/ `green`（全部 active 非重型门，云 CI 与 `make verify`）/
+`heavy`（Yocto/镜像/Docker，本地发版）。每门行尾 (X.Xs) 计时；fixture
+级对已知零字节引导与全空格洪水做有限重启（重试后通过记为 FLAKY）。
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（183 门：banner + prompt +
+真绿门禁：`python3 tools/verify/gate_suite.py --suite green`（active 门：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -992,10 +994,11 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-183 步手动走查清单。
-**同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
-verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
-——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；
-2026-10-26 第二起：站十六 e87a3bb 宣称三处同步但 shell.c 走查从未
-落盘（48 步陈表+version 陈行），站十七重写根治。
+stable-ID 手动走查清单。
+**同步纪律（2026-10-24 用户令，2026-11-17 适配独立门禁）**：门禁
+ID/判据变化时，`tools/verify/gatesuite/gates/` 注册模块、shell help
+走查清单、本节文字必须同 commit 更新——曾因 replace 静默失败出现
+"标题 31 正文 25"嵌合体，用户实测抓出；2026-10-26 第二起：站十六
+e87a3bb 宣称三处同步但 shell.c 走查从未落盘（48 步陈表+version 陈行），
+站十七重写根治。ID 稳定：新门 184+，退役留空号，不做连续重编号。
 CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。

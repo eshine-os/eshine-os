@@ -12,8 +12,9 @@ a fully green gate run does not imply the absence of residual defects.
 ## 1. SMP demo 深层污染族
 
 - 门禁 `[37]`/`[38]`（双核 demo）存在深层污染面，已有守卫与全息取证，但根因尚未完全收敛。
-- 2026-11-11 三轮实测升级：门 `[37]` 为签名确定性必死（2/2）而非偶发；root-a（IRQ 出口 requeue 池外 idle）已定谳修真（见 ARCHITECTURE.md 站 68B），root-b/c 武装待续。
-- 现象线索：`sp=0xC`、self-switch `next==old`、CPU1 六拍落在 `ipimain` 栈域。
+- 2026-11-11 三轮实测升级：门 `[37]` 为签名确定性必死（2/2）而非偶发；root-a（IRQ 出口 requeue 池外 idle）已定谳修真（见 ARCHITECTURE.md 站 68B）。
+- root-b 第五击（dead-slot live-stack guard，commit `1ba00dc`）落地后，独立 fixture 套件下 `[37]`/`[38]` 均能过：2026-11-17 本机负载 12 的全量跑中分别为 attempt 2/3 的 `FLAKY`（先过，重试过的门单独标出），不再阻塞下游。
+- 现象线索：`sp=0xC`、self-switch `next==old`、CPU1 六拍落在 `ipimain` 栈域。故障族未宣告关闭；安静窗两连绿之前按挂账处理。
 
 ## 2. 交互 shell 空格洪水
 
@@ -21,8 +22,10 @@ a fully green gate run does not imply the absence of residual defects.
 
 ## 3. 门禁耗时与宿主负载敏感
 
-- 全量 183 门在当前宿主机负载下单轮可超过 30 分钟；部分门（futex/APS 时序窗）对宿主负载敏感。
-- 结论纪律：门禁失败先查宿主负载与并行任务，再谈机制；两连真绿需在安静窗复跑。
+- 独立 fixture 套件下每门自起 QEMU（普通门）或一个场景 fixture（状态型家族）；全量绿套件在当前宿主负载下单轮约 30-45 分钟。1..77 段 2026-11-17 实测 18 分钟、75 门零 FAIL。
+- 已知 boot 家族（zero-byte chardev、全空格洪水、RX 唤醒丢字节、VM0 init 停在 `srv: pm bound stdio` 之后不再打印 `init: inittab processed`）由 fixture 级重试兜底，重试后过的门标 `FLAKY`，不隐藏。2026-11-17 负载 12 的宿主上 attach/init 停摆在部分门连续 2-3 次出现（例：[128] 三试均停摆）；安静窗或云端 runner 的复现率需继续观测。
+- 部分门（futex/APS 时序窗）对宿主负载敏感。
+- 结论纪律：门禁失败先查宿主负载与并行任务（含残留 QEMU），再谈机制；两连真绿需在安静窗复跑。
 
 ## 4. 仅 QEMU virt 验证
 
@@ -44,7 +47,7 @@ a fully green gate run does not imply the absence of residual defects.
 
 - **缺陷预算**：存在 P0（启动/全量门禁不可复现、数据损坏、跨 VM
   隔离失效）时不开新功能站；先修复或明确降级。
-- **稳定化窗口**：每批站点收口前，在安静窗口跑全量 183 门两连；
+- **稳定化窗口**：每批站点收口前，在安静窗口跑全量绿套件两连；
   宿主负载、并行会话、残留 QEMU 进程先清场，再谈机制。
 - **快环/全量分立**：迭代用 `verify --stop-after=36`（PARTIAL-PASS，
   止于已知 [37]/[38] 族之前，不是真绿）；收口必须全量两连。
