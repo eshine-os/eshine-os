@@ -4,8 +4,8 @@
 
 The new fixture suite (`tools/verify/gate_suite.py`) runs every ordinary
 gate in its own QEMU session. The first triage pass over gates 1..183
-left five quarantined entries; the first cloud run added 173, so six are
-quarantined today (excluded from the green suite, still run by
+left five quarantined entries; the two cloud runs added 173 and 103,
+so seven are quarantined today (excluded from the green suite, still run by
 `--suite all` and visible in `--list`). Each entry has the failing
 evidence from `.work/logs/` and the options for the one-by-one review.
 
@@ -16,6 +16,7 @@ authoritative machine-readable list is `tools/verify/quarantine.txt`.
 
 | ID | Gate | Evidence (2026-11-17) | Classification | Options |
 |---|---|---|---|---|
+| 103 | vm0 busybox echo + cat inittab marker | First `run /bin/busybox echo ESHINE40-BB` prints and exits 0; the second `run /bin/busybox cat /tmp/init40` prints nothing and times out (CI 3/3 attempts in run 44060155659; reproduced locally on the same two-run sequence). The common factor with 143–145 (`cat /proc/*`), 172 (cJSON reads services.json) and 173 (ztest slurps /var/log/slog) is an fd READ of a file; `echo`, `date` and `ls` (getdents) do not hit it. | REAL-DEFECT (fd file-read spin) | (a) fix the fd READ path and un-quarantine 103/172/173 together; (b) keep quarantined; (c) split the gate to a single run (loses the second-load face). |
 | 122 | apsdemo: partition enforcement + steal ledger | Stalls after `aps: ph3 tasks ok`; the two prio-3 busy tasks starve the shell, no `ph4 window ok`; 300s gate cap hit. Legacy `[122]` was the known APS hang. | REAL-DEFECT | (a) fix the APS demo/priority window; (b) keep quarantined until fixed; (c) retire if the partition face is covered elsewhere (123/124 remain green). |
 | 135 | host `loglevel elog dbg` → dbg/trc emitted | `dbg` line is emitted; `trc` line is not. `ES_LOG_EMIT` filters `trc` (5) at module level `dbg` (4). 134/136/137 are green. | OBSOLETE (stale anchor) | (a) change the anchor to "trc absent after dbg" (matches the macro contract); (b) drop the trc expectation; (c) retire 135 (dbg emission is already proved by the same scenario). |
 | 140 | vm0 klog persistence (elog ring → /var/log/slog) | Gate's own dump shows `log core up, mods=3`; the anchor expects `mods=2`. VM0 now registers boot+elog+ham. 141/142 are green. | OBSOLETE (stale anchor) | (a) update the anchor to `mods=3`; (b) drop the mods line from the check (persistence is proved by the surrounding lines). |
@@ -32,9 +33,9 @@ authoritative machine-readable list is `tools/verify/quarantine.txt`.
 | 155–157, 161 | After a guest fault/off, `sched_console_owner` is already NULL; `0x1d` is not an escape and no prompt is printed. The legacy matched a stale prompt. | `wake_host()` pumps newlines until `eshine> ` appears. |
 | 183 | The bsh REPL reads one line per stdin read; the 8-byte `send_guest` chunking split REPL lines, and shared position marks matched the typed echo. | Single-write REPL lines, per-line marks, `\n<output>` anchors. Now green (FLAKY on first retry). |
 
-## CI run findings (2026-11-17, GitHub run 44043674022)
+## CI run findings (2026-11-17)
 
-The first cloud run of the green suite came back `gates=172 pass=158
+Run **44043674022** (first cloud green run) came back `gates=172 pass=158
 fail=9 skip=1 blocked=4 flaky=24` with
 `red=[103,104,106,141,143,144,145,158,159,160,161,173,183]`. Two causes,
 one deterministic and one environmental:
@@ -55,6 +56,11 @@ one deterministic and one environmental:
   172, exposed by the cloud runner. 158-161 stay in green for now (the
   gate logic is green; a fixture BLOCKED is retried on a fresh boot) and
   move to quarantine if they recur.
+
+Run **44060155659** (after the prepare fix) came back `gates=171
+pass=170 fail=1 flaky=30 red=[103]` in 1440s. 158-161 were green this
+time (confirming the BLOCKED block was environmental), and the only red
+was 103 on its second `run` — the fd file-read spin above, quarantined.
 
 ## Fixture-level flake families (FLAKY, not red)
 
