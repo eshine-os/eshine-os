@@ -12,7 +12,7 @@
 # Env:
 #   CI_SUITE       smoke | green | heavy | all   (default green)
 #   CI_RETRIES     gate retries                  (default 3)
-#   CI_BOOT_RETRIES fixture boot retries          (default 4)
+#   CI_BOOT_RETRIES fixture boot retries          (default 6)
 #   CI_SKIP_FETCH  1 = artifacts already restored from cache (default 0)
 set -euo pipefail
 
@@ -52,7 +52,7 @@ if [ "$MODE" = "run" ] || [ "$MODE" = "all" ]; then
     python3 tools/verify/gate_suite.py \
         --suite "${CI_SUITE:-green}" \
         --retries "${CI_RETRIES:-3}" \
-        --boot-retries "${CI_BOOT_RETRIES:-4}" \
+        --boot-retries "${CI_BOOT_RETRIES:-6}" \
         --strict-artifacts \
         --json "${CI_RESULT_JSON:-$PWD/.work/logs/gates-summary.json}"
 fi

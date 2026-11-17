@@ -53,10 +53,10 @@ console host), `vm0boot`, `vm1`, `dual` (VM0 running + VM1 booted),
 (all three VMs).
 
 Known boot families are handled at the fixture level: zero-byte chardev
-boots restart the QEMU (4 attempts in CI via `CI_BOOT_RETRIES`, 45s
+boots restart the QEMU (6 attempts in CI via `CI_BOOT_RETRIES`, 45s
 cooldown; the CLI default is 3); the all-space flood
 (`wvtrip: all-space chunk`) raises `FloodError` and a fresh fixture is
-tried; a fixture that cannot reach its readiness anchors is retried the
+tried (the flood retry is immediate, so the extra attempts are cheap); a fixture that cannot reach its readiness anchors is retried the
 same way. These retries are visible as `FLAKY` when a gate eventually
 passes.
 

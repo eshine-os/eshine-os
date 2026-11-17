@@ -68,6 +68,12 @@ fail=1 skip=1 flaky=39 red=[141]` in 1904s: the same fd file-read spin
 moved to 141's `cat /var/log/slog`; 142 was SKIP as its scenario
 neighbour. 141 is now quarantined too.
 
+Run **44071218150** (141 quarantined) came back `gates=169 pass=168
+fail=0 blocked=1 flaky=32 red=[92]` in 1982s. 92 BLOCKED on the known
+all-space flood family at console attach, four fixture attempts in a
+row (9.5s total). No gate logic failed. CI now uses six boot attempts
+(`CI_BOOT_RETRIES=6`); a flood retry is immediate, so the tail is cheap.
+
 ## Fixture-level flake families (FLAKY, not red)
 
 These pass on a retry and are reported as `FLAKY`; they are SUT boot
