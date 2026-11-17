@@ -1,12 +1,31 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Julian Chu
+#
+# Minimal cloud CI. The 183-gate suite stays a local/release gate
+# (`make verify`); cloud CI runs the smoke tier only: build, static
+# checks, and gates 1..18 (hypervisor boot + VM0 RTOS up). Everything
+# below is driven by scripts/ci-smoke.sh, which Gitee Go runs too.
+#
+# Runner pin: ubuntu-24.04. The QEMU shipped by ubuntu-latest
+# (26.04 at the time of writing, qemu-system-arm 10.2.1) takes an EL2
+# alignment fault during RTOS boot (runs 43535269610..43854057149:
+# ESR_EL2=0x96000061 DFSC=alignment fault, no `eshine>` prompt).
+# 24.04 ships QEMU 8.2.2, the version the gates were developed against.
 name: ci
-on: [push, pull_request]
+on:
+  push:
+    branches: [master, 'dev/**']
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: install toolchain
@@ -14,12 +33,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu \
             device-tree-compiler python3 qemu-system-arm gdb-multiarch
-      - name: build
-        run: make -j"$(nproc)"
-      - name: static checks
-        run: |
-          bash -n scripts/*.sh tools/*.sh
-          python3 -m py_compile tools/verify/*.py tools/*.py scripts/*.py
+      - name: build + static checks + smoke gates
+        run: bash scripts/ci-smoke.sh
       - name: trailer validation
         run: |
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
@@ -37,29 +52,21 @@ jobs:
           python3 scripts/check-commit-msg.py --range "$base..HEAD"
       - name: host independence
         run: scripts/check-host-independence.sh
-      - name: fast gates
-        run: python3 tools/verify/verify_el2.py --stop-after=36
 
   container:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: build toolchain image
         run: docker build -t eshine-build:ci -f docker/Dockerfile.build .
       - name: prepare work root
         run: mkdir -p "$RUNNER_TEMP/work/home" "$RUNNER_TEMP/work/tmp"
-      - name: container build
-        run: |
-          docker run --rm --network none \
-            --user "$(id -u):$(id -g)" \
-            -v "$PWD:/src" -v "$RUNNER_TEMP/work:/work" \
-            -e ESHINE_WORK=/work -e HOME=/work/home -e TMPDIR=/work/tmp \
-            -w /src eshine-build:ci make -B -j"$(nproc)"
-      - name: container fast gates
+      - name: container build + static checks + smoke gates
         run: |
           docker run --rm --network none \
             --user "$(id -u):$(id -g)" \
             -v "$PWD:/src" -v "$RUNNER_TEMP/work:/work" \
             -e ESHINE_WORK=/work -e HOME=/work/home -e TMPDIR=/work/tmp \
             -w /src eshine-build:ci \
-            python3 tools/verify/verify_el2.py --stop-after=36
+            bash scripts/ci-smoke.sh

@@ -335,7 +335,9 @@ void rt_aps_demo(void)
     }
     cparts[id].nthrottle = 0;
     cparts[id].nsteal = 0;
+    rt_puts("aps: ph1 alloc ok\n");          /* 68G 站查探针 */
     rt_sleep_ticks(RT_CPART_WIN - (rt_ticks % RT_CPART_WIN));
+    rt_puts("aps: ph2 win ok\n");
     aps_a.run = 1;
     aps_a.cnt = 0;
     aps_b.run = 1;
@@ -354,7 +356,9 @@ void rt_aps_demo(void)
         return;
     }
     rt_cpart_join((u32)id, ta);
+    rt_puts("aps: ph3 tasks ok\n");
     rt_sleep_ticks(2 * RT_CPART_WIN);   /* 争跑窗:两满窗 */
+    rt_puts("aps: ph4 window ok\n");
     aps_b.run = 0;                      /* tb 收口退场 */
     a1 = aps_a.cnt;
     b1 = aps_b.cnt;
