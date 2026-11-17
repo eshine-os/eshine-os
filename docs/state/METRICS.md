@@ -10,7 +10,7 @@ history. Event counts are tool/assistant events, not tokens.
 | Metric | Value | Source |
 |---|---|---|
 | Commits | 214 pre-batch | `git rev-list --count HEAD` |
-| Gates | 183 | `verify_el2.py` gate total |
+| Gates | 183 | stable ID namespace; active count = `gate_suite.py --count` |
 | Stations | 68 | `docs/devlog/` sequence |
 | Largest session | 107.9 MB, 46,437 lines | session transcript |
 | Second session | 36.1 MB, 16,745 lines | session transcript |
@@ -58,7 +58,7 @@ Point the commands at one transcript file; do not commit transcripts.
 
     # commits and gates added by a date range
     git log --since=YYYY-MM-DD --until=YYYY-MM-DD --oneline | wc -l
-    git diff --stat <base>..<head> -- tools/verify/verify_el2.py
+    git diff --stat <base>..<head> -- tools/verify/gatesuite/
 
 ## Targets
 

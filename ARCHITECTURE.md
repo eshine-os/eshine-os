@@ -325,14 +325,16 @@ LR0=vtimer(HW)/LR1=vuart/LR3=virtio（a57 四槽，LR2 随 vblk 空置）。
 
 ## 验证
 
-**精简分层（2026-11-06 用户令：耗时过长，保可靠性精简）**：全量 183 门
-（站收口两连真绿纪律不变）+ `--stop-after=36` 迭代快环（止于已知 [37]/[38] 族之前）（boot+vm0+核心
-rtos 门，门边界干净退出，判据行=PARTIAL-PASS 明示非真绿）；每门行尾
-(X.Xs) 计时，慢门/慢段当场可见（后续裁剪有据）。慢段大头：vm2 真
-Linux 引导（[61] 起段）与电池类真实等待——迭代改 rtos 侧时 1..36 快环
-即覆盖改动面（[37]/[38] 已知族除外）。
+**独立 fixture 分层（2026-11-17 用户令：拆开门禁，稳定可靠，不重复验证）**：
+门禁为独立套件——普通门各自新起 QEMU，状态型家族（RTOS 引导流、
+mutex 半场、VM1 生命周期、Linux 引导、多 VM 热键、ACL、日志、HAM）
+用自包含场景；红门互不阻塞，逐门 PASS/FLAKY/FAIL/SKIP/BLOCKED 报告。
+编号空间 1..183 稳定（新门 184+，退役留空号）。套件：`smoke`（1..18，
+本地快环）/ `green`（全部 active 非重型门，云 CI 与 `make verify`）/
+`heavy`（Yocto/镜像/Docker，本地发版）。每门行尾 (X.Xs) 计时；fixture
+级对已知零字节引导与全空格洪水做有限重启（重试后通过记为 FLAKY）。
 
-真绿门禁：`python3 tools/verify/verify_el2.py`（183 门：banner + prompt +
+真绿门禁：`python3 tools/verify/gate_suite.py --suite green`（active 门：banner + prompt +
 宿主 token 双回显 + tick 严格递增（CNTHP→GICv3→EL2 真投递判据）+
 空表 + vmcreate + **vmconsole 未跑拒绝（状态门）** + vmrun 0 异步 →
 **后台 banner [vm0] eshine-rtos 前缀（陷阱 TX 整行冲刷判据）** +
@@ -840,6 +842,19 @@ cur=ramfs 服务器答中在场）与 REPL/RX 残面——全审计下次开火�
 （68B 续侦,判据面=守卫四元）。A/B 对照纪律:0/3 集中挂=回归,1/3 随机挂
 =历史病;守卫自身必须过全量冒烟（首版曾把设计常态当犯罪抓 2/2）。
 
+**调度切换原子性（2026-11-17，fd 读静默楔定谳）**：`run <bin>` 连跑
+（读文件面：`cat /tmp/init40`、`cat /var/log/slog`、cJSON 读
+`/etc/services.json`、ztest slurp）静默挂死族（[103]/[141]/[167]/[172]/
+[173]）取证：gdb 任务池实捕 loader 子 `state=RUN`、`pend_deadline` 过期
+千余拍、next/wqn 全 0、且不等于任何核 `rt_cur`。真身=`rt_pick_ready` 在
+队列锁内置 RUN 并摘链后，协作路径（`rt_sched`/`rt_task_exit`）带开中断返
+回；tick 落窗经 IRQ 出口把别的任务切走，已拣出者永久滞留（vec.S 自述
+「RUN 标记永失=无声楔」）；发起切换者若为阻塞任务，须待其被唤醒才补完，
+唤醒永不到即无声死。修真=整窗 `rt_daif_save` 屏中断，调用前 DAIF 作第二
+参传入 `rt_switch_to`，vec.S 改读 x1 帧槽构造续跑 psr（与原 `mrs daif`
+现读语义等价）。判据：60 轮×4 靴高频探针旧树每靴第 3-5 轮必挂、新树
+零挂零 panic；冒烟 18/18。
+
 **站68C-68F 幽灵出生链（root-d 定谳+封口;68C 守卫族常驻）**：用户脸=
 进 rtos shell 敲回车即 bookkeep violation,毒 sp 跨靴同值;68C 域检/窗检
 /出生检/臂点复核+68D 孤儿修真（rt_pick_ready 锁内置 RUN）+68E create_el0
@@ -992,10 +1007,11 @@ docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 **RTOS 迟退（第十六站：vm0 exit 留活跨过并发判据后收场）** →
 vmkill 处决 + 宿主完整**，静态 marker 不算；连续 2 轮全绿才真绿）。
 make run 与 make verify 同构（同一构建产物，-smp 4），shell help 内置
-183 步手动走查清单。
-**同步纪律（2026-10-24 用户令）**：每站门禁步数/判据变化时，
-verify_el2.py、shell help 走查清单、本节文字必须同 commit 更新
-——曾因 replace 静默失败出现"标题 31 正文 25"嵌合体，用户实测抓出；
-2026-10-26 第二起：站十六 e87a3bb 宣称三处同步但 shell.c 走查从未
-落盘（48 步陈表+version 陈行），站十七重写根治。
+stable-ID 手动走查清单。
+**同步纪律（2026-10-24 用户令，2026-11-17 适配独立门禁）**：门禁
+ID/判据变化时，`tools/verify/gatesuite/gates/` 注册模块、shell help
+走查清单、本节文字必须同 commit 更新——曾因 replace 静默失败出现
+"标题 31 正文 25"嵌合体，用户实测抓出；2026-10-26 第二起：站十六
+e87a3bb 宣称三处同步但 shell.c 走查从未落盘（48 步陈表+version 陈行），
+站十七重写根治。ID 稳定：新门 184+，退役留空号，不做连续重编号。
 CI 在 .github/workflows/ci.yml，同步 GitHub 后生效。

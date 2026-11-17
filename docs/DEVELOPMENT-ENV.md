@@ -23,8 +23,9 @@ directory:
       tmp/            scratch
 
 `scripts/env.sh` is the single source of these paths. Every build script
-sources it; the Makefile and `verify_el2.py`/`smoke.py` use the same
-defaults. No script reads `$HOME/projects` or a fixed `/tmp` build dir.
+sources it; the Makefile and `tools/verify/gate_suite.py` (gatesuite
+`artifacts.py`) use the same defaults. No script reads
+`$HOME/projects` or a fixed `/tmp` build dir.
 
 ## Bootstrap
 
@@ -91,15 +92,18 @@ directories); the repository files are identical.
 
 ## Full verification
 
-`make verify` runs all 183 gates and requires:
+`make verify` runs the green suite (172 active non-heavy gates; five
+quarantined reds are listed in [GATE-TRIAGE.md](GATE-TRIAGE.md)) and
+requires:
 
 - `.work/linux/.../Image` and `.work/linux/initramfs.cpio` (exactly 8 MiB)
 - `tools/ramfs/bin/busybox` (gitignored; build with `tools/build-busybox.sh`)
-- `poky` + `yocto-build` under `.work` (gates 133/177)
 - a quiet host: full two-run green is host-load sensitive
 
-`make verify-fast` runs gates 1-36 and needs no external artifacts; it stops before the open [37]/[38] SMP-demo family, which the full suite still covers. The
-preflight only requires Linux/initramfs at gate 62 and busybox at gate
+`make verify-heavy` adds the Yocto/image/Docker gates (133/177/178/180;
+needs `poky` + `yocto-build` under `.work`). `make verify-fast` /
+`make ci-smoke` runs the smoke tier (gates 1-18) and needs no external
+artifacts. The preflight only requires Linux/initramfs at gate 62 and busybox at gate
 103; a full run still fails loudly when they are missing.
 
 ## Running without artifacts

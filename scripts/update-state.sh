@@ -11,11 +11,16 @@ HEAD=$(git -C "$REPO" rev-parse --short HEAD)
 SUBJECT=$(git -C "$REPO" log -1 --format=%s)
 VER=$(cat "$REPO/VERSION")
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-# Gate lines are "[N/183]"; other "N/M" text occurs in comments. Take the
-# most frequent denominator rather than the largest number.
-GATES=$(grep -oE '\[[0-9]+/[0-9]+\]' "$REPO/tools/verify/verify_el2.py" | \
-        cut -d/ -f2 | tr -d ']' | sort | uniq -c | sort -nr | \
-        head -1 | awk '{print $2}')
+# The fixture suite is the single source for the active gate count.
+GATES=$(python3 "$REPO/tools/verify/gate_suite.py" --count 2>/dev/null | \
+        sed -n 's/^active=\([0-9]*\).*/\1/p')
+if [ -z "$GATES" ]; then
+    # Legacy fallback while the old verifier is still present.
+    GATES=$(grep -oE '\[[0-9]+/[0-9]+\]' \
+            "$REPO/tools/verify/verify_el2.py" 2>/dev/null | \
+            cut -d/ -f2 | tr -d ']' | sort | uniq -c | sort -nr | \
+            head -1 | awk '{print $2}')
+fi
 
 # Dev-tag range and latest release tag, derived from the repo (the
 # previous hardcoded range went stale the moment a new week was tagged).
@@ -42,7 +47,7 @@ block = (
     '\n- Updated: %s\n'
     '- HEAD: %s (%s)\n'
     '- Version: %s\n'
-    '- Gates: %s (tools/verify/verify_el2.py)\n'
+    '- Gates: %s active in the 1..183 namespace (tools/verify/gate_suite.py)\n'
     '- Dev tags: %s .. %s%s\n' % (
         now, head, subject, ver, gates, first, last, rel))
 open(path, 'w', encoding='utf-8').write(text[:a] + block + text[b:])

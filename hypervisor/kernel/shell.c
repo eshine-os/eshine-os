@@ -29,7 +29,8 @@ static void cmd_help(void)
     console_puts("rtos:     selftest ps spawn <n> sleep [N] fp fpdual fpstat yield semdemo\n");
     console_puts("          mutexdemo pidemo eventdemo queuedemo smpdemo ipidemo fpsmp\n");
     console_puts("          tmodemo stkdemo stackcheck overflow host exit\n");
-    console_puts("make verify walkthrough (183 步;与 make run 同一构建,可手动过;\n");
+    console_puts("make verify walkthrough (stable IDs 1..183; independent fixtures,\n");
+    console_puts("make verify-fast=smoke[1-18], make verify=green suite, make run for manual;\n");
     console_puts("四核拓扑:vm0.v0/vm1 在 CPU0,vm2 双 vCPU 在 CPU1/2,vm0.v1 在 CPU3):\n");
     console_puts("  echo ESHINEOKx      -> token 双次回显        [4]\n");
     console_puts("  cpu1/2/3 online    -> psci cpu_on 三辅核起立  [3]\n");
@@ -68,8 +69,8 @@ static void cmd_help(void)
     console_puts("  双醒后双活 echo                                [54]\n");
     console_puts("  持久化:重建后旧数据仍在                       [55]\n");
     console_puts("  fault -> vm1 隔离死,宿主无损                  [56]\n");
-    console_puts("  vmls(rtos RUNNING 留活)/宿主完整/退场后 tick   [57-59]\n");
-    console_puts("  vmkill 拒绝路径 / vmstat 收尾                 [60-61]\n");
+    console_puts("  vmls(rtos RUNNING 留活)/宿主完整/退场后 tick   [57-59; 58->59]\n");
+    console_puts("  vmkill 拒绝路径 / vmstat 收尾                 [60-61; 61->57]\n");
     console_puts("  vmcreate 2 / vmrun 2 -> Booting Linux          [62]\n");
     console_puts("  smp: Brought up 1 node, 2 CPUs -> 第二 vCPU 上线 [63]\n");
     console_puts("  vm1 复活 spin 独占 CPU0,vm2 行进=真并行       [64]\n");
@@ -467,7 +468,6 @@ static void dispatch(char *line)
             }
             console_puts("\n");
         }
-    } else if (strncmp(line, "logdemo", 64) == 0) {
     } else if (strncmp(line, "logdemo", 64) == 0) {
         elog_logdemo();
     } else if (strncmp(line, "loglevel", 64) == 0) {

@@ -960,7 +960,9 @@ void rt_idle_loop(void) __attribute__((noreturn));
 /* vec.S:续跑路径经 .Lcoop_ret -> rt_sched 调用点后的正常收尾返回
  * ——绝不能标 noreturn(GCC 会在调用点后排环回头/死代码,续跑即踩;
  * 本站实测:明雷=空指针炸,暗雷=落进 puts_uart 无限打印)。 */
-void rt_switch_to(rt_task_t *next);
+void rt_switch_to(rt_task_t *next, u64 daif);   /* daif=调用前 DAIF(站69:
+                                                 * 切换窗全程屏蔽,psr 由
+                                                 * 调用方传入,vec.S 读 x1 槽) */
 void rt_frame_init(rt_task_t *t, void *stack_top, void (*entry)(void *), void *arg);
 /* 站68C:簿记域检违例打印器(vec.S .Lbk_viol 桩调;noreturn 打印+park。
  * 勿标 noreturn 于头——asm bl 不经 C 语义,标了反令 GCC 在别处删尾码)。 */

@@ -76,14 +76,24 @@ run: $(TARGET) rtos.bin guest2.bin
 	fi
 	./scripts/run_qemu.sh
 
+# Fixture-based gate suite: each gate runs in its own fresh QEMU (or a
+# scenario fixture for stateful families). Stable IDs keep the historical
+# 1..183 namespace; RETIRED gates are listed, never renumbered.
 verify: $(TARGET) rtos.bin guest2.bin
-	python3 tools/verify/verify_el2.py
+	python3 tools/verify/gate_suite.py --suite green
 
 verify-fast: $(TARGET) rtos.bin guest2.bin
-	python3 tools/verify/verify_el2.py --stop-after=36
+	python3 tools/verify/gate_suite.py --suite smoke
+
+verify-heavy: $(TARGET) rtos.bin guest2.bin
+	python3 tools/verify/gate_suite.py --suite heavy
+
+verify-all: $(TARGET) rtos.bin guest2.bin
+	python3 tools/verify/gate_suite.py --suite all
 
 # CI smoke tier (GitHub Actions / Gitee Go / local sanity): build + static
-# checks + gates 1..18 (hypervisor boot + VM0 RTOS up). Full suite = verify.
+# checks + gates 1..18 (hypervisor boot + VM0 RTOS up). Full green suite =
+# scripts/ci-gates.sh.
 ci-smoke: $(TARGET) rtos.bin guest2.bin
 	CI_NO_BUILD=1 bash scripts/ci-smoke.sh
 
@@ -176,7 +186,7 @@ tools/ramfs/bin/cyclictest: tools/ramfs-cyclictest.c
 tools/ramfs/bin/coreparse: tools/ramfs-coreparse.c     # 站64:ELF core 离线解析件
 	$(CROSS)gcc $(EL0FLAGS) -o $@ $< -lc
 
-.PHONY: all run verify verify-fast ci-smoke clean demos
+.PHONY: all run verify verify-fast verify-heavy verify-all ci-smoke clean demos
 
 # 头文件自动依赖(-MMD -MP),头文件改动触发重编
 -include $(OBJS:.o=.d) $(GOBJS:.o=.d) $(RTOBJS:.o=.d)

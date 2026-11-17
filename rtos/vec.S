@@ -736,7 +736,10 @@ rt_switch_to:
     ldp     x12, x13, [sp], #16
 66:
     RT_PUSH_GPRS
-    mrs     x1, daif
+    ldr     x1, [sp, #16]           /* 入参2=调用前 DAIF(x1 帧槽;站69:
+                                     * 拣选->切换窗由调用方全程屏,故不能
+                                     * 再 mrs daif 现读——屏蔽态会把本
+                                     * 任务续跑 psr 记成关中断) */
     and     x1, x1, #0x3c0          /* 保 DAIF 位 */
     mov     x3, #5
     orr     x1, x1, x3              /* M=0101 EL1h */

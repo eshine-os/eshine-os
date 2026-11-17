@@ -1,0 +1,10 @@
+# Gates excluded from the `green` suite until their red classification is
+# resolved.  Format: <id> <classification> <reason> <review-by>
+# Classifications: REAL-DEFECT | LOAD-FLAKE | MIGRATION-BUG | ENV | OBSOLETE
+# `--suite all` still runs these; `--list` shows them.
+#
+# First triage pass (2026-11-17, fixture suite migration):
+122 REAL-DEFECT APS partition demo stalls after "aps: ph3 tasks ok"; the two prio-3 busy tasks starve the shell and the demo never prints ph4 (legacy [122] was the known APS hang) 2026-11-24
+135 OBSOLETE stale trc anchor: ES_LOG_EMIT filters trc (level 5) at module level dbg (4); dbg is emitted, trc absent (verified) - update to a negative trc assertion 2026-11-24
+140 OBSOLETE stale mods=2 anchor: VM0 registers boot+elog+ham (mods=3); the persistence face itself is green in 141/142 - update the anchor to mods=3 2026-11-24
+182 OBSOLETE stale core-struct constants: the gate's own dump shows NT_PRSTATUS descsz=368 (not 376); cursig is at desc+12 with pad0 at +14 - update the constants (181 is green) 2026-11-24

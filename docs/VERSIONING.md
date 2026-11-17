@@ -24,7 +24,7 @@
 ```
 VERSION 文件（仓库根,唯一事实源）
   → Makefile 读取 → -DESHINE_VERSION_STR 注入 → version.h 引宏
-  → banner / shell version 命令 / verify_el2.py 判据（脚本动态读 VERSION）
+  → banner / shell version 命令 / gate_suite.py 判据（脚本动态读 VERSION）
   → git tag vYY.MM（annotated,commit 规范同 commit-message conventions）
 ```
 

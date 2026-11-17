@@ -3,12 +3,13 @@
 #
 # Gitee Go pipeline (pipeline-as-code). Gitee Go must be enabled once in
 # the repository settings (服务 -> Gitee Go); until then this file has no
-# effect. Same smoke tier as GitHub Actions: build + static checks +
-# gates 1..18 (scripts/ci-smoke.sh). The full 183-gate suite is a
-# local/release gate.
+# effect. Same battery as GitHub Actions: build + external artifacts +
+# all active non-heavy gates (scripts/ci-gates.sh, --suite green).
+# The 183-ID gate namespace is stable; heavy Yocto/image gates run
+# locally/release only.
 version: '1.0'
 name: ci
-displayName: eshine-os CI (smoke)
+displayName: eshine-os CI (green gate suite)
 triggers:
   trigger: auto
   push:
@@ -20,18 +21,18 @@ triggers:
       precise:
         - master
 stages:
-  - name: smoke
-    displayName: build + smoke gates
+  - name: gates
+    displayName: build + green gate suite
     strategy: naturally
     trigger: auto
     executor: []
     steps:
       - step: build@gcc
-        name: build_and_smoke
-        displayName: cross build + QEMU smoke
+        name: build_and_gate
+        displayName: cross build + independent gate suite
         gccVersion: '9.4'
         commands:
           - set -e
           - apt-get update
-          - apt-get install -y gcc-aarch64-linux-gnu qemu-system-arm device-tree-compiler python3 make gdb-multiarch
-          - bash scripts/ci-smoke.sh
+          - apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu qemu-system-arm device-tree-compiler python3 make gdb-multiarch bc bison flex libssl-dev libelf-dev cpio xz-utils bzip2 wget curl git
+          - CI_SUITE=green CI_RETRIES=3 bash scripts/ci-gates.sh all
