@@ -4,8 +4,8 @@
 
 The new fixture suite (`tools/verify/gate_suite.py`) runs every ordinary
 gate in its own QEMU session. The first triage pass over gates 1..183
-left five quarantined entries; the two cloud runs added 173 and 103,
-so seven are quarantined today (excluded from the green suite, still run by
+left five quarantined entries; the three cloud runs added 173,
+103 and 141, so eight are quarantined today (excluded from the green suite, still run by
 `--suite all` and visible in `--list`). Each entry has the failing
 evidence from `.work/logs/` and the options for the one-by-one review.
 
@@ -18,6 +18,7 @@ authoritative machine-readable list is `tools/verify/quarantine.txt`.
 |---|---|---|---|---|
 | 103 | vm0 busybox echo + cat inittab marker | First `run /bin/busybox echo ESHINE40-BB` prints and exits 0; the second `run /bin/busybox cat /tmp/init40` prints nothing and times out (CI 3/3 attempts in run 44060155659; reproduced locally on the same two-run sequence). The common factor with 143–145 (`cat /proc/*`), 172 (cJSON reads services.json) and 173 (ztest slurps /var/log/slog) is an fd READ of a file; `echo`, `date` and `ls` (getdents) do not hit it. | REAL-DEFECT (fd file-read spin) | (a) fix the fd READ path and un-quarantine 103/172/173 together; (b) keep quarantined; (c) split the gate to a single run (loses the second-load face). |
 | 122 | apsdemo: partition enforcement + steal ledger | Stalls after `aps: ph3 tasks ok`; the two prio-3 busy tasks starve the shell, no `ph4 window ok`; 300s gate cap hit. Legacy `[122]` was the known APS hang. | REAL-DEFECT | (a) fix the APS demo/priority window; (b) keep quarantined until fixed; (c) retire if the partition face is covered elsewhere (123/124 remain green). |
+| 141 | vm0 slog dual source: user WRITE face persists 'S [X]' lines | The scenario's `run /bin/busybox cat /var/log/slog` produces no output after `slogdemo` + `logctrl flush` (CI run 44064626618: both attempts that reached the gate hung; 142 then SKIP). A local probe reproduced the same livelock: all four vCPUs sit in the EL2 pump (`pump_cpu`/`pump_run_vcpu`/`pl011_getc_poll`) while the guest is parked in WFI, i.e. the hypervisor spins while the guest waits. | REAL-DEFECT (fd file-read spin, same family as 103/172/173) | (a) fix the fd READ path and un-quarantine 103/141/172/173 together; (b) keep quarantined; (c) drop the busybox-cat reader and read the ring through `logctrl` only. |
 | 135 | host `loglevel elog dbg` → dbg/trc emitted | `dbg` line is emitted; `trc` line is not. `ES_LOG_EMIT` filters `trc` (5) at module level `dbg` (4). 134/136/137 are green. | OBSOLETE (stale anchor) | (a) change the anchor to "trc absent after dbg" (matches the macro contract); (b) drop the trc expectation; (c) retire 135 (dbg emission is already proved by the same scenario). |
 | 140 | vm0 klog persistence (elog ring → /var/log/slog) | Gate's own dump shows `log core up, mods=3`; the anchor expects `mods=2`. VM0 now registers boot+elog+ham. 141/142 are green. | OBSOLETE (stale anchor) | (a) update the anchor to `mods=3`; (b) drop the mods line from the check (persistence is proved by the surrounding lines). |
 | 172 | vm0 jsontest: cJSON parse of services.json | No output after `run /bin/jsontest`; guest spins at ~400% CPU for 120s. Same boot printed `svc: manifest parse failed`; `[104]` once failed with `run: bad elf`. | REAL-DEFECT (loader/fd read path) | (a) fix the loader/fd read of `/etc/services.json`; (b) keep quarantined; (c) retire until the fd path is reworked (the JSON parser also has 173/174 coverage-adjacent faces). |
@@ -61,6 +62,11 @@ Run **44060155659** (after the prepare fix) came back `gates=171
 pass=170 fail=1 flaky=30 red=[103]` in 1440s. 158-161 were green this
 time (confirming the BLOCKED block was environmental), and the only red
 was 103 on its second `run` — the fd file-read spin above, quarantined.
+
+Run **44064626618** (103 quarantined) came back `gates=170 pass=168
+fail=1 skip=1 flaky=39 red=[141]` in 1904s: the same fd file-read spin
+moved to 141's `cat /var/log/slog`; 142 was SKIP as its scenario
+neighbour. 141 is now quarantined too.
 
 ## Fixture-level flake families (FLAKY, not red)
 
