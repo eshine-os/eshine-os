@@ -842,6 +842,19 @@ cur=ramfs 服务器答中在场）与 REPL/RX 残面——全审计下次开火�
 （68B 续侦,判据面=守卫四元）。A/B 对照纪律:0/3 集中挂=回归,1/3 随机挂
 =历史病;守卫自身必须过全量冒烟（首版曾把设计常态当犯罪抓 2/2）。
 
+**调度切换原子性（2026-11-17，fd 读静默楔定谳）**：`run <bin>` 连跑
+（读文件面：`cat /tmp/init40`、`cat /var/log/slog`、cJSON 读
+`/etc/services.json`、ztest slurp）静默挂死族（[103]/[141]/[167]/[172]/
+[173]）取证：gdb 任务池实捕 loader 子 `state=RUN`、`pend_deadline` 过期
+千余拍、next/wqn 全 0、且不等于任何核 `rt_cur`。真身=`rt_pick_ready` 在
+队列锁内置 RUN 并摘链后，协作路径（`rt_sched`/`rt_task_exit`）带开中断返
+回；tick 落窗经 IRQ 出口把别的任务切走，已拣出者永久滞留（vec.S 自述
+「RUN 标记永失=无声楔」）；发起切换者若为阻塞任务，须待其被唤醒才补完，
+唤醒永不到即无声死。修真=整窗 `rt_daif_save` 屏中断，调用前 DAIF 作第二
+参传入 `rt_switch_to`，vec.S 改读 x1 帧槽构造续跑 psr（与原 `mrs daif`
+现读语义等价）。判据：60 轮×4 靴高频探针旧树每靴第 3-5 轮必挂、新树
+零挂零 panic；冒烟 18/18。
+
 **站68C-68F 幽灵出生链（root-d 定谳+封口;68C 守卫族常驻）**：用户脸=
 进 rtos shell 敲回车即 bookkeep violation,毒 sp 跨靴同值;68C 域检/窗检
 /出生检/臂点复核+68D 孤儿修真（rt_pick_ready 锁内置 RUN）+68E create_el0

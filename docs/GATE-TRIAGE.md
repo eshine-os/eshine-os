@@ -4,10 +4,12 @@
 
 The new fixture suite (`tools/verify/gate_suite.py`) runs every ordinary
 gate in its own QEMU session. The first triage pass over gates 1..183
-left five quarantined entries; the three cloud runs added 173,
-103 and 141, so eight are quarantined today (excluded from the green suite, still run by
-`--suite all` and visible in `--list`). Each entry has the failing
-evidence from `.work/logs/` and the options for the one-by-one review.
+left five quarantined entries; the cloud runs added 173, 103 and 141,
+and the scheduler atomic-switch fix (below) resolved that whole
+fd file-read family (103/141/172/173). Four entries remain quarantined
+(excluded from the green suite, still run by `--suite all` and visible
+in `--list`). Each entry has the failing evidence from `.work/logs/`
+and the options for the one-by-one review.
 
 Format: `id | gate | evidence | classification | options`. The
 authoritative machine-readable list is `tools/verify/quarantine.txt`.
@@ -16,13 +18,9 @@ authoritative machine-readable list is `tools/verify/quarantine.txt`.
 
 | ID | Gate | Evidence (2026-11-17) | Classification | Options |
 |---|---|---|---|---|
-| 103 | vm0 busybox echo + cat inittab marker | First `run /bin/busybox echo ESHINE40-BB` prints and exits 0; the second `run /bin/busybox cat /tmp/init40` prints nothing and times out (CI 3/3 attempts in run 44060155659; reproduced locally on the same two-run sequence). The common factor with 143–145 (`cat /proc/*`), 172 (cJSON reads services.json) and 173 (ztest slurps /var/log/slog) is an fd READ of a file; `echo`, `date` and `ls` (getdents) do not hit it. | REAL-DEFECT (fd file-read spin) | (a) fix the fd READ path and un-quarantine 103/172/173 together; (b) keep quarantined; (c) split the gate to a single run (loses the second-load face). |
 | 122 | apsdemo: partition enforcement + steal ledger | Stalls after `aps: ph3 tasks ok`; the two prio-3 busy tasks starve the shell, no `ph4 window ok`; 300s gate cap hit. Legacy `[122]` was the known APS hang. | REAL-DEFECT | (a) fix the APS demo/priority window; (b) keep quarantined until fixed; (c) retire if the partition face is covered elsewhere (123/124 remain green). |
-| 141 | vm0 slog dual source: user WRITE face persists 'S [X]' lines | The scenario's `run /bin/busybox cat /var/log/slog` produces no output after `slogdemo` + `logctrl flush` (CI run 44064626618: both attempts that reached the gate hung; 142 then SKIP). A local probe reproduced the same livelock: all four vCPUs sit in the EL2 pump (`pump_cpu`/`pump_run_vcpu`/`pl011_getc_poll`) while the guest is parked in WFI, i.e. the hypervisor spins while the guest waits. | REAL-DEFECT (fd file-read spin, same family as 103/172/173) | (a) fix the fd READ path and un-quarantine 103/141/172/173 together; (b) keep quarantined; (c) drop the busybox-cat reader and read the ring through `logctrl` only. |
 | 135 | host `loglevel elog dbg` → dbg/trc emitted | `dbg` line is emitted; `trc` line is not. `ES_LOG_EMIT` filters `trc` (5) at module level `dbg` (4). 134/136/137 are green. | OBSOLETE (stale anchor) | (a) change the anchor to "trc absent after dbg" (matches the macro contract); (b) drop the trc expectation; (c) retire 135 (dbg emission is already proved by the same scenario). |
 | 140 | vm0 klog persistence (elog ring → /var/log/slog) | Gate's own dump shows `log core up, mods=3`; the anchor expects `mods=2`. VM0 now registers boot+elog+ham. 141/142 are green. | OBSOLETE (stale anchor) | (a) update the anchor to `mods=3`; (b) drop the mods line from the check (persistence is proved by the surrounding lines). |
-| 172 | vm0 jsontest: cJSON parse of services.json | No output after `run /bin/jsontest`; guest spins at ~400% CPU for 120s. Same boot printed `svc: manifest parse failed`; `[104]` once failed with `run: bad elf`. | REAL-DEFECT (loader/fd read path) | (a) fix the loader/fd read of `/etc/services.json`; (b) keep quarantined; (c) retire until the fd path is reworked (the JSON parser also has 173/174 coverage-adjacent faces). |
-| 173 | vm0 ztest: slog deflate→disk→readback→inflate | `run /bin/ztest` prints nothing; gate times out at 124s on all 3 CI attempts (run 44043674022), while the same binary and the same `logctrl flush` prefix pass 5/5 on the local host. Same silent-loader signature as 172. | REAL-DEFECT (loader/fd spin, CI-exposed) | (a) fix the same loader path as 172 and un-quarantine both together; (b) keep quarantined; (c) retire (141 covers slog persistence, 96/97 cover the ramfs write path). |
 | 182 | coredump: gcore reassembly, host-side ELF parse | Gate's own dump reports NT_PRSTATUS descsz **368**, not the legacy 376; `cursig` lives at desc+12 (pad0 at +14). 181 is green. | OBSOLETE (stale constants) | (a) update descsz to 368 and the cursig offset to +12 (the parser face is worth keeping); (b) retire 182 (181 already proves the core format). |
 
 ## Migration bugs fixed during the port (not quarantined)
@@ -33,6 +31,35 @@ authoritative machine-readable list is `tools/verify/quarantine.txt`.
 | 134–137 | `logdemo` was a no-op on the host shell: `shell.c` carried a duplicated empty `else if (strncmp(line, "logdemo", 64) == 0)` branch since station 58. | Removed the empty branch (real SUT defect; 134/136/137 green, 135 separately stale). |
 | 155–157, 161 | After a guest fault/off, `sched_console_owner` is already NULL; `0x1d` is not an escape and no prompt is printed. The legacy matched a stale prompt. | `wake_host()` pumps newlines until `eshine> ` appears. |
 | 183 | The bsh REPL reads one line per stdin read; the 8-byte `send_guest` chunking split REPL lines, and shared position marks matched the typed echo. | Single-write REPL lines, per-line marks, `\n<output>` anchors. Now green (FLAKY on first retry). |
+
+## Resolved: fd file-read spin family (2026-11-17)
+
+Gates **103, 141, 172 and 173** shared one silent-wedge signature: a
+`run /bin/...` that reads a file prints nothing and the gate times out
+(`cat /tmp/init40`, `cat /var/log/slog`, cJSON reading
+`/etc/services.json`, ztest slurping the slog). A local probe
+(`run /bin/busybox` echo/cat cycles in one boot) reproduced it within
+3-5 cycles and the QEMU gdbstub showed four vCPUs in the EL2 pump while
+the guest sat parked in WFI. A physical task-pool dump
+(`monitor xp` at `pool` VA 0x4018aa20 + 0x10000000) caught the loader
+child in `state=RUN` with an expired `pend_deadline`, absent from every
+queue and from every CPU's `rt_cur`.
+
+Root cause: `rt_pick_ready` marks the picked task RUN and unlinks it
+under the queue lock, but the cooperative path then returned to
+`rt_sched` with IRQs enabled; a tick landing between pick and
+`rt_switch_to` let the IRQ exit switch to a different task, leaving the
+picked one stranded (the failure mode `vec.S` itself calls "RUN 标记
+永失 = 无声楔"). If the interrupted switch belonged to a blocking task,
+the stranded task stayed lost until that task woke — which for the fd
+read path could be never.
+
+Fix: `rt_sched` and `rt_task_exit` mask DAIF across the whole
+pick→switch window and pass the caller's DAIF into `rt_switch_to` as a
+second argument; `vec.S` builds the resumption psr from that value
+instead of `mrs daif`, so the switch semantics are unchanged. A
+60-cycle × 4-boot stress probe that hung on every boot before now runs
+clean with zero panics, and `make verify-fast` (smoke) is 18/18.
 
 ## CI run findings (2026-11-17)
 

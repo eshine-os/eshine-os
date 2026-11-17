@@ -345,10 +345,21 @@ static int higher_ready_than(rt_task_t *cur)
 void rt_sched(void)
 {
     rt_task_t *next;
+    u64 d;
 
     for (;;) {
+        /* 站69(fd 读静默楔定谳):rt_pick_ready 已在队列锁内置 RUN 并
+         * 摘链——从它返回到 rt_switch_to 之间若有 tick 插入,tick 出口
+         * 的调度会切走别的任务,而已拣出的任务留在 RUN 且不在任何队/
+         * 非任何核 rt_cur;发起切换者若是阻塞任务,须待其被唤醒才补完
+         * 切换,唤醒永不到即永久失踪(gdb 任务池实捕,vec.S 自述的
+         * "RUN 标记永失=无声楔")。整窗屏中断,调用前 DAIF 作为第二参
+         * 传入 rt_switch_to 记进续跑 psr(语义与旧 mrs daif 现读等价,
+         * 只是取调用方值而非屏蔽值)。 */
+        d = rt_daif_save();
         next = rt_pick_ready();
         if (!next) {
+            rt_daif_load(d);
             /* 空转语境:无一就绪——WFI 让位(泵判 WAIT)。不 WFI 的话
              * 壳 BLOCK 后会热自旋;醒来重扫,IRQ 出口可能已直接切走
              * 我们(冻结在本帧,无需回头)。
@@ -368,13 +379,15 @@ void rt_sched(void)
                                      * 被令牌反复"唤醒"短路成忙自旋,
                                      * 等待队列随之双推自环(站19 [41] 定谳) */
             rdy_enqueue(next);
+            rt_daif_load(d);
             return;
         }
         next->state = RT_RUN;
         if (rt_cur->state == RT_RUN)/* 被切走的排回队尾(RR 语义;
                                      * 恒单份:先清残令牌,站19) */
             rt_preempt_requeue(rt_cur);
-        rt_switch_to(next);         /* noreturn:醒来已是新语境 */
+        rt_switch_to(next, d);      /* noreturn:醒来已是新语境;d=调用
+                                     * 前 DAIF,记进本任务续跑 psr */
         return;
     }
 }

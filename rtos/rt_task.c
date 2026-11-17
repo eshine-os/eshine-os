@@ -258,6 +258,7 @@ rt_task_t *rt_task_create_el0(const char *name, void (*entry)(void *),
 void rt_task_exit(void)             /* noreturn:DEAD 后必切走 */
 {
     rt_task_t *next;
+    u64 d = rt_daif_save();         /* 站69:拣选->切换窗全程屏蔽 */
 
     rt_cur->state = RT_DEAD;
     rdy_remove(rt_cur);              /* 站19:清自拣残令牌——否则摘头会
@@ -267,10 +268,12 @@ void rt_task_exit(void)             /* noreturn:DEAD 后必切走 */
                                       * 向复用后的活结构会错存帧 */
         rt_fp_owner = NULL;
     next = rt_pick_ready();
-    if (!next)
+    if (!next) {
+        rt_daif_load(d);
         rt_idle_loop();             /* 理论兜底:全灭时回 idle 轮询 */
+    }
     next->state = RT_RUN;
-    rt_switch_to(next);              /* 本任务 DEAD,永不续跑;堵返回路径 */
+    rt_switch_to(next, d);          /* 本任务 DEAD,永不续跑;堵返回路径 */
     __builtin_unreachable();
 }
 

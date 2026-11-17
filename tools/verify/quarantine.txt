@@ -5,10 +5,6 @@
 #
 # First triage pass (2026-11-17, fixture suite migration):
 122 REAL-DEFECT APS partition demo stalls after "aps: ph3 tasks ok"; the two prio-3 busy tasks starve the shell and the demo never prints ph4 (legacy [122] was the known APS hang) 2026-11-24
-103 REAL-DEFECT fd file-read spin: the first "run /bin/busybox echo" succeeds, the second "run /bin/busybox cat /tmp/init40" prints nothing and times out (CI 3/3 attempts in run 44060155659; same 2nd-run hang reproduced locally). Same family as 172/173 (fd READ of a file: cat /proc/*, cJSON read, ztest slurp) - unquarantine with the fd/loader fix 2026-11-24
-141 REAL-DEFECT fd file-read spin: the scenario's "run /bin/busybox cat /var/log/slog" prints nothing after slogdemo+logctrl flush (CI run 44064626618 hit it on both attempts that reached the gate; a local probe reproduced the same livelock: all four vCPUs in the EL2 pump with the guest parked in WFI). Same family as 103/172/173 - unquarantine with the fd/loader fix 2026-11-24
 135 OBSOLETE stale trc anchor: ES_LOG_EMIT filters trc (level 5) at module level dbg (4); dbg is emitted, trc absent (verified) - update to a negative trc assertion 2026-11-24
 140 OBSOLETE stale mods=2 anchor: VM0 registers boot+elog+ham (mods=3); the persistence face itself is green in 141/142 - update the anchor to mods=3 2026-11-24
-172 REAL-DEFECT jsontest: no output after "run /bin/jsontest"; guest spins in the loader/fd read of /etc/services.json (same family showed "run: bad elf" once in [104]; boot manifest parse also failed in that boot) 2026-11-24
-173 REAL-DEFECT ztest: "run /bin/ztest" prints nothing and the gate times out (CI 3/3 attempts, 2026-11-17 run 44043674022); same loader/fd spin family as 172, local host 5/5 green - unquarantine with the loader fix 2026-11-24
 182 OBSOLETE stale core-struct constants: the gate's own dump shows NT_PRSTATUS descsz=368 (not 376); cursig is at desc+12 with pad0 at +14 - update the constants (181 is green) 2026-11-24
