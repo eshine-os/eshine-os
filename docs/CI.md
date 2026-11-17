@@ -65,12 +65,17 @@ passes.
 The green suite needs the GPL-isolated artifacts that are never
 committed: the Linux Image, the exactly-8MiB initramfs and the musl
 busybox. `scripts/ci-gates.sh prepare` runs `scripts/bootstrap.sh --fetch`
-(builds Linux/musl/cJSON/zlib/busybox/initramfs) and the base `make`;
-GitHub Actions caches `.work` and `tools/ramfs/bin/busybox` keyed by
-`tools/artifacts.json` plus the build scripts, so subsequent runs skip
-the Linux build. `CI_SKIP_FETCH=1` is set on a cache hit. The run step
-uses `--strict-artifacts`: a missing required artifact is BLOCKED (CI
-fails) rather than silently skipped.
+(builds Linux/musl/cJSON/zlib/busybox/initramfs) **before** the base
+`make`: the kernel embeds `rtos/ramfs.cpio` at link time, so packing the
+ramfs before busybox exists produces an image where every `run /bin/...`
+gate fails with `run: open failed`. A hard assertion after `make` now
+refuses to run the suite when `cpio -it rtos/ramfs.cpio` has no
+`bin/busybox`. GitHub Actions caches `.work` and
+`tools/ramfs/bin/busybox` keyed by `tools/artifacts.json` plus the build
+scripts, so subsequent runs skip the Linux build. `CI_SKIP_FETCH=1` is
+set on a cache hit; the busybox is restored from the cache in that case.
+The run step uses `--strict-artifacts`: a missing required artifact is
+BLOCKED (CI fails) rather than silently skipped.
 
 The container job runs only the smoke tier: the pinned container has no
 network and therefore cannot fetch the guest artifacts. It still proves

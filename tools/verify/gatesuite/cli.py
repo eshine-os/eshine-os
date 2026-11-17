@@ -56,6 +56,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def _list(include_retired: bool) -> int:
     gates = registry.collect()
     retired = registry.RETIRED
+    quarantined = selection_mod.load_quarantine()
     print("namespace: 1..183 (new gates start at 184)")
     for gid, g in gates.items():
         if g.status == "retired" and not include_retired:
@@ -64,20 +65,24 @@ def _list(include_retired: bool) -> int:
         if g.scenario:
             sc = registry.SCENARIOS.get(g.scenario)
             fix = "scenario:" + (sc.fixture if sc else "?")
-        print("[%d] %-9s %-18s %s%s"
-              % (gid, g.status, fix, g.name,
-                 ("  # " + g.reason) if g.reason else ""))
+        status = "quarantined" if gid in quarantined else g.status
+        note = ("  # quarantined %s" % quarantined[gid].split()[0]
+                if gid in quarantined else
+                ("  # " + g.reason) if g.reason else "")
+        print("[%d] %-11s %-18s %s%s"
+              % (gid, status, fix, g.name, note))
     if include_retired:
         for gid, reason in sorted(retired.items()):
-            print("[%d] retired   %s" % (gid, reason))
+            print("[%d] retired     %s" % (gid, reason))
     return 0
 
 
 def _count() -> int:
     gates = registry.collect()
     active = [g for g in gates.values() if g.status == "active"]
-    print("active=%d namespace=183 retired=%d total=%d"
-          % (len(active), len(registry.RETIRED), len(gates)))
+    green = selection_mod.select(suite="green").gates
+    print("active=%d green=%d namespace=183 retired=%d total=%d"
+          % (len(active), len(green), len(registry.RETIRED), len(gates)))
     return 0
 
 

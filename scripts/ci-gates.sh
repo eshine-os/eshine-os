@@ -21,10 +21,24 @@ cd "$REPO"
 MODE="${1:-all}"
 
 if [ "$MODE" = "prepare" ] || [ "$MODE" = "all" ]; then
-    make -j"$(nproc)"
+    # Order matters: the kernel embeds rtos/ramfs.cpio at link time.  The
+    # external artifacts (busybox in tools/ramfs/bin, musl demos) must
+    # exist BEFORE make packs the ramfs, otherwise every `run /bin/...`
+    # gate fails with "run: open failed" against a busybox-less image.
     if [ "${CI_SKIP_FETCH:-0}" != "1" ]; then
         scripts/bootstrap.sh --fetch
     fi
+    make -j"$(nproc)"
+
+    # Hard artifact assertion: never run the suite against a ramfs that
+    # lacks busybox.  A cache/order regression here is a silent fixture
+    # defect that would fail ~9 gates with a misleading "open failed".
+    if ! cpio -it --quiet < rtos/ramfs.cpio | grep -qx 'bin/busybox'; then
+        echo "FATAL: rtos/ramfs.cpio has no bin/busybox;" >&2
+        echo "       run tools/build-busybox.sh, then make, before the suite" >&2
+        exit 1
+    fi
+
     bash -n scripts/*.sh tools/*.sh
     python3 -m py_compile \
         tools/verify/*.py \
