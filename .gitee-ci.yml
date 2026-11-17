@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Julian Chu
+#
+# Gitee Go pipeline (pipeline-as-code). Gitee Go must be enabled once in
+# the repository settings (服务 -> Gitee Go); until then this file has no
+# effect. Same smoke tier as GitHub Actions: build + static checks +
+# gates 1..18 (scripts/ci-smoke.sh). The full 183-gate suite is a
+# local/release gate.
+version: '1.0'
+name: ci
+displayName: eshine-os CI (smoke)
+triggers:
+  trigger: auto
+  push:
+    branches:
+      precise:
+        - master
+  pr:
+    branches:
+      precise:
+        - master
+stages:
+  - name: smoke
+    displayName: build + smoke gates
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: build@gcc
+        name: build_and_smoke
+        displayName: cross build + QEMU smoke
+        gccVersion: '9.4'
+        commands:
+          - set -e
+          - apt-get update
+          - apt-get install -y gcc-aarch64-linux-gnu qemu-system-arm device-tree-compiler python3 make gdb-multiarch
+          - bash scripts/ci-smoke.sh

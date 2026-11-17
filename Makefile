@@ -82,6 +82,11 @@ verify: $(TARGET) rtos.bin guest2.bin
 verify-fast: $(TARGET) rtos.bin guest2.bin
 	python3 tools/verify/verify_el2.py --stop-after=36
 
+# CI smoke tier (GitHub Actions / Gitee Go / local sanity): build + static
+# checks + gates 1..18 (hypervisor boot + VM0 RTOS up). Full suite = verify.
+ci-smoke: $(TARGET) rtos.bin guest2.bin
+	CI_NO_BUILD=1 bash scripts/ci-smoke.sh
+
 bootstrap:
 	scripts/bootstrap.sh --all
 
@@ -171,7 +176,7 @@ tools/ramfs/bin/cyclictest: tools/ramfs-cyclictest.c
 tools/ramfs/bin/coreparse: tools/ramfs-coreparse.c     # 站64:ELF core 离线解析件
 	$(CROSS)gcc $(EL0FLAGS) -o $@ $< -lc
 
-.PHONY: all run verify clean demos
+.PHONY: all run verify verify-fast ci-smoke clean demos
 
 # 头文件自动依赖(-MMD -MP),头文件改动触发重编
 -include $(OBJS:.o=.d) $(GOBJS:.o=.d) $(RTOBJS:.o=.d)
