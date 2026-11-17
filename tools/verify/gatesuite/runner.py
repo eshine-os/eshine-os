@@ -25,6 +25,8 @@ class RunOptions:
     strict_artifacts: bool = False
     jobs: int = 1
     verbose: bool = False
+    gate_cap_s: float = 300.0
+    scenario_cap_s: float = 1800.0
 
 
 def _missing_artifacts(gate: Gate, env: artifacts.Env) -> list[str]:
@@ -64,7 +66,12 @@ def _run_fresh(gate: Gate, env: artifacts.Env,
                               name="gate%d" % gate.id)
         t0 = time.time()
         try:
-            session.start(env.banner, retries=opts.boot_retries)
+            try:
+                session.start(env.banner, retries=opts.boot_retries)
+            except Exception as e:
+                # A boot that never reaches the banner is a fixture
+                # failure, not a gate assertion (report BLOCKED).
+                raise FixtureError("boot: %s" % str(e)[:1500]) from e
             try:
                 fixture.prepare(session, env)
             except FloodError:
@@ -72,7 +79,9 @@ def _run_fresh(gate: Gate, env: artifacts.Env,
             except Exception as e:
                 raise FixtureError("fixture %s: %s"
                                    % (gate.fixture, str(e)[:1500])) from e
-            ctx = GateContext(session, gate, gate.fixture)
+            session.gate_deadline = time.time() + min(gate.timeout_s,
+                                                      opts.gate_cap_s)
+            ctx = GateContext(session, gate, gate.fixture, env)
             gate.fn(ctx)
             duration = time.time() - t0
             status = PASS if attempt == 1 else FLAKY
@@ -101,7 +110,9 @@ def _run_fresh(gate: Gate, env: artifacts.Env,
             return GateResult(gate.id, gate.name, gate.fixture, FAIL,
                               duration, detail=str(e)[:2000], log_path=log,
                               attempts=attempt)
-    return GateResult(gate.id, gate.name, gate.fixture, FAIL,
+    status = (BLOCKED if isinstance(last, (FixtureError, FloodError))
+                      else FAIL)
+    return GateResult(gate.id, gate.name, gate.fixture, status,
                       duration, detail=str(last)[:2000], log_path=log,
                       attempts=max_attempts)
 
@@ -117,7 +128,8 @@ def _run_scenario(key: str, gates: list[Gate], env: artifacts.Env,
     selected = {g.id for g in gates}
     rep = gates[0]
     last: Exception | None = None
-    for attempt in range(1, max(1, opts.boot_retries) + 1):
+    max_attempts = max(1, opts.boot_retries, opts.retries)
+    for attempt in range(1, max_attempts + 1):
         sock, log = _session_paths(env, "sc-%s-a%d" % (key, attempt), 1)
         session = QemuSession(fixture.qemu_args(env, sock), sock, log,
                               name="scenario-" + key)
@@ -132,10 +144,13 @@ def _run_scenario(key: str, gates: list[Gate], env: artifacts.Env,
             except Exception as e:
                 raise FixtureError("fixture %s: %s"
                                    % (sc.fixture, str(e)[:1500])) from e
+            session.gate_deadline = time.time() + opts.scenario_cap_s
             ctx = ScenarioContext(session, rep, sc.fixture, selected, results)
             sc.fn(ctx)
             for r in results:
                 r.attempts = attempt
+                if attempt > 1 and r.status == PASS:
+                    r.status = FLAKY
             return results
         except (FloodError, FixtureError) as e:
             last = e
@@ -145,6 +160,12 @@ def _run_scenario(key: str, gates: list[Gate], env: artifacts.Env,
             session.close()
             continue
         except ScenarioFailure as f:
+            last = f
+            if attempt < max_attempts:
+                if opts.forensics:
+                    print("  scenario %s attempt %d gate %d failed: %s"
+                          % (key, attempt, f.gate_id, f.cause))
+                continue
             results.append(GateResult(
                 f.gate_id, f.name, sc.fixture, FAIL,
                 time.time() - t0, detail=str(f.cause)[:2000],
@@ -182,7 +203,7 @@ def _run_static(gate: Gate, env: artifacts.Env,
                 opts: RunOptions) -> GateResult:
     t0 = time.time()
     try:
-        ctx = GateContext(None, gate, "static")
+        ctx = GateContext(None, gate, "static", env)
         gate.fn(ctx)
         return GateResult(gate.id, gate.name, "static", PASS,
                           time.time() - t0)

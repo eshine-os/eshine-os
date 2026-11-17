@@ -57,6 +57,7 @@ class QemuSession:
         self.log = None
         self.buf = b""
         self.epoch = 0
+        self.gate_deadline: float | None = None
         self._closed = False
 
     # -- lifecycle -----------------------------------------------------
@@ -154,8 +155,15 @@ class QemuSession:
         needle = needle.encode() if isinstance(needle, str) else needle
         start = 0 if start is None else start
         deadline = time.time() + timeout_s
+        if self.gate_deadline is not None:
+            deadline = min(deadline, self.gate_deadline)
         while needle not in self.buf[start:]:
             if time.time() > deadline:
+                if (self.gate_deadline is not None
+                        and time.time() > self.gate_deadline):
+                    raise TimeoutError(
+                        "gate deadline exceeded while waiting for %r"
+                        % needle)
                 raise TimeoutError(
                     "timeout waiting for %r; output so far:\n%s"
                     % (needle,

@@ -31,6 +31,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
                    help="QEMU zero-byte boot restarts (default 3)")
     p.add_argument("--jobs", type=int, default=1,
                    help="parallel workers (currently serial; reserved)")
+    p.add_argument("--gate-cap", type=float, default=300.0,
+                   help="per-gate wall-clock cap in seconds (default 300)")
+    p.add_argument("--scenario-cap", type=float, default=1800.0,
+                   help="per-scenario wall-clock cap in seconds (default 1800)")
     p.add_argument("--forensics", action="store_true",
                    help="print buffer tails on failures")
     p.add_argument("--keep-on-fail", action="store_true",
@@ -123,7 +127,9 @@ def main(argv: list[str] | None = None) -> int:
         forensics=args.forensics,
         keep_on_fail=args.keep_on_fail,
         strict_artifacts=args.strict_artifacts,
-        jobs=max(1, args.jobs)))
+        jobs=max(1, args.jobs),
+        gate_cap_s=args.gate_cap,
+        scenario_cap_s=args.scenario_cap))
     if args.json:
         payload = {
             "suite": report.suite, "partial": report.partial,

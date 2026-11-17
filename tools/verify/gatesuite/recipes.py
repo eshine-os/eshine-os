@@ -53,7 +53,7 @@ def boot_host(s, env: Env, *, timeout_s: float = 30.0) -> None:
 
 
 def vm0_ready(s, env: Env, *, attach: bool = True,
-              boot_timeout_s: float = 90.0) -> None:
+              boot_timeout_s: float = 30.0) -> None:
     """Create and run VM0, wait for init/services, optionally attach."""
     p = s.mark()
     s.send("vmcreate 0\n")
@@ -69,7 +69,7 @@ def vm0_ready(s, env: Env, *, attach: bool = True,
                          % s.buf[p:][-500:])
     if attach:
         attach_vm(s, 0, "\r\nrtos> ", pre_sleep_s=2.5,
-                  wake_retries=6, timeout_s=60.0)
+                  wake_retries=6, timeout_s=25.0)
 
 
 def vm1_boot(s, env: Env, *, timeout_s: float = 60.0) -> None:
@@ -87,7 +87,7 @@ def vm1_boot(s, env: Env, *, timeout_s: float = 60.0) -> None:
 def vm1_ready(s, env: Env, *, timeout_s: float = 60.0) -> None:
     vm1_boot(s, env, timeout_s=timeout_s)
     attach_vm(s, 1, "\nvm1> ", pre_sleep_s=0.0,
-              wake_retries=6, timeout_s=60.0)
+              wake_retries=6, timeout_s=25.0)
 
 
 def vm2_ready(s, env: Env, *, timeout_s: float = 300.0) -> None:
@@ -121,13 +121,23 @@ def attach_vm(s, vm_id: int, prompt: str | bytes, *,
         time.sleep(pre_sleep_s)
     p = s.mark()
     last: Exception | None = None
-    for _ in range(max(1, wake_retries)):
+    deadline = time.time() + timeout_s
+    # Pump often: the RX wake loss (station 23/24 family) drops a byte,
+    # it does not make the guest slow, so a 12s wait per newline spends
+    # most of the attach budget on one lost byte.  Each pump re-sends the
+    # wake and waits only ~1.5s before trying again; `wake_retries` sets
+    # a bounded number of pumps and `timeout_s` bounds the whole attach.
+    max_tries = max(1, wake_retries) * 5
+    for _ in range(max_tries):
+        if time.time() > deadline:
+            break
         if s.flooded(p):
             raise FloodError("all-space flood at console attach: %r"
                              % s.buf[p:][-500:])
         s.send("\n")
         try:
-            s.expect(prompt, 12.0, start=p)
+            s.expect(prompt, min(1.5, max(0.2, deadline - time.time())),
+                     start=p)
             return
         except TimeoutError as e:
             last = e
@@ -139,14 +149,59 @@ def attach_vm(s, vm_id: int, prompt: str | bytes, *,
                          % (prompt, s.buf[p:][-500:]))
     raise TimeoutError(
         "wake prompt %r never appeared after %d retries; output so far:\n%s"
-        % (prompt, wake_retries,
+        % (prompt, max_tries,
            s.buf[p:][-4000:].decode(errors="replace"))) from last
 
 
-def escape_to_host(s, *, timeout_s: float = 5.0) -> None:
+def escape_pump(s, anchor: str | bytes = "console -> host", *,
+                timeout_s: float = 25.0) -> None:
+    """Send the 0x1d escape and re-send until the anchor appears.
+
+    The escape byte travels the same RX injection path as the attach
+    wake (station 23/24 lost-byte family); one send + long wait loses
+    the whole scenario on a dropped byte.  Re-send every ~1.5s within
+    the deadline instead.
+    """
     p = s.mark()
-    s.send(b"\x1d")
-    s.expect("console -> host", timeout_s, start=p)
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        s.send(b"\x1d")
+        try:
+            s.expect(anchor, min(1.5, max(0.2, deadline - time.time())),
+                     start=p)
+            return
+        except TimeoutError:
+            continue
+    raise TimeoutError(
+        "escape anchor %r never appeared; output so far:\n%s"
+        % (anchor, s.buf[p:][-2000:].decode(errors="replace")))
+
+
+def escape_to_host(s, *, timeout_s: float = 25.0) -> None:
+    escape_pump(s, "console -> host", timeout_s=timeout_s)
+
+
+def wake_host(s, *, timeout_s: float = 25.0) -> None:
+    """Wake the host shell after a guest death (owner already NULL).
+
+    A fault/off teardown returns the console to the host without
+    printing a prompt (vm_stop sets sched_console_owner = NULL), and
+    0x1d is only an escape while a guest still owns the console.  Pump
+    newlines to run the host shell's line loop and print `eshine> `.
+    """
+    p = s.mark()
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        s.send("\n")
+        try:
+            s.expect("eshine> ", min(1.5, max(0.2, deadline - time.time())),
+                     start=p)
+            return
+        except TimeoutError:
+            continue
+    raise TimeoutError(
+        "host prompt never appeared after guest death; output so far:\n%s"
+        % s.buf[p:][-2000:].decode(errors="replace"))
 
 
 def hotkey(s, key: str, *, expect_vm: bool = True,

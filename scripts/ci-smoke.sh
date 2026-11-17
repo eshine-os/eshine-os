@@ -22,6 +22,7 @@ python3 -m py_compile \
     tools/verify/*.py \
     tools/verify/gatesuite/*.py \
     tools/verify/gatesuite/gates/*.py \
+    tools/verify/tests/*.py \
     tools/*.py scripts/*.py
 
 if [ -n "${CI_SMOKE_GATES:-}" ]; then

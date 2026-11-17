@@ -51,11 +51,11 @@ case "$cmd" in
         # The verifier's own preflight decides which artifacts this run
         # needs; --stop-after=36 must work on a clean work root.
         run make -B -j"$(nproc)"
-        run python3 tools/verify/verify_el2.py "$@" ;;
+        run python3 tools/verify/gate_suite.py "$@" ;;
     selftest)
         build
         run make -B -j"$(nproc)"
-        run python3 tools/verify/verify_el2.py --stop-after=36 ;;
+        run python3 tools/verify/gate_suite.py --stop-after=36 ;;
     help|*)
         cat <<EOF
 usage: scripts/container.sh <command>

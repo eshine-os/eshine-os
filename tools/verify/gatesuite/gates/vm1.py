@@ -18,7 +18,7 @@ from ..registry import gate, scenario, scenario_gate
 
 def _attach(ctx, vm_id: int, prompt: str, *, pre_sleep: float = 0.0):
     recipes.attach_vm(ctx.s, vm_id, prompt, pre_sleep_s=pre_sleep,
-                      wake_retries=6, timeout_s=60.0)
+                      wake_retries=6, timeout_s=25.0)
 
 
 def _release_host(ctx) -> None:

@@ -43,16 +43,17 @@ def load_quarantine(path: str = QUARANTINE) -> dict[int, str]:
     out: dict[int, str] = {}
     if not os.path.exists(path):
         return out
-    for line in open(path, encoding="utf-8"):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split(None, 1)
-        try:
-            gid = int(parts[0])
-        except ValueError:
-            continue
-        out[gid] = parts[1] if len(parts) > 1 else "quarantined"
+    with open(path, encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(None, 1)
+            try:
+                gid = int(parts[0])
+            except ValueError:
+                continue
+            out[gid] = parts[1] if len(parts) > 1 else "quarantined"
     return out
 
 

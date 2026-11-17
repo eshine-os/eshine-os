@@ -112,10 +112,11 @@ class ScenarioFailure(Exception):
 class GateContext:
     """Per-gate execution context passed to a gate function."""
 
-    def __init__(self, session, gate: Gate, fixture_name: str):
+    def __init__(self, session, gate: Gate, fixture_name: str, env=None):
         self.s = session
         self.gate = gate
         self.fixture_name = fixture_name
+        self.env = env
         self.state: dict = {}
 
     def mark(self) -> int:

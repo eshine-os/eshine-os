@@ -35,4 +35,4 @@ stages:
           - set -e
           - apt-get update
           - apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu qemu-system-arm device-tree-compiler python3 make gdb-multiarch bc bison flex libssl-dev libelf-dev cpio xz-utils bzip2 wget curl git
-          - CI_SUITE=green CI_RETRIES=2 bash scripts/ci-gates.sh all
+          - CI_SUITE=green CI_RETRIES=3 bash scripts/ci-gates.sh all

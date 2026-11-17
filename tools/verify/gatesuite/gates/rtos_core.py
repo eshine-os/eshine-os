@@ -22,7 +22,7 @@ def _send(ctx, line: str, *, guest: bool = False) -> int:
       fixture="vm0ready", timeout_s=90.0)
 def gate_19(ctx):
     recipes.attach_vm(ctx.s, 0, "\r\nrtos> ", pre_sleep_s=2.5,
-                      wake_retries=6, timeout_s=60.0)
+                      wake_retries=6, timeout_s=25.0)
 
 
 @gate(20, "VM0 (rtos) selftest OK (x19/x30 live across 100 MMIO traps)",
