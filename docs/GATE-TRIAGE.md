@@ -111,6 +111,12 @@ Two changes, no coverage loss:
 - **Adaptive attach**: `vm0_ready` no longer sleeps a fixed 2.5 s before
   `vmconsole`; it waits for `svc: governed` or 250 ms of console
   quiescence (bounded 5 s). Saves ~2 s on every VM0 boot.
+- **Batched-session anchor fix**: gate 103 took a fresh position mark
+  after waiting for its own typed echo, so the read drain could already
+  hold the command output and the following expect waited behind it
+  (CI run 44226378906, 6 attempts). The output is now anchored at line
+  start (`\nESHINE40-BB` / `\nESHINE40-INIT`) from the pre-send mark,
+  the same discipline as gate 183.
 - **Shared-boot batches** (`registry.BATCHES`): vm0 command gates whose
   face returns to the prompt without changing global VM state share a
   boot, five gates per batch (15 boots instead of ~100). Each gate still
