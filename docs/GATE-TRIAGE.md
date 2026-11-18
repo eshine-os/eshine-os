@@ -125,6 +125,12 @@ Two changes, no coverage loss:
   pause/kill/console-handback gates (25, 26, 122-126, 130, 131) keep a
   private boot.
 
+Run **44265186558** (final topology: static + artifacts + 3 shards +
+container, no apt): success in **403 s** wall, 173/173 gates green
+(47/70/56; suites 221/283/107 s).  FLAKY counts were higher on this
+loaded runner (5/19/3 gates passed on retry, zero red) — watch, but
+each retried pass is reported, not hidden.
+
 Run **44262298722** (container path identity + initramfs skip): all
 173 gates green in three shards (47/70/56; 76.5/126.7/174.3 s), zero
 fail/blocked, one-to-three FLAKY per shard (retried within the shard).

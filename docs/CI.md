@@ -30,9 +30,11 @@ pause or kill the VM, hand the console back to the host, or crash it
 (25, 26, 122-126, 130, 131) keep a private boot. This cut the green suite
 from ~800 s to ~370-400 s locally and to 501 s on the GitHub runner
 (2026-11-18; 173/173 green both ways).  With the artifacts cache and
-three shards (run 44262298722): artifacts 117 s, shards 135/203/244 s
-wall (suites 77/127/174 s), container 54 s, static ~10 s — the run
-is bounded by the slowest shard, not by the sum.
+three shards, the run is bounded by the slowest shard, not by the sum:
+run 44265186558 finished in **403 s** wall (static 12 s, artifacts 19 s
+on a cache hit, shards 313/379/188 s, container 90 s; 173/173 gates
+green).  The first run with this topology (44262298722) spent 117 s
+cold-building the artifacts and 135/203/244 s on the shards.
 
 A host-side `smoke` job is deliberately absent: the `container` job
 runs the same `scripts/ci-smoke.sh` in the pinned image with no
