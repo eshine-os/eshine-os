@@ -52,6 +52,38 @@ def boot_host(s, env: Env, *, timeout_s: float = 30.0) -> None:
     s.expect("eshine> ", timeout_s)
 
 
+def wait_quiet(s, *, quiet_s: float = 0.25, timeout_s: float = 5.0,
+               anchor: str | bytes = "svc: governed") -> None:
+    """Wait until the VM0 boot output quiesces (or the anchor appears).
+
+    Station 69: replaces the fixed 2.5 s pre-attach sleep.  The service
+    storm after `init: inittab processed` ends with `svc: governed`; on
+    a quiet boot nothing more arrives at all.  Either way we attach as
+    soon as the console stops printing, instead of always paying 2.5 s
+    per VM0 boot (100+ gates).
+    """
+    import socket
+
+    anchor_b = anchor.encode() if isinstance(anchor, str) else anchor
+    deadline = time.time() + timeout_s
+    last_len = len(s.buf)
+    quiet_since = time.time()
+    while time.time() < deadline:
+        if anchor_b and anchor_b in s.buf:
+            return
+        try:
+            s.recv(timeout=0.1)
+        except socket.timeout:
+            if time.time() - quiet_since > quiet_s:
+                return
+            continue
+        except (ConnectionError, OSError):
+            return
+        if len(s.buf) != last_len:
+            last_len = len(s.buf)
+            quiet_since = time.time()
+
+
 def vm0_ready(s, env: Env, *, attach: bool = True,
               boot_timeout_s: float = 30.0) -> None:
     """Create and run VM0, wait for init/services, optionally attach."""
@@ -68,7 +100,8 @@ def vm0_ready(s, env: Env, *, attach: bool = True,
         raise FloodError("all-space flood during VM0 boot: %r"
                          % s.buf[p:][-500:])
     if attach:
-        attach_vm(s, 0, "\r\nrtos> ", pre_sleep_s=2.5,
+        wait_quiet(s)
+        attach_vm(s, 0, "\r\nrtos> ", pre_sleep_s=0.0,
                   wake_retries=6, timeout_s=25.0)
 
 

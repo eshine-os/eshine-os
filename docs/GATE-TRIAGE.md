@@ -101,6 +101,22 @@ all-space flood family at console attach, four fixture attempts in a
 row (9.5s total). No gate logic failed. CI now uses six boot attempts
 (`CI_BOOT_RETRIES=6`); a flood retry is immediate, so the tail is cheap.
 
+## Wall-clock compression (2026-11-18)
+
+Green suite: 797 s (CI run 44090072201) -> 370 s local, same 173 gates.
+Two changes, no coverage loss:
+
+- **Adaptive attach**: `vm0_ready` no longer sleeps a fixed 2.5 s before
+  `vmconsole`; it waits for `svc: governed` or 250 ms of console
+  quiescence (bounded 5 s). Saves ~2 s on every VM0 boot.
+- **Shared-boot batches** (`registry.BATCHES`): vm0 command gates whose
+  face returns to the prompt without changing global VM state share a
+  boot, five gates per batch (15 boots instead of ~100). Each gate still
+  reports independently; a failing gate is retried on a fresh boot, and
+  a fixture that cannot be established is retried per gate. The
+  pause/kill/console-handback gates (25, 26, 122-126, 130, 131) keep a
+  private boot.
+
 ## Fixture-level flake families (FLAKY, not red)
 
 These pass on a retry and are reported as `FLAKY`; they are SUT boot

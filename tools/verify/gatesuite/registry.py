@@ -147,6 +147,29 @@ def load_all() -> None:
     from . import gates  # noqa: F401  (import for side effects)
 
 
+# 共享引导批次（2026-11-18 提速）：同一批 vm0 门共用一个 QEMU 会话，
+# 每门仍有独立 PASS/FAIL；失败的那门在新引导上重试（语义同 --retries）。
+# 只批「跑完回提示符、不改全局态」的普通命令门；会暂停/杀 VM、切控制台
+# 所有者的门保持独立引导。排除表=25(yield 暂停)/26(host 交还控制台)/
+# 122-126(分区与崩溃族)/130(exit)/131(overflow panic)。
+BATCH_EXCLUDE = frozenset({25, 26, 122, 123, 124, 125, 126, 130, 131})
+BATCH_SIZE = 5
+BATCHES: dict[str, tuple[int, ...]] = {}
+
+
+def _assign_batches(gates: dict[int, Gate]) -> None:
+    cand = [g.id for g in gates.values()
+            if g.status == "active" and g.fixture == "vm0"
+            and g.scenario is None and g.id not in BATCH_EXCLUDE]
+    BATCHES.clear()
+    for i in range(0, len(cand), BATCH_SIZE):
+        chunk = tuple(sorted(cand[i:i + BATCH_SIZE]))
+        key = "vm0-%02d" % (i // BATCH_SIZE + 1)
+        BATCHES[key] = chunk
+        for gid in chunk:
+            gates[gid] = dataclasses.replace(gates[gid], batch=key)
+
+
 def collect() -> dict[int, Gate]:
     load_all()
     errors = validate()
@@ -154,7 +177,9 @@ def collect() -> dict[int, Gate]:
         for e in errors:
             print("registry: " + e, file=sys.stderr)
         raise SystemExit("gate registry invalid")
-    return dict(sorted(GATE.items()))
+    out = dict(sorted(GATE.items()))
+    _assign_batches(out)
+    return out
 
 
 def name_of(gate_id: int) -> str:

@@ -21,6 +21,15 @@ results. A failed scenario check is retried on a fresh fixture like an
 ordinary gate; if it still fails, that gate is FAIL and the rest of that
 scenario SKIP, while other fixtures keep running.
 
+To keep the wall clock down, vm0 command gates whose face returns to the
+prompt without changing global VM state share a boot in batches of up to
+five (`registry.BATCHES`): each gate still runs and reports its own
+PASS/FLAKY/FAIL, a failing gate is retried on a fresh boot, and a fixture
+that cannot be established is retried up to `--boot-retries`. Gates that
+pause or kill the VM, hand the console back to the host, or crash it
+(25, 26, 122-126, 130, 131) keep a private boot. This cut the green suite
+from ~800 s to ~370 s locally (2026-11-18; 173/173 green).
+
 Gate IDs are stable documentation anchors. The historical namespace is
 1..183; retired gates leave gaps (`--list --include-retired`) and new
 gates start at 184. The runner keeps the `[N/183]` line format for
