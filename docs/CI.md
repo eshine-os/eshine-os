@@ -28,7 +28,8 @@ PASS/FLAKY/FAIL, a failing gate is retried on a fresh boot, and a fixture
 that cannot be established is retried up to `--boot-retries`. Gates that
 pause or kill the VM, hand the console back to the host, or crash it
 (25, 26, 122-126, 130, 131) keep a private boot. This cut the green suite
-from ~800 s to ~370 s locally (2026-11-18; 173/173 green).
+from ~800 s to ~370-400 s locally and to 501 s on the GitHub runner
+(2026-11-18; 173/173 green both ways).
 
 Gate IDs are stable documentation anchors. The historical namespace is
 1..183; retired gates leave gaps (`--list --include-retired`) and new

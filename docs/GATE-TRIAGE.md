@@ -103,7 +103,9 @@ row (9.5s total). No gate logic failed. CI now uses six boot attempts
 
 ## Wall-clock compression (2026-11-18)
 
-Green suite: 797 s (CI run 44090072201) -> 370 s local, same 173 gates.
+Green suite: 797 s (CI run 44090072201) -> 370-401 s local and
+501 s on the GitHub runner (PR run 44225045991), same 173 gates,
+173/173 green in all three runs.
 Two changes, no coverage loss:
 
 - **Adaptive attach**: `vm0_ready` no longer sleeps a fixed 2.5 s before
