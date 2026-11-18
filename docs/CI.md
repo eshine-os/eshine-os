@@ -6,7 +6,7 @@
 
 | where | config | what runs |
 |---|---|---|
-| GitHub Actions | `.github/workflows/ci.yml` | smoke (gates 1..18) + artifacts (guest artifact cache) + green (3 shards, run inside the pinned toolchain image) |
+| GitHub Actions | `.github/workflows/ci.yml` | static (trailer + host independence) + artifacts (guest artifact cache) + green (3 shards, run inside the pinned toolchain image) + container (boot smoke, no network) |
 | Gitee Go | `.gitee-ci.yml` | the same green suite via `scripts/ci-gates.sh` |
 | local | `make verify` | green suite; two consecutive runs close a station |
 | local fast | `make verify-fast` / `make ci-smoke` | smoke (gates 1..18) |
@@ -29,7 +29,17 @@ that cannot be established is retried up to `--boot-retries`. Gates that
 pause or kill the VM, hand the console back to the host, or crash it
 (25, 26, 122-126, 130, 131) keep a private boot. This cut the green suite
 from ~800 s to ~370-400 s locally and to 501 s on the GitHub runner
-(2026-11-18; 173/173 green both ways).
+(2026-11-18; 173/173 green both ways).  With the artifacts cache and
+three shards (run 44262298722): artifacts 117 s, shards 135/203/244 s
+wall (suites 77/127/174 s), container 54 s, static ~10 s — the run
+is bounded by the slowest shard, not by the sum.
+
+A host-side `smoke` job is deliberately absent: the `container` job
+runs the same `scripts/ci-smoke.sh` in the pinned image with no
+network, and green gates 1-18 cover the boot tier again.  The removed
+job only added an apt-get that stalled 7-15 min on hosted runners
+(runs 44225068223/44226378906/44262298722).  `make ci-smoke` remains
+the local fast tier.
 
 Gate IDs are stable documentation anchors. The historical namespace is
 1..183; retired gates leave gaps (`--list --include-retired`) and new

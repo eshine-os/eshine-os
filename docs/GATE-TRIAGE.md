@@ -125,6 +125,14 @@ Two changes, no coverage loss:
   pause/kill/console-handback gates (25, 26, 122-126, 130, 131) keep a
   private boot.
 
+Run **44262298722** (container path identity + initramfs skip): all
+173 gates green in three shards (47/70/56; 76.5/126.7/174.3 s), zero
+fail/blocked, one-to-three FLAKY per shard (retried within the shard).
+Job wall times: artifacts 117 s, shards 135/203/244 s, container 54 s.
+The only slow job was the legacy host `smoke` (apt stalled past
+10 min); it is removed in favor of the container job plus static
+checks.
+
 Container path identity (run 44258630525): the cached `.work` carries
 absolute paths inside the musl toolchain (`musl-gcc.specs`, the
 `Scrt1.o` link lines), so the container must mount the repository at

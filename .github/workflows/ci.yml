@@ -3,9 +3,11 @@
 #
 # Fixture-based CI. Gates run independently (a fresh QEMU per gate, or a
 # scenario fixture for stateful families), so one red gate cannot block
-# the rest. `smoke` is the fast host+VM0 boot tier; `green` runs every
-# active non-heavy gate with the external Linux/busybox artifacts built
-# (and cached) here. Yocto/image gates are local/release only.
+# the rest. `static` runs the checkout-only checks; `artifacts` builds
+# (and caches) the external Linux/busybox artifacts once per generation;
+# `green` runs every active non-heavy gate in three shards inside the
+# pinned toolchain image; `container` re-runs the boot smoke with no
+# network. Yocto/image gates are local/release only.
 #
 # Runner pin: ubuntu-24.04. The QEMU shipped by ubuntu-latest
 # (26.04 at the time of writing, qemu-system-arm 10.2.1) takes an EL2
@@ -22,20 +24,19 @@ concurrency:
   group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 jobs:
-  smoke:
+  static:
+    # The boot tier lives in `container` (same script, pinned image,
+    # no network) and green gates 1-18 cover it again; a host-side
+    # smoke job would be a third copy plus an apt-get that repeatedly
+    # stalled 7-15 min on hosted runners (runs 44225068223/
+    # 44226378906/44262298722).  This job only runs the checks that
+    # need nothing but the checkout.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: install toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu \
-            device-tree-compiler python3 qemu-system-arm gdb-multiarch
-      - name: smoke (host + VM0 boot, gates 1..18)
-        run: bash scripts/ci-smoke.sh
       - name: trailer validation
         run: |
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
