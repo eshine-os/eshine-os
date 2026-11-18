@@ -6,7 +6,7 @@
 
 | where | config | what runs |
 |---|---|---|
-| GitHub Actions | `.github/workflows/ci.yml` | smoke (gates 1..18) + green (active non-heavy minus quarantined reds) |
+| GitHub Actions | `.github/workflows/ci.yml` | static (trailer + host independence) + artifacts (guest artifact cache) + green (3 shards, run inside the pinned toolchain image) + container (boot smoke, no network) |
 | Gitee Go | `.gitee-ci.yml` | the same green suite via `scripts/ci-gates.sh` |
 | local | `make verify` | green suite; two consecutive runs close a station |
 | local fast | `make verify-fast` / `make ci-smoke` | smoke (gates 1..18) |
@@ -28,7 +28,20 @@ PASS/FLAKY/FAIL, a failing gate is retried on a fresh boot, and a fixture
 that cannot be established is retried up to `--boot-retries`. Gates that
 pause or kill the VM, hand the console back to the host, or crash it
 (25, 26, 122-126, 130, 131) keep a private boot. This cut the green suite
-from ~800 s to ~370 s locally (2026-11-18; 173/173 green).
+from ~800 s to ~370-400 s locally and to 501 s on the GitHub runner
+(2026-11-18; 173/173 green both ways).  With the artifacts cache and
+three shards, the run is bounded by the slowest shard, not by the sum:
+run 44265186558 finished in **403 s** wall (static 12 s, artifacts 19 s
+on a cache hit, shards 313/379/188 s, container 90 s; 173/173 gates
+green).  The first run with this topology (44262298722) spent 117 s
+cold-building the artifacts and 135/203/244 s on the shards.
+
+A host-side `smoke` job is deliberately absent: the `container` job
+runs the same `scripts/ci-smoke.sh` in the pinned image with no
+network, and green gates 1-18 cover the boot tier again.  The removed
+job only added an apt-get that stalled 7-15 min on hosted runners
+(runs 44225068223/44226378906/44262298722).  `make ci-smoke` remains
+the local fast tier.
 
 Gate IDs are stable documentation anchors. The historical namespace is
 1..183; retired gates leave gaps (`--list --include-retired`) and new
@@ -39,6 +52,7 @@ existing tooling.
 
     python3 tools/verify/gate_suite.py --suite smoke
     python3 tools/verify/gate_suite.py --suite green --retries 3
+    python3 tools/verify/gate_suite.py --suite green --shard 2/3
     python3 tools/verify/gate_suite.py --gates 1-18,20,27-29
     python3 tools/verify/gate_suite.py --fixture vm0
     python3 tools/verify/gate_suite.py --list
@@ -68,6 +82,40 @@ cooldown; the CLI default is 3); the all-space flood
 tried (the flood retry is immediate, so the extra attempts are cheap); a fixture that cannot reach its readiness anchors is retried the
 same way. These retries are visible as `FLAKY` when a gate eventually
 passes.
+
+## Shards and run time
+
+The green suite is split into three shards (`--shard K/3`).  Sharding
+is applied to whole scenario/batch/gate groups, so a stateful scenario
+or a shared-boot batch is never split across runners; each shard runs
+on its own runner in parallel.
+
+Guest artifacts are built once per cache generation by the `artifacts`
+job.  Its cache key is pinned to `tools/artifacts.json` and
+`3rd/manifest.yaml` (the artifact versions), not to build-script mtimes,
+so editing a build script no longer triggers a cold Linux/musl/busybox
+rebuild (~17 min in runs 44093367769/44093324790).  The green shards run
+inside the pinned `docker/Dockerfile.build` image, which removes the
+per-run `apt-get install` (it cost 17-24 min on two hosted runners in
+runs 44225068223/44226378906).  Every shard still runs `prepare` inside
+the image (a ~20 s `make` plus the inline static checks and the ramfs
+busybox assertion), because `eshine.elf`/`rtos.bin` are build products
+that are deliberately not cached.
+
+The container mounts the repository at **the same absolute path** it
+has on the runner (`-v "$PWD:$PWD"`, `ESHINE_WORK="$PWD/.work"`,
+`-w "$PWD"`).  The cached `.work` contains absolute paths baked into
+the musl toolchain (`musl-gcc.specs`, the `Scrt1.o` link lines); a
+container that mounts the tree at `/src` cannot link against a cache
+restored from the host path.  Run 44258630525 failed exactly this way
+(`cannot find /home/runner/.../.work/musl-build/inst/lib/Scrt1.o`).
+The image also carries host `gcc`/`libc6-dev`: a cold `prepare`
+builds busybox, whose kconfig host tools (`fixdep`) are compiled with
+the host compiler, not the cross toolchain.
+`scripts/build-initramfs.sh` skips its glibc busybox build when the
+musl busybox already exists (the initramfs always installs that one):
+the glibc build needed the target `libc6-dev-arm64-cross` headers and
+~1-2 min of every cold prepare, for a binary that was then discarded.
 
 ## Cloud artifacts
 

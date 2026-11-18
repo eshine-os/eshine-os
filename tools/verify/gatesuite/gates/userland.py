@@ -338,17 +338,18 @@ def gate_102(ctx):
       artifacts=("elf", "busybox"))
 def gate_103(ctx):
     s = ctx.s
+    # The typed echo line also carries the token, so the output anchor is
+    # line-start scoped ("\n<token>", station 183 discipline).  Do NOT
+    # take a fresh mark after the echo: the read drain can already hold
+    # the command output, and a mark placed behind it would wait forever
+    # (CI run 44226378906 in a shared-boot batch).
     p_run = ctx.mark()
     s.send("run /bin/busybox echo ESHINE40-BB\n")
-    # Drain the typed echo line first: it contains the token, so the real
-    # output wait must start past it (legacy r48 anchor shift).
-    s.expect("echo ESHINE40-BB\r\n", 60.0, start=p_run)
-    p_out = ctx.mark()
-    s.expect("ESHINE40-BB", 120.0, start=p_out)
-    s.expect("run: exited code=0", 60.0, start=p_out)
+    s.expect("\nESHINE40-BB", 120.0, start=p_run)
+    s.expect("run: exited code=0", 60.0, start=p_run)
     p_cat = ctx.mark()
     s.send("run /bin/busybox cat /tmp/init40\n")
-    s.expect("ESHINE40-INIT", 120.0, start=p_cat)
+    s.expect("\nESHINE40-INIT", 120.0, start=p_cat)
 
 
 @gate(104, NAMES[104], fixture="vm0", timeout_s=240.0,

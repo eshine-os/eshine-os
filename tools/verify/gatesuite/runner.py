@@ -27,6 +27,7 @@ class RunOptions:
     verbose: bool = False
     gate_cap_s: float = 300.0
     scenario_cap_s: float = 1800.0
+    shard: tuple[int, int] | None = None   # (k, n) 1-based; None = whole suite
 
 
 def _missing_artifacts(gate: Gate, env: artifacts.Env) -> list[str]:
@@ -46,6 +47,11 @@ def _session_paths(env: artifacts.Env, tag: str, attempt: int):
     base = "%s-%d-%d" % (tag, os.getpid(), attempt)
     return (os.path.join(env.run_dir, base + ".sock"),
             os.path.join(env.log_dir, base + ".log"))
+
+
+def shard_groups(groups, k: int, n: int):
+    """Keep every N-th group (1-based k); whole groups, never split."""
+    return [g for i, g in enumerate(groups) if i % n == k - 1]
 
 
 def _run_fresh(gate: Gate, env: artifacts.Env,
@@ -330,6 +336,11 @@ def run(selection, env: artifacts.Env | None = None,
     for key, gates in bat.items():
         groups.append((min(g.id for g in gates), "batch", (key, gates)))
     groups.sort(key=lambda x: x[0])
+    if opts.shard:
+        k, n = opts.shard
+        groups = shard_groups(groups, k, n)
+        print("shard %d/%d: %d of the selected groups run here"
+              % (k, n, len(groups)))
 
     for _, kind, payload in groups:
         if kind == "scenario":

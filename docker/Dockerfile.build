@@ -11,6 +11,8 @@ ARG https_proxy=
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc-aarch64-linux-gnu \
         binutils-aarch64-linux-gnu \
+        gcc \
+        libc6-dev \
         qemu-system-arm \
         device-tree-compiler \
         python3 \
@@ -27,6 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bc \
         libssl-dev \
         libelf-dev \
+        cpio \
+        wget \
     && rm -rf /var/lib/apt/lists/*
 # QEMU virt resolves efi-virtio.rom from ipxe-qemu; the Ubuntu
 # qemu-system-arm package alone omits it and boot fails with

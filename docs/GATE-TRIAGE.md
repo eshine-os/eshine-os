@@ -103,12 +103,20 @@ row (9.5s total). No gate logic failed. CI now uses six boot attempts
 
 ## Wall-clock compression (2026-11-18)
 
-Green suite: 797 s (CI run 44090072201) -> 370 s local, same 173 gates.
+Green suite: 797 s (CI run 44090072201) -> 370-401 s local and
+501 s on the GitHub runner (PR run 44225045991), same 173 gates,
+173/173 green in all three runs.
 Two changes, no coverage loss:
 
 - **Adaptive attach**: `vm0_ready` no longer sleeps a fixed 2.5 s before
   `vmconsole`; it waits for `svc: governed` or 250 ms of console
   quiescence (bounded 5 s). Saves ~2 s on every VM0 boot.
+- **Batched-session anchor fix**: gate 103 took a fresh position mark
+  after waiting for its own typed echo, so the read drain could already
+  hold the command output and the following expect waited behind it
+  (CI run 44226378906, 6 attempts). The output is now anchored at line
+  start (`\nESHINE40-BB` / `\nESHINE40-INIT`) from the pre-send mark,
+  the same discipline as gate 183.
 - **Shared-boot batches** (`registry.BATCHES`): vm0 command gates whose
   face returns to the prompt without changing global VM state share a
   boot, five gates per batch (15 boots instead of ~100). Each gate still
@@ -116,6 +124,31 @@ Two changes, no coverage loss:
   a fixture that cannot be established is retried per gate. The
   pause/kill/console-handback gates (25, 26, 122-126, 130, 131) keep a
   private boot.
+
+Run **44265186558** (final topology: static + artifacts + 3 shards +
+container, no apt): success in **403 s** wall, 173/173 gates green
+(47/70/56; suites 221/283/107 s).  FLAKY counts were higher on this
+loaded runner (5/19/3 gates passed on retry, zero red) — watch, but
+each retried pass is reported, not hidden.
+
+Run **44262298722** (container path identity + initramfs skip): all
+173 gates green in three shards (47/70/56; 76.5/126.7/174.3 s), zero
+fail/blocked, one-to-three FLAKY per shard (retried within the shard).
+Job wall times: artifacts 117 s, shards 135/203/244 s, container 54 s.
+The only slow job was the legacy host `smoke` (apt stalled past
+10 min); it is removed in favor of the container job plus static
+checks.
+
+Container path identity (run 44258630525): the cached `.work` carries
+absolute paths inside the musl toolchain (`musl-gcc.specs`, the
+`Scrt1.o` link lines), so the container must mount the repository at
+the same absolute path it has on the runner.  Mounting at `/src` broke
+the cold artifacts build with `cannot find
+/home/runner/work/eshine-os/eshine-os/.work/musl-build/inst/lib/Scrt1.o`.
+Both the artifacts and green jobs now use `-v "$PWD:$PWD"` /
+`ESHINE_WORK="$PWD/.work"` / `-w "$PWD"`.  The image also gained host
+`gcc` + `libc6-dev`: the cold `prepare` builds busybox, whose kconfig
+host tools (`fixdep`) are compiled with the host compiler.
 
 ## Fixture-level flake families (FLAKY, not red)
 
