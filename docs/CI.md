@@ -90,6 +90,21 @@ the image (a ~20 s `make` plus the inline static checks and the ramfs
 busybox assertion), because `eshine.elf`/`rtos.bin` are build products
 that are deliberately not cached.
 
+The container mounts the repository at **the same absolute path** it
+has on the runner (`-v "$PWD:$PWD"`, `ESHINE_WORK="$PWD/.work"`,
+`-w "$PWD"`).  The cached `.work` contains absolute paths baked into
+the musl toolchain (`musl-gcc.specs`, the `Scrt1.o` link lines); a
+container that mounts the tree at `/src` cannot link against a cache
+restored from the host path.  Run 44258630525 failed exactly this way
+(`cannot find /home/runner/.../.work/musl-build/inst/lib/Scrt1.o`).
+The image also carries host `gcc`/`libc6-dev`: a cold `prepare`
+builds busybox, whose kconfig host tools (`fixdep`) are compiled with
+the host compiler, not the cross toolchain.
+`scripts/build-initramfs.sh` skips its glibc busybox build when the
+musl busybox already exists (the initramfs always installs that one):
+the glibc build needed the target `libc6-dev-arm64-cross` headers and
+~1-2 min of every cold prepare, for a binary that was then discarded.
+
 ## Cloud artifacts
 
 The green suite needs the GPL-isolated artifacts that are never

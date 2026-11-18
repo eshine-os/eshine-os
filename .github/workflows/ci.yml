@@ -82,9 +82,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/workdir/home" "$RUNNER_TEMP/workdir/tmp"
           docker run --rm \
             --user "$(id -u):$(id -g)" \
-            -v "$PWD:/src" -v "$RUNNER_TEMP/workdir:/workdir" \
-            -e ESHINE_WORK=/src/.work -e HOME=/workdir/home -e TMPDIR=/workdir/tmp \
-            -w /src eshine-build:ci \
+            -v "$PWD:$PWD" -v "$RUNNER_TEMP/workdir:/workdir" \
+            -e ESHINE_WORK="$PWD/.work" -e HOME=/workdir/home \
+            -e TMPDIR=/workdir/tmp \
+            -w "$PWD" eshine-build:ci \
             bash scripts/ci-gates.sh prepare
       - name: save guest artifact cache
         if: steps.work-cache.outputs.cache-hit != 'true'
@@ -123,10 +124,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/workdir/home" "$RUNNER_TEMP/workdir/tmp"
           docker run --rm \
             --user "$(id -u):$(id -g)" \
-            -v "$PWD:/src" -v "$RUNNER_TEMP/workdir:/workdir" \
-            -e ESHINE_WORK=/src/.work -e HOME=/workdir/home -e TMPDIR=/workdir/tmp \
+            -v "$PWD:$PWD" -v "$RUNNER_TEMP/workdir:/workdir" \
+            -e ESHINE_WORK="$PWD/.work" -e HOME=/workdir/home \
+            -e TMPDIR=/workdir/tmp \
             -e CI_SKIP_FETCH -e CI_SHARD \
-            -w /src eshine-build:ci \
+            -w "$PWD" eshine-build:ci \
             bash scripts/ci-gates.sh all
       - name: upload gate evidence
         if: failure()

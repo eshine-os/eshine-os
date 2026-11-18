@@ -11,6 +11,8 @@ ARG https_proxy=
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc-aarch64-linux-gnu \
         binutils-aarch64-linux-gnu \
+        gcc \
+        libc6-dev \
         qemu-system-arm \
         device-tree-compiler \
         python3 \

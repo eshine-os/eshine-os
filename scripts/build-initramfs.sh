@@ -50,14 +50,25 @@ if [ ! -d "busybox-${VER}" ]; then
     tar xf "busybox-${VER}.tar.bz2"
 fi
 
-cd "busybox-${VER}"
-echo "== defconfig + STATIC(aarch64 交叉) =="
-make ARCH=arm64 CROSS_COMPILE="$CROSS" defconfig
-sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
-# tc applet 撞新内核头(CBQ 定义自 linux-libc-dev 移除,1.36.1 时代坑),
-# initramfs 用不上;Ubuntu 24.04 头实测
-sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config
-make ARCH=arm64 CROSS_COMPILE="$CROSS" -j"$(nproc)"
+# 站40 双世界面:build-busybox.sh 的 musl 精选集总是先就位
+# (bootstrap --fetch 顺序),它会被原样装进 initramfs。那份 glibc
+# 自建只在 musl busybox 缺席时才是退路;存在时跳过整个编译——省
+# ~1-2 分钟,也免掉容器镜像对 target glibc 头(libc6-dev-arm64-cross)
+# 的依赖。容器冷构建实测:无此头时 glibc busybox 编译在
+# applets/applets.c 撞 <bits/libc-header-start.h>。
+if [ ! -f "$REPO/tools/ramfs/bin/busybox" ]; then
+    cd "busybox-${VER}"
+    echo "== defconfig + STATIC(aarch64 交叉) =="
+    make ARCH=arm64 CROSS_COMPILE="$CROSS" defconfig
+    sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+    # tc applet 撞新内核头(CBQ 定义自 linux-libc-dev 移除,1.36.1 时代坑),
+    # initramfs 用不上;Ubuntu 24.04 头实测
+    sed -i 's/^CONFIG_TC=y/# CONFIG_TC is not set/' .config
+    make ARCH=arm64 CROSS_COMPILE="$CROSS" -j"$(nproc)"
+    # 退路分支的 cp busybox 取相对路径:cwd 保持在 busybox 源目录
+else
+    echo "== busybox: vm0 musl 精选集在位,跳过 glibc 自建 =="
+fi
 
 ROOT="$DIR/initramfs-root"
 echo "== 组装 rootfs =="

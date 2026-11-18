@@ -125,6 +125,17 @@ Two changes, no coverage loss:
   pause/kill/console-handback gates (25, 26, 122-126, 130, 131) keep a
   private boot.
 
+Container path identity (run 44258630525): the cached `.work` carries
+absolute paths inside the musl toolchain (`musl-gcc.specs`, the
+`Scrt1.o` link lines), so the container must mount the repository at
+the same absolute path it has on the runner.  Mounting at `/src` broke
+the cold artifacts build with `cannot find
+/home/runner/work/eshine-os/eshine-os/.work/musl-build/inst/lib/Scrt1.o`.
+Both the artifacts and green jobs now use `-v "$PWD:$PWD"` /
+`ESHINE_WORK="$PWD/.work"` / `-w "$PWD"`.  The image also gained host
+`gcc` + `libc6-dev`: the cold `prepare` builds busybox, whose kconfig
+host tools (`fixdep`) are compiled with the host compiler.
+
 ## Fixture-level flake families (FLAKY, not red)
 
 These pass on a retry and are reported as `FLAKY`; they are SUT boot
