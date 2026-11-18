@@ -199,6 +199,84 @@ def _run_scenario(key: str, gates: list[Gate], env: artifacts.Env,
             for g in gates]
 
 
+def _run_batch(key: str, gates: list[Gate], env: artifacts.Env,
+               opts: RunOptions) -> list[GateResult]:
+    """Run a shared-boot batch: one fixture,每门独立判据.
+
+    A gate that fails is retried on a fresh boot (same --retries
+    semantics); a fixture that cannot be established is retried up to
+    --boot-retries and then reported BLOCKED for that gate.  The batch
+    keeps the remaining gates on the (re)booted session.
+    """
+    fixture = fixtures.get(gates[0].fixture)
+    if fixture is None:
+        return [GateResult(g.id, g.name, gates[0].fixture or "?", BLOCKED,
+                           detail="unknown fixture %r" % gates[0].fixture)
+                for g in gates]
+    out: list[GateResult] = []
+    session: QemuSession | None = None
+    max_attempts = max(1, opts.retries, opts.boot_retries)
+    for gate in gates:
+        last: Exception | None = None
+        duration = 0.0
+        log = ""
+        status = FAIL
+        for attempt in range(1, max_attempts + 1):
+            if session is None:
+                sock, log = _session_paths(
+                    env, "b-%s-g%d" % (key, gate.id), attempt)
+                session = QemuSession(fixture.qemu_args(env, sock), sock,
+                                      log, name="batch-" + key)
+                try:
+                    session.start(env.banner, retries=opts.boot_retries)
+                    try:
+                        fixture.prepare(session, env)
+                    except FloodError:
+                        raise
+                    except Exception as e:
+                        raise FixtureError("fixture %s: %s"
+                                           % (gate.fixture, str(e)[:1500])) from e
+                except Exception as e:
+                    last = e
+                    session.close()
+                    session = None
+                    if opts.forensics:
+                        print("  batch %s gate %d attempt %d fixture: %s"
+                              % (key, gate.id, attempt, e))
+                    continue
+            t0 = time.time()
+            session.gate_deadline = time.time() + min(gate.timeout_s,
+                                                      opts.gate_cap_s)
+            ctx = GateContext(session, gate, gate.fixture, env)
+            try:
+                gate.fn(ctx)
+                duration = time.time() - t0
+                status = PASS if attempt == 1 else FLAKY
+                last = None
+                break
+            except Exception as e:
+                duration = time.time() - t0
+                last = e
+                if opts.forensics:
+                    print("  batch %s gate %d attempt %d failed: %s"
+                          % (key, gate.id, attempt, e))
+                session.close()
+                session = None
+                continue
+        if last is not None:
+            status = (BLOCKED if isinstance(last, (FixtureError, FloodError))
+                      else FAIL)
+        out.append(GateResult(gate.id, gate.name, gate.fixture or "?", status,
+                              duration,
+                              detail=("" if last is None
+                                      else str(last)[:2000]),
+                              log_path=log,
+                              attempts=attempt))
+    if session is not None:
+        session.close()
+    return out
+
+
 def _run_static(gate: Gate, env: artifacts.Env,
                 opts: RunOptions) -> GateResult:
     t0 = time.time()
@@ -235,16 +313,22 @@ def run(selection, env: artifacts.Env | None = None,
         else:
             runnable.append(gate)
 
-    # Group scenario gates; everything else runs on its own fixture.
+    # Group scenario gates and shared-boot batches; everything else runs
+    # on its own fixture.
     groups: list[tuple[int, str, object]] = []
     scen: dict[str, list[Gate]] = {}
+    bat: dict[str, list[Gate]] = {}
     for gate in runnable:
         if gate.scenario:
             scen.setdefault(gate.scenario, []).append(gate)
+        elif gate.batch:
+            bat.setdefault(gate.batch, []).append(gate)
         else:
             groups.append((gate.id, "gate", gate))
     for key, gates in scen.items():
         groups.append((min(g.id for g in gates), "scenario", (key, gates)))
+    for key, gates in bat.items():
+        groups.append((min(g.id for g in gates), "batch", (key, gates)))
     groups.sort(key=lambda x: x[0])
 
     for _, kind, payload in groups:
@@ -255,6 +339,11 @@ def run(selection, env: artifacts.Env | None = None,
             for r in rs:
                 if not r.streamed:
                     print_result(r)
+        elif kind == "batch":
+            key, gates = payload
+            for r in _run_batch(key, gates, env, opts):
+                report.results.append(r)
+                print_result(r)
         else:
             gate = payload
             if gate.fixture is None:

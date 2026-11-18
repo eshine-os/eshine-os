@@ -31,6 +31,7 @@ class Gate:
     timeout_s: float = 120.0
     timing: bool = False
     scenario: str | None = None
+    batch: str | None = None      # shared-boot batch key (runner reuses one QEMU)
     status: str = "active"          # active | retired | quarantined
     reason: str = ""
 

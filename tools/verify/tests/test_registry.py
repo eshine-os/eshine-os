@@ -31,6 +31,22 @@ class RegistryTest(unittest.TestCase):
                 self.assertEqual(registry.GATE[gid].scenario, key)
 
 
+
+    def test_shared_boot_batches(self):
+        gates = registry.collect()
+        for key, ids in registry.BATCHES.items():
+            self.assertLessEqual(len(ids), registry.BATCH_SIZE)
+            for gid in ids:
+                g = gates[gid]
+                self.assertEqual(g.batch, key)
+                self.assertEqual(g.fixture, "vm0")
+                self.assertIsNone(g.scenario)
+                self.assertNotIn(gid, registry.BATCH_EXCLUDE)
+        for gid in registry.BATCH_EXCLUDE:
+            self.assertIsNone(gates[gid].batch,
+                              "excluded gate %d must keep a private boot"
+                              % gid)
+
 class SelectionTest(unittest.TestCase):
     def test_smoke_is_1_to_18(self):
         sel = selection.select(suite="smoke")
