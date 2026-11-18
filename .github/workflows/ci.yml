@@ -79,12 +79,11 @@ jobs:
       - name: build guest artifacts (cold cache only)
         if: steps.work-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p "$RUNNER_TEMP/home" "$RUNNER_TEMP/tmp"
+          mkdir -p "$RUNNER_TEMP/workdir/home" "$RUNNER_TEMP/workdir/tmp"
           docker run --rm \
             --user "$(id -u):$(id -g)" \
-            -v "$PWD:/src" -v "$RUNNER_TEMP/home:/home/runner" \
-            -v "$RUNNER_TEMP/tmp:/tmp" \
-            -e ESHINE_WORK=/src/.work -e HOME=/home/runner -e TMPDIR=/tmp \
+            -v "$PWD:/src" -v "$RUNNER_TEMP/workdir:/workdir" \
+            -e ESHINE_WORK=/src/.work -e HOME=/workdir/home -e TMPDIR=/workdir/tmp \
             -w /src eshine-build:ci \
             bash scripts/ci-gates.sh prepare
       - name: save guest artifact cache
@@ -121,12 +120,11 @@ jobs:
           CI_SKIP_FETCH: 1
           CI_SHARD: ${{ matrix.shard }}/3
         run: |
-          mkdir -p "$RUNNER_TEMP/home" "$RUNNER_TEMP/tmp"
+          mkdir -p "$RUNNER_TEMP/workdir/home" "$RUNNER_TEMP/workdir/tmp"
           docker run --rm \
             --user "$(id -u):$(id -g)" \
-            -v "$PWD:/src" -v "$RUNNER_TEMP/home:/home/runner" \
-            -v "$RUNNER_TEMP/tmp:/tmp" \
-            -e ESHINE_WORK=/src/.work -e HOME=/home/runner -e TMPDIR=/tmp \
+            -v "$PWD:/src" -v "$RUNNER_TEMP/workdir:/workdir" \
+            -e ESHINE_WORK=/src/.work -e HOME=/workdir/home -e TMPDIR=/workdir/tmp \
             -e CI_SKIP_FETCH -e CI_SHARD \
             -w /src eshine-build:ci \
             bash scripts/ci-gates.sh all
