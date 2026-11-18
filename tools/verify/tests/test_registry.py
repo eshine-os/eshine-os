@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 
 from gatesuite import registry, selection  # noqa: E402
+from gatesuite.runner import shard_groups  # noqa: E402
 
 
 class RegistryTest(unittest.TestCase):
@@ -46,6 +47,15 @@ class RegistryTest(unittest.TestCase):
             self.assertIsNone(gates[gid].batch,
                               "excluded gate %d must keep a private boot"
                               % gid)
+
+
+    def test_shard_partition(self):
+        groups = [(i, "gate", None) for i in range(10)]
+        for n in (2, 3, 4):
+            seen = []
+            for k in range(1, n + 1):
+                seen.extend(shard_groups(groups, k, n))
+            self.assertEqual(sorted(seen), groups)
 
 class SelectionTest(unittest.TestCase):
     def test_smoke_is_1_to_18(self):

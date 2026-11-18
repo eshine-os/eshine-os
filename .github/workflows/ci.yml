@@ -54,18 +54,16 @@ jobs:
       - name: host independence
         run: scripts/check-host-independence.sh
 
-  green:
+  artifacts:
+    # Guest artifacts (Linux Image, 8MiB initramfs, musl busybox) are
+    # built once per cache generation and shared with every green shard.
+    # The key is pinned to the artifact versions, not to build-script
+    # mtimes: a script edit must not trigger a 17-minute cold rebuild
+    # (runs 44093367769/44093324790 spent ~1000 s in prepare for that).
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
-      - name: install toolchain + guest build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu device-tree-compiler python3 \
-            qemu-system-arm gdb-multiarch bc bison flex libssl-dev \
-            libelf-dev cpio xz-utils bzip2 wget curl git
       - name: restore guest artifact cache
         id: work-cache
         uses: actions/cache/restore@v4
@@ -73,11 +71,22 @@ jobs:
           path: |
             .work
             tools/ramfs/bin/busybox
-          key: eshine-work-${{ runner.os }}-${{ hashFiles('tools/artifacts.json', 'scripts/build-linux.sh', 'scripts/build-initramfs.sh', 'tools/build-musl.sh', 'tools/build-cjson.sh', 'tools/build-zlib.sh', 'tools/build-busybox.sh') }}
-      - name: prepare (build + Linux/initramfs/busybox)
-        env:
-          CI_SKIP_FETCH: ${{ steps.work-cache.outputs.cache-hit == 'true' && '1' || '0' }}
-        run: bash scripts/ci-gates.sh prepare
+          key: eshine-work-${{ runner.os }}-${{ hashFiles('tools/artifacts.json', '3rd/manifest.yaml') }}
+          restore-keys: eshine-work-${{ runner.os }}-
+      - name: build toolchain image
+        if: steps.work-cache.outputs.cache-hit != 'true'
+        run: docker build -t eshine-build:ci -f docker/Dockerfile.build .
+      - name: build guest artifacts (cold cache only)
+        if: steps.work-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/home" "$RUNNER_TEMP/tmp"
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/src" -v "$RUNNER_TEMP/home:/home/runner" \
+            -v "$RUNNER_TEMP/tmp:/tmp" \
+            -e ESHINE_WORK=/src/.work -e HOME=/home/runner -e TMPDIR=/tmp \
+            -w /src eshine-build:ci \
+            bash scripts/ci-gates.sh prepare
       - name: save guest artifact cache
         if: steps.work-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -85,14 +94,47 @@ jobs:
           path: |
             .work
             tools/ramfs/bin/busybox
-          key: eshine-work-${{ runner.os }}-${{ hashFiles('tools/artifacts.json', 'scripts/build-linux.sh', 'scripts/build-initramfs.sh', 'tools/build-musl.sh', 'tools/build-cjson.sh', 'tools/build-zlib.sh', 'tools/build-busybox.sh') }}
-      - name: green suite (all active non-heavy gates)
-        run: bash scripts/ci-gates.sh run
+          key: eshine-work-${{ runner.os }}-${{ hashFiles('tools/artifacts.json', '3rd/manifest.yaml') }}
+
+  green:
+    needs: artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v5
+      - name: restore guest artifact cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .work
+            tools/ramfs/bin/busybox
+          key: eshine-work-${{ runner.os }}-${{ hashFiles('tools/artifacts.json', '3rd/manifest.yaml') }}
+          restore-keys: eshine-work-${{ runner.os }}-
+      - name: build toolchain image
+        run: docker build -t eshine-build:ci -f docker/Dockerfile.build .
+      - name: prepare + green suite (shard ${{ matrix.shard }}/3)
+        env:
+          CI_SKIP_FETCH: 1
+          CI_SHARD: ${{ matrix.shard }}/3
+        run: |
+          mkdir -p "$RUNNER_TEMP/home" "$RUNNER_TEMP/tmp"
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$PWD:/src" -v "$RUNNER_TEMP/home:/home/runner" \
+            -v "$RUNNER_TEMP/tmp:/tmp" \
+            -e ESHINE_WORK=/src/.work -e HOME=/home/runner -e TMPDIR=/tmp \
+            -e CI_SKIP_FETCH -e CI_SHARD \
+            -w /src eshine-build:ci \
+            bash scripts/ci-gates.sh all
       - name: upload gate evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: gate-logs
+          name: gate-logs-shard-${{ matrix.shard }}
           path: |
             .work/logs
             .work/logs/gates-summary.json

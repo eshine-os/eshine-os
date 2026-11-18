@@ -48,6 +48,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
                    help="validate the registry and exit")
     p.add_argument("--json", metavar="PATH", default=None,
                    help="write the result table as JSON (use - for stdout)")
+    p.add_argument("--shard", metavar="K/N", default=None,
+                   help="run every N-th scenario/batch/gate group (K=1..N)")
     p.add_argument("--include-retired", action="store_true",
                    help="include retired gates in --gates/--list")
     return p.parse_args(argv)
@@ -112,6 +114,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.jobs > 1:
         print("note: --jobs > 1 is reserved; running serially", file=sys.stderr)
 
+    shard = None
+    if args.shard:
+        try:
+            k_s, n_s = args.shard.split("/", 1)
+            shard = (int(k_s), int(n_s))
+        except ValueError:
+            print("bad --shard %r (want K/N)" % args.shard, file=sys.stderr)
+            return 2
+        if shard[1] < 1 or not (1 <= shard[0] <= shard[1]):
+            print("bad --shard %r (want 1 <= K <= N)" % args.shard,
+                  file=sys.stderr)
+            return 2
+
     sel = selection_mod.select(
         suite=args.suite, gates=args.gates, fixtures=args.fixture,
         stop_after=args.stop_after,
@@ -129,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     report = run(sel, env, RunOptions(
         retries=max(1, args.retries),
         boot_retries=max(1, args.boot_retries),
+        shard=shard,
         forensics=args.forensics,
         keep_on_fail=args.keep_on_fail,
         strict_artifacts=args.strict_artifacts,

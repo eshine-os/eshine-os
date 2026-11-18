@@ -14,6 +14,7 @@
 #   CI_RETRIES     gate retries                  (default 3)
 #   CI_BOOT_RETRIES fixture boot retries          (default 6)
 #   CI_SKIP_FETCH  1 = artifacts already restored from cache (default 0)
+#   CI_SHARD       K/N = run every N-th gate group (default: whole suite)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -49,8 +50,13 @@ if [ "$MODE" = "prepare" ] || [ "$MODE" = "all" ]; then
 fi
 
 if [ "$MODE" = "run" ] || [ "$MODE" = "all" ]; then
+    SHARD=()
+    if [ -n "${CI_SHARD:-}" ]; then
+        SHARD=(--shard "${CI_SHARD}")
+    fi
     python3 tools/verify/gate_suite.py \
         --suite "${CI_SUITE:-green}" \
+        "${SHARD[@]}" \
         --retries "${CI_RETRIES:-3}" \
         --boot-retries "${CI_BOOT_RETRIES:-6}" \
         --strict-artifacts \

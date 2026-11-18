@@ -6,7 +6,7 @@
 
 | where | config | what runs |
 |---|---|---|
-| GitHub Actions | `.github/workflows/ci.yml` | smoke (gates 1..18) + green (active non-heavy minus quarantined reds) |
+| GitHub Actions | `.github/workflows/ci.yml` | smoke (gates 1..18) + artifacts (guest artifact cache) + green (3 shards, run inside the pinned toolchain image) |
 | Gitee Go | `.gitee-ci.yml` | the same green suite via `scripts/ci-gates.sh` |
 | local | `make verify` | green suite; two consecutive runs close a station |
 | local fast | `make verify-fast` / `make ci-smoke` | smoke (gates 1..18) |
@@ -40,6 +40,7 @@ existing tooling.
 
     python3 tools/verify/gate_suite.py --suite smoke
     python3 tools/verify/gate_suite.py --suite green --retries 3
+    python3 tools/verify/gate_suite.py --suite green --shard 2/3
     python3 tools/verify/gate_suite.py --gates 1-18,20,27-29
     python3 tools/verify/gate_suite.py --fixture vm0
     python3 tools/verify/gate_suite.py --list
@@ -69,6 +70,25 @@ cooldown; the CLI default is 3); the all-space flood
 tried (the flood retry is immediate, so the extra attempts are cheap); a fixture that cannot reach its readiness anchors is retried the
 same way. These retries are visible as `FLAKY` when a gate eventually
 passes.
+
+## Shards and run time
+
+The green suite is split into three shards (`--shard K/3`).  Sharding
+is applied to whole scenario/batch/gate groups, so a stateful scenario
+or a shared-boot batch is never split across runners; each shard runs
+on its own runner in parallel.
+
+Guest artifacts are built once per cache generation by the `artifacts`
+job.  Its cache key is pinned to `tools/artifacts.json` and
+`3rd/manifest.yaml` (the artifact versions), not to build-script mtimes,
+so editing a build script no longer triggers a cold Linux/musl/busybox
+rebuild (~17 min in runs 44093367769/44093324790).  The green shards run
+inside the pinned `docker/Dockerfile.build` image, which removes the
+per-run `apt-get install` (it cost 17-24 min on two hosted runners in
+runs 44225068223/44226378906).  Every shard still runs `prepare` inside
+the image (a ~20 s `make` plus the inline static checks and the ramfs
+busybox assertion), because `eshine.elf`/`rtos.bin` are build products
+that are deliberately not cached.
 
 ## Cloud artifacts
 
