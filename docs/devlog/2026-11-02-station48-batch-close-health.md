@@ -12,7 +12,7 @@
   在役数(45)/crash 环记录数(46)/xvm 窗 seq·ack(47)。
   出数器 rt_crash_count/rt_cpart_used/rt_mpart_used/
   rt_proc_count 各源模块就地提供(观测不越域=不读他模块私态)。
-- **批发布注记**:docs/release/2026-11-02-batch-43-48.md——
+- **批发布注记**:docs/releases/2026-11-02-batch-43-48.md——
   六站战果表+批内六雷+记档差异;**版本号不动=发布节奏归用户**
   (显式记档,不代决)。
 

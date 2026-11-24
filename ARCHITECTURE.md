@@ -996,7 +996,7 @@ boot 自证：双侧 banner 后 LOG_INF "log core up, mods=2"（模块计数=
 health=demo op RT_U_HEALTH 一屏（uptime tick/活任务/活进程/fp
 轮转计数/cpart·mpart 在役数/crash 环记录数/xvm 窗 seq·ack——
 43 观测/45 分区/46 崩溃/47 跨 VM 的自证合卷）;发布注记=
-docs/release/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
+docs/releases/2026-11-02-batch-43-48.md（版本号不动=发布节奏归
 用户管辖）** →
 **站34 yocto 门（[133]——meta-eshine 层入仓：git archive 提交树
 出源 tar（参考实现机制镜像）+宿主交叉工具链经 HOSTTOOLS 白名单=

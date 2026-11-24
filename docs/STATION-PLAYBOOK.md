@@ -17,8 +17,8 @@ A station is closed only when all of the following are true:
 4. Three-way sync in the same commit: the gate registry under
    `tools/verify/gatesuite/gates/`, the shell help walkthrough, and the
    verification section of `ARCHITECTURE.md`.
-5. Devlog in `docs/devlog/` and the five-file content package under
-   `docs/content/` (README, Zhihu/WeChat, Xiaohongshu, X thread, YouTube).
+5. Devlog in `docs/devlog/`; external media/social drafts are maintained
+   outside the core OS repository.
 6. Commit message has real trailers and passes
    `scripts/check-commit-msg.py`.
 7. Mirror synced through the maintainer's channel.

@@ -9,7 +9,7 @@ engineering 定位)|**机制**:批四面(43 观测/45 分区/46 崩溃/
 - **health 面板**(demo op RT_U_HEALTH,rt_xvm.c 合卷):
   uptime tick/活任务数/活进程数/fp 轮转计数/cpart·mpart 在役数/
   crash 环记录数/xvm 窗 seq·ack 一屏。
-- **批发布注记**:docs/release/2026-11-02-batch-43-48.md
+- **批发布注记**:docs/releases/2026-11-02-batch-43-48.md
   (站 43-48 战果+门禁 123→133+记档差异表;版本号不动=发布
   节奏归用户)。
 
