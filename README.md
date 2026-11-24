@@ -1,154 +1,124 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 Julian Chu -->
+
 # eshine-os
 
-> 底层之光，守护生命。
-> The light beneath, guarding life.
+**[简体中文](README.zh-CN.md)** · **[Website](https://www.eshine-os.org/)** · **[Architecture](ARCHITECTURE.md)** · **[Known Issues](docs/KNOWN-ISSUES.md)**
 
-**🌐 官网 / Website: <https://www.eshine-os.org/>** — 架构、路线图、最新发布与镜像 / architecture, roadmap, latest releases and mirrors.
+[![CI](https://github.com/eshine-os/eshine-os/actions/workflows/ci.yml/badge.svg)](https://github.com/eshine-os/eshine-os/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/Release-v26.10-d9705f.svg)](https://github.com/eshine-os/eshine-os/releases/tag/v26.10)
+[![Arch](https://img.shields.io/badge/Target-ARM64%20EL2-2b2b2b.svg)](ARCHITECTURE.md)
 
-## 我们做什么 / What we build
+**An open-source ARM64 Type-1 hypervisor and from-scratch SMP RTOS for automotive autonomous driving and robotics** — running a safety-management RTOS (`VM0`) and upstream Linux 6.6 (`VM2`) side-by-side on one machine with hardware Stage-2 isolation and 173+ replayable QEMU gates.
 
-**与 AI 组队，从零开发车载自动驾驶与机器人的操作系统。**
+> 底层之光，守护生命 · The light beneath, guarding life.
 
-eshine-os 是面向**车载自动驾驶与机器人**的开源操作系统底座：ARM64 Type-1 虚拟化、从零编写的实时内核、真实 Linux 客机，在同一台机器上以强隔离与确定性时序并行运行。项目由 Julian Chu 发起，与 AI（Claude Code、GLM-5.3 等）结对，从零逐站构建——每一站都有可重放的判据与公开的过程记录。
+## Terminal Demo
 
-eshine-os is an open-source OS foundation for **automotive autonomous driving and robotics**: ARM64 Type-1 virtualization, a from-scratch real-time kernel, and a real Linux guest running side by side with strong isolation and deterministic timing. Initiated by Julian Chu and built from zero in pair with AI (Claude Code, GLM-5.3, and others), station by station — each with replayable gates and a public engineering log.
+![eshine-os terminal demo](docs/img/demo.gif)
 
-## 系统架构 / System architecture
+*Captured from a single QEMU `virt` (`-smp 4`) session: EL2 hypervisor boot → `VM0` SMP RTOS running musl `/bin/hello` → `VM2` upstream Linux 6.6 running the exact same static musl binary simultaneously (`vmls` shows both `VM_RUNNING`).*
 
-![eshine-os architecture](https://www.eshine-os.org/assets/architecture.png?v=1)
+## System Architecture
 
-一台机器上的混合临界度三域架构，按 **ISO 26262** 功能安全与
-**ISO/SAE 21434** 信息安全双维度设计：
+![eshine-os architecture](docs/img/architecture.png)
 
-- **Type-1 hypervisor（ASIL-D / CAL-4）**：直驱硬件、无宿主 OS；
-  per-VM stage-2 地址空间隔离、vGIC/vtimer/virtio 设备模型、
-  CPU/内存配额、fail-closed 跨 VM 共享窗——功能安全与信息安全的
-  双根信任基座。
-- **VM0 管理域（ASIL-D / CAL-3）**：自研 RTOS——确定性调度、三段
-  消息 IPC、故障遏制与健康监控，是系统的安全与安保管理域。
-- **VM1 预留域（QM / CAL-2）**：预留座舱域，未来启动 **Android**
-  作为中控/仪表等座舱应用（槽位已留，启动目标设计中）。
-- **VM2 Linux 域（ASIL-A/B / CAL-2）**：真实 Linux 6.6 上游内核，
-  承载**智能驾驶应用**与 musl 用户态服务。
+One machine, three domains — structured along functional safety (**ISO 26262**) and cybersecurity (**ISO/SAE 21434**) isolation boundaries:
 
-> ASIL（功能安全，ISO 26262）与 CAL（信息安全保证等级，
-> ISO/SAE 21434）分级均为架构设计目标，双认证路线进行中（见
-> [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) 的诚实边界声明）。
+| Layer / Domain | Design Target | Current Status | Key Capabilities |
+|---|---|---|---|
+| **Type-1 Hypervisor (EL2)** | ASIL-D / CAL-4 | **Implemented** | Direct EL2 control with no host OS; per-VM Stage-2 isolation, vGICv3, vtimer, virtio-blk/net, DTB injection, PSCI VM lifecycle, CPU/memory quotas, fail-closed cross-VM windows |
+| **VM0 · Management Domain** | ASIL-D / CAL-3 | **Implemented** | From-scratch 2-vCPU SMP RTOS: 32-priority bitmap scheduler, per-process Stage-1 MMU + ASID, Send/Recv/Reply IPC + pulses, futex/signals, ramfs/procfs, HAM health monitor, musl ELF loader |
+| **VM1 · Cockpit Slot** | QM / CAL-2 | **Reserved** | Bare-metal fault-isolation test guest today; slot reserved for a future Android cockpit / cluster domain |
+| **VM2 · Linux Domain** | ASIL-A/B / CAL-2 | **Implemented** | Upstream Linux 6.6 SMP kernel + busybox initramfs + musl userland for intelligent-driving workloads |
 
-One machine, three domains — designed on two axes: functional safety
-(ISO 26262) and cybersecurity (ISO/SAE 21434):
+> **Honest boundary:** ASIL (ISO 26262) and CAL (ISO/SAE 21434) levels are architectural design targets; formal third-party certification has not yet started. See [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) for current scope and open defects.
 
-- **Type-1 hypervisor (ASIL-D / CAL-4)** — direct hardware control, no
-  host OS; per-VM stage-2 isolation, vGIC/vtimer/virtio, CPU & memory
-  quotas, fail-closed cross-VM shared windows; the dual root of trust.
-- **VM0 management domain (ASIL-D / CAL-3)** — the from-scratch RTOS:
-  deterministic scheduling, Send/Recv/Reply IPC, fault containment and
-  health monitoring; the safety and security management domain.
-- **VM1 reserved domain (QM / CAL-2)** — reserved for the cockpit;
-  planned to run **Android** as the center-console / cluster domain.
-- **VM2 Linux domain (ASIL-A/B / CAL-2)** — real upstream Linux 6.6
-  carrying **intelligent-driving applications** and the musl userland.
+## 60-Second Quick Start
 
-> ASIL (ISO 26262) and CAL (ISO/SAE 21434) levels are architecture
-> design targets; both certification tracks are in progress (see
-> [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md)).
+### Option A — Pinned Docker / Podman Image (No Local Cross-Toolchain)
 
-## 仓库 / Repositories
+```bash
+git clone https://github.com/eshine-os/eshine-os.git
+cd eshine-os
+scripts/container.sh build      # Ubuntu 24.04 + aarch64 cross-gcc + QEMU 8.2.2
+scripts/container.sh run        # build and launch interactive QEMU
+```
 
-- **主仓 / Primary**: <https://github.com/eshine-os/eshine-os.git>
-- **镜像 / Mirror**: <https://gitee.com/eshine-os/eshine-os.git>
+- `scripts/container.sh selftest` runs the container build + fast boot smoke gates (`1..18`).
+- Containers default to `--network none`; to fetch/build Linux guest artifacts inside the container, set `ESHINE_CONTAINER_NETWORK=bridge`. Podman is supported via `ESHINE_CONTAINER_ENGINE=podman`. See [docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md).
 
-## 命名寓意 / On the name
+### Option B — Native Linux Host
 
-"eshine" 寄意「铸入底层的恒明之光」：
+Requirements: `aarch64-linux-gnu-gcc`, `qemu-system-aarch64` (8.2.x), `python3`; optional `dtc`.
 
-- **e** —— 嵌入式、不可或缺的底层基座（embedded / essential）；
-- **shine** —— 自底向上、经久不熄的可靠之光。
+```bash
+make                # build eshine.elf + rtos.bin + guest2.bin
+make verify-fast    # smoke gates (1..18): host EL2 + VM0 boot, no external artifacts
+make run            # QEMU virt; auto-fetches Linux/musl/busybox artifacts into .work/
+make verify         # full non-heavy green suite (requires .work/ artifacts)
+make verify-heavy   # Yocto / image / Docker static gates (local / release)
+```
 
-"eshine" carries the sense of "a steady light cast into the foundation":
+All external artifacts, logs, and sockets stay isolated under `ESHINE_WORK` (default `.work/`). For offline reuse, use `scripts/bootstrap.sh --adopt`.
 
-- **e** — the embedded, indispensable base layer (embedded / essential);
-- **shine** — a reliable light, shining upward from the base, that does not go out.
+## What Actually Works Today
 
-在最易生险的边缘地带，这层基座以强隔离与确定性时序，把高可靠与高安全从地基向上递送至生命攸关的负载；在故障降临时，做那盏不闪、不灭、不弃人的稳光。
+- **Clean-room EL2 + RTOS codebase (~24K LOC C/ASM):** Implemented from public ARM architecture and QEMU specifications under Apache-2.0, with SPDX headers on every source file and strict GPL isolation for Linux/BusyBox guest images ([NOTICE](NOTICE), [3rd/LEDGER.md](3rd/LEDGER.md)).
+- **True dual-world musl userland:** The exact same static musl ELF binary (`/bin/hello`, BusyBox) executes on both **VM0** (custom RTOS + user-space ELF loader) and **VM2** (upstream Linux 6.6) on the same hypervisor.
+- **Fixture-based replayable verification:** Stable gate namespace `1..183` where ordinary gates boot a fresh QEMU session and stateful families run isolated scenario fixtures. GitHub Actions runs **173/173 green gates across 3 shards in ~403 s** (`2026-11-18`); **4** quarantined gates are openly tracked in [tools/verify/quarantine.txt](tools/verify/quarantine.txt).
+- **Reproducible packaging:** Kernel-style `Makefile`, host-independence verification (`scripts/check-host-independence.sh`), and a Yocto layer (`meta-eshine`) that builds deployable images from `git archive`.
 
-In the most risk-prone edge zones, this base layer delivers high reliability and high safety upward to life-critical workloads through strong isolation and deterministic timing — becoming, when failure arrives, the steady light that does not flicker, does not go out, does not abandon people.
+## AI-Pair Engineering & Evidence Discipline
 
-> 上述为命名定位读法，非语源断言；跨语读音联想属 evocation，不主张词源。
-> This is a naming-positioning reading, not an etymological claim; cross-linguistic sound associations are evocations, not asserted origins.
+Initiated by **Julian Chu**, `eshine-os` is built in pair with AI coding models (`Claude Code`, `GLM-5.3`, `DeepSeek V4.1`, `Gemini 4 Neon`) as an engineering experiment in **gate-driven infrastructure development**:
 
-## 当前形态 / Current shape
+- **AI writes code; replayable QEMU gates judge truth.** Every feature lands as a vertical station slice with a written spec, automated gate assertions, and an honest devlog of bugs and refuted hypotheses ([docs/STATION-PLAYBOOK.md](docs/STATION-PLAYBOOK.md)).
+- **Tiered model routing & independent review.** Architecture, security boundaries, and cross-subsystem forensics are separated from implementation throughput and verified with cross-family review artifacts ([docs/MODEL-ROUTING.md](docs/MODEL-ROUTING.md), [docs/reviews/](docs/reviews/)).
+- **Real commit attribution.** Every commit declares actual participating models via `Model:` / `Assisted-by:` trailers enforced in CI by [scripts/check-commit-msg.py](scripts/check-commit-msg.py) ([docs/COMMIT-ATTRIBUTION.md](docs/COMMIT-ATTRIBUTION.md)).
 
-- **EL2 Type-1 hypervisor**：VM 抽象、vCPU 上下文、GICv3/vGIC、vtimer、virtio-blk/net、DTB 注入、PSCI、per-VM 隔离与配额。
-- **VM0：从零自研 RTOS**：抢占式调度、进程与地址空间（stage-1 页表/ASID/缺页）、三段消息 IPC（Send-Recv-Reply + 脉冲）、signal/futex、rootfs 与 fd 服务、procfs、跨 VM 服务面。
-- **VM1/VM2**：VM1 为**预留座舱域**（现为裸机对照 guest；未来启动 Android
-  作为中控/仪表）；VM2 为**真实 Linux 6.6 guest**（busybox initramfs，
-  目标=智能驾驶应用域）。
-- **真 musl 用户态**：同一份静态 musl ELF 在 VM0（自研内核 + 用户态 loader）与 VM2（真实 Linux）上得到相同输出——同 libc，两个世界，一台 hypervisor。
-- **门禁**：编号空间 1..183 的可重放判据，现为**独立 fixture 门禁套件**——普通门各自新起 QEMU，状态型家族用自包含场景；红门互不阻塞，逐门报告。active 数以 `gate_suite.py --count` 为准；站点收口以绿套件两连为准。⚠️ 现状直报：历史全量两连绿尚未达成，门 [37]/[38] 家族根因未闭合 —— 详见 [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md)。
-- **构建**：kernel 风格 Makefile；Yocto 层 `meta-eshine` 可从 `git archive` 提交树构建部署件。
-- **验证平台**：QEMU virt（ARM64）。真板路线在规划中。
+## Honest Scope & Boundaries
 
-## 状态 / Status
+| Area | Verified Today | Current Limitation / Next Step |
+|---|---|---|
+| **Platform** | QEMU `virt` ARM64 (`-cpu cortex-a57 -smp 4`) | Real-board bring-up (Board HAL → RPi 5 / RK3588 / SoC) is planned next |
+| **QEMU / EL2 MMU** | Verified green on Ubuntu 24.04 / QEMU 8.2.2 | EL2 Stage-1 MMU is not yet enabled; QEMU 10.2.1 hits an EL2 alignment fault ([docs/CI.md](docs/CI.md)) |
+| **Safety & Security** | Stage-2 isolation, fail-closed `xvmacl`, per-process Stage-1 MMU | v0 boundary hardening (strict `access_ok`, W^X, 64-bit lock widths, SMP `vmalle1is`, fuzzing) & formal certification pending |
+| **Stability** | 173/173 green CI gates across 3 shards | `[37]/[38]` quiet-window double-green closure & `bsh` space-flood root cause tracked in [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) |
 
-- **`26.10`** — 首个版本 / First release（2026-10-21）：EL2 骨架、VM 状态机、真绿门禁，见 [docs/releases/v26.10](docs/releases/v26.10/notes.md)。
-- 开发线 / Development line：`27.04-dev` —— 68 站开发序列，覆盖 hypervisor、RTOS、用户态与构建发布面。
-- 发布节奏 / Cadence：每年 4 月 / 10 月（YY.MM），版本策略见 [docs/VERSIONING.md](docs/VERSIONING.md)。
-- 目标架构 / Target architecture：Type-1 hypervisor + 管理 RTOS VM + Linux guest VM。
-- 已知问题与边界 / Known issues and scope：[docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md)。
+## Status & Releases
 
-## 快速开始 / Quick start
+- **`26.10`** — First release (`2026-10-21`): EL2 boot skeleton, default-deny VM state machine, true-green gate ([docs/releases/v26.10/notes.md](docs/releases/v26.10/notes.md)).
+- **`27.04-dev`** — Active mainline: 68-station vertical development sequence covering the Type-1 hypervisor, VM0 SMP RTOS, VM2 Linux 6.6 guest, musl userland, and Yocto/container release pipeline.
+- **Cadence:** Semi-annual `YY.MM` releases in April and October ([docs/VERSIONING.md](docs/VERSIONING.md)).
 
-    make                # build eshine.elf + rtos.bin + guest2.bin
-    make bootstrap      # populate .work (fetch pins; see --adopt for existing)
-    make run            # QEMU virt; auto-fetches missing .work artifacts
-    make verify-fast    # smoke: host + VM0 boot (gates 1-18), no external artifacts
-    make verify         # green suite: all active non-heavy gates (needs .work artifacts)
-    make verify-heavy   # Yocto/image gates + Docker static (local/release)
+## Repositories
 
-    scripts/container.sh build      # pinned toolchain image
-    scripts/container.sh run        # interactive QEMU in the container
-    scripts/container.sh selftest   # container build + fast gates
+- **Primary (GitHub):** <https://github.com/eshine-os/eshine-os.git>
+- **Mirror (Gitee):** <https://gitee.com/eshine-os/eshine-os.git>
+- **Website:** <https://www.eshine-os.org/>
 
-### 在 Docker 里跑 / Run in Docker
+## Documentation
 
-无本地交叉工具链时，一条路是固定镜像（Ubuntu 24.04 + cross gcc + QEMU 8.2 + dtc + gdb）：
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Hypervisor, RTOS, trap frames, GICv3, and Stage-2 internals
+- [docs/state/PROJECT-STATE.md](docs/state/PROJECT-STATE.md) — Current HEAD state, open risks, and next actions
+- [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) — Honest boundary statement, open defects, and triage rules
+- [docs/CI.md](docs/CI.md) — Sharded fixture gate topology, QEMU pin, and red-gate policy
+- [docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md) — `ESHINE_WORK`, bootstrap, and container workflows
+- [docs/STATION-PLAYBOOK.md](docs/STATION-PLAYBOOK.md) — Vertical station workflow and Definition of Done
+- [docs/MODEL-ROUTING.md](docs/MODEL-ROUTING.md) & [docs/COMMIT-ATTRIBUTION.md](docs/COMMIT-ATTRIBUTION.md) — AI routing and trailer rules
+- [docs/specs/](docs/specs/) · [docs/devlog/](docs/devlog/) · [docs/releases/](docs/releases/) · [docs/reviews/](docs/reviews/)
 
-    scripts/container.sh build                    # 一次：建 pinned 镜像
-    scripts/container.sh run                      # 交互 QEMU（= 容器内 make run）
-    scripts/container.sh verify --stop-after=36   # 容器内重建 + 快环门禁
-    scripts/container.sh shell                    # 容器内交互 bash
+## On the Name
 
-- 仓库挂 `/src`、工作根 `.work` 挂 `/work`：`.work` 在宿主填充一次，容器直接复用。
-- 容器默认 `--network none`，**不能在容器内 fetch**；要容器内从零 bootstrap 用
-  `ESHINE_CONTAINER_NETWORK=bridge`。
-- 支持 podman：`ESHINE_CONTAINER_ENGINE=podman`。
+**"eshine"** conveys *"a steady light cast into the foundation"*:
 
-No local toolchain needed: the pinned image builds and runs the same
-tree against the same `.work`. The container defaults to
-`--network none` (populate `.work` on the host, or set
-`ESHINE_CONTAINER_NETWORK=bridge` to bootstrap inside). Details:
-[docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md).
+- **e** — embedded, essential base layer;
+- **shine** — a reliable light shining upward from the base that does not go out when failures happen.
 
-依赖 / deps: cross toolchain and QEMU (or Docker), `python3`; optional `dtc`.
-工作根 / work root: `.work/` (override with `ESHINE_WORK`). See
-[docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md).
-
-## 文档 / Docs
-
-- [ARCHITECTURE.md](ARCHITECTURE.md) — 架构与关键机制
-- [docs/specs/](docs/specs/) — 逐站设计文档
-- [docs/devlog/](docs/devlog/) — 开发日志（站 00-27、49-68）
-- [docs/devlogs/](docs/devlogs/) — 开发日志（站 28-48）
-- [docs/content/](docs/content/) — 每站技术内容包
-- [docs/KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) — 已知问题与边界
-- [docs/DEVELOPMENT-ENV.md](docs/DEVELOPMENT-ENV.md) — 工作根、bootstrap、容器
-- [docs/STATION-PLAYBOOK.md](docs/STATION-PLAYBOOK.md) — 站点流程与 DoD
-- [docs/MODEL-ROUTING.md](docs/MODEL-ROUTING.md) — 模型路由与证据纪律
-- [docs/state/PROJECT-STATE.md](docs/state/PROJECT-STATE.md) — 当前状态与下一步
+*(Naming-positioning reading, not an etymological claim.)*
 
 ## License
 
-Apache-2.0（见 / See [LICENSE](LICENSE)）。每个源文件带 SPDX 标记；第三方组件见 [NOTICE](NOTICE) 与 [3rd/LEDGER.md](3rd/LEDGER.md)。
+Licensed under **Apache-2.0** (see [LICENSE](LICENSE)). Every source file carries an SPDX header; third-party notices and license isolation boundaries are tracked in [NOTICE](NOTICE) and [3rd/LEDGER.md](3rd/LEDGER.md).
