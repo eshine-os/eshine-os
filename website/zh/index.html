@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>eshine-os — 开源 ARM64 Type-1 Hypervisor 与高安全实时操作系统</title>
+    <meta name="description" content="面向自动驾驶与机器人的开源 ARM64 Type-1 Hypervisor 与自研 SMP RTOS：同一台机器上以硬件 Stage-2 隔离并行运行自研实时内核（VM0）与真实上游 Linux 6.6（VM2），配备 173+ 自动化 QEMU 验证门禁。" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="eshine-os" />
+    <meta property="og:title" content="eshine-os — 开源 ARM64 Type-1 Hypervisor 与高安全实时操作系统" />
+    <meta property="og:description" content="在同一台 ARM64 机器上以硬件 Stage-2 隔离并行运行自研 SMP RTOS（VM0）与上游 Linux 6.6（VM2）。约 2.4 万行 C/汇编代码，173/173 CI 全绿，Apache-2.0 开源。" />
+    <meta property="og:url" content="https://www.eshine-os.org/zh/" />
+    <meta property="og:image" content="https://www.eshine-os.org/assets/og-card.v1.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="eshine-os — 开源 ARM64 Type-1 Hypervisor 与高安全实时操作系统" />
+    <meta name="twitter:description" content="自研 SMP RTOS（VM0）与真实上游 Linux 6.6（VM2）在 EL2 Type-1 Hypervisor 之上同机强隔离运行，173/173 CI 全绿，Apache-2.0。" />
+    <meta name="twitter:image" content="https://www.eshine-os.org/assets/og-card.v1.png" />
+    <link rel="icon" type="image/svg+xml" href="../assets/eshine-logo.v4.svg" />
+    <link rel="stylesheet" href="../style.v8.css" type="text/css" />
+</head>
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <a class="brand" href="/zh/">
+                <img src="../assets/eshine-logo.v4.svg" alt="eshine-os logo" />
+                <span class="brand-title">eshine-os</span>
+            </a>
+            <nav aria-label="主导航">
+                <ul class="nav-links">
+                    <li><a href="#quickstart">快速体验</a></li>
+                    <li><a href="#architecture">系统架构</a></li>
+                    <li><a href="#engineering">工程纪律</a></li>
+                    <li><a href="#roadmap">路线图</a></li>
+                    <li><a href="#releases">版本与镜像</a></li>
+                    <li><a href="https://gitee.com/eshine-os/eshine-os">Gitee</a></li>
+                    <li><a href="https://github.com/eshine-os/eshine-os">GitHub</a></li>
+                    <li><a class="lang-pill" href="/">English</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <div class="hero-card">
+                    <span class="eyebrow">ARM64 EL2 &middot; Apache-2.0 &middot; 主线 27.04-dev</span>
+                    <h1>开源 ARM64 Type-1 Hypervisor 与高安全 RTOS 底座</h1>
+                    <p class="hero-lead">
+                        在同一台机器上以硬件 Stage-2 隔离并行运行<strong>从零自研 SMP RTOS（VM0）</strong>与<strong>真实上游 Linux 6.6（VM2）</strong>，内置默认拒绝（fail-closed）跨 VM 共享控制与 173+ 可重放 QEMU 自动化门禁。
+                    </p>
+                    <p class="hero-tagline">底层之光，守护生命 &middot; The light beneath, guarding life.</p>
+
+                    <div class="cta-row">
+                        <a class="btn btn-primary" href="#quickstart">60 秒跑起来（Docker / QEMU）</a>
+                        <a class="btn btn-secondary" href="https://github.com/eshine-os/eshine-os">访问 GitHub 仓库</a>
+                        <a class="btn btn-text" href="https://gitee.com/eshine-os/eshine-os">Gitee 国内镜像 &rarr;</a>
+                    </div>
+
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-val">~2.4 万行</div>
+                            <div class="metric-lbl">C 与 AArch64 汇编，依据公开手册从零编写</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-val">RTOS + Linux 6.6</div>
+                            <div class="metric-lbl">同一份静态 musl ELF 在两个世界输出完全一致</div>
+                        </div>
+                        <div class="metric-card metric-green">
+                            <div class="metric-val">173 / 173 CI 全绿</div>
+                            <div class="metric-lbl">GitHub Actions 三分片 6.7 分钟跑完全套门禁</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-val">Apache-2.0</div>
+                            <div class="metric-lbl">全文件 SPDX 声明，严格分离 GPL 客机工件</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="quickstart" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>60 秒实机演示 &amp; 快速上手</h2>
+                        <p class="section-sub">以下画面录自单次连续 QEMU ARM64 会话：EL2 引导 &rarr; VM0 自研 RTOS 运行 musl <code>/bin/hello</code> &rarr; VM2 Linux 6.6 同机运行同一 ELF 可执行文件。</p>
+                    </div>
+
+                    <div class="demo-wrap">
+                        <img src="../assets/demo.v1.gif" alt="eshine-os 终端演示：在 QEMU ARM64 上启动 EL2 Hypervisor，并行拉起 VM0 自研 RTOS 与 VM2 Linux 6.6，并在两个域运行同一份 musl /bin/hello 程序" loading="eager" />
+                        <p class="demo-caption">QEMU <code>virt</code>（4&times; Cortex-A57）真实串口输出：VM0 与 VM2 在 EL2 Stage-2 隔离下同时处于 <code>VM_RUNNING</code> 状态。</p>
+                    </div>
+
+                    <div class="qs-grid">
+                        <div class="code-panel">
+                            <div class="code-panel-head">
+                                <span>方式 A &mdash; 固定 Docker 镜像（免配交叉工具链）</span>
+                                <button class="copy-btn" type="button" data-copy="git clone https://gitee.com/eshine-os/eshine-os.git&#10;cd eshine-os&#10;scripts/container.sh build&#10;scripts/container.sh run">复制</button>
+                            </div>
+                            <pre><code>git clone https://gitee.com/eshine-os/eshine-os.git
+cd eshine-os
+# Ubuntu 24.04 + cross-gcc + QEMU 8.2.2
+scripts/container.sh build
+scripts/container.sh run</code></pre>
+                            <div class="code-panel-foot">支持 Podman（<code>ESHINE_CONTAINER_ENGINE=podman</code>）；需在容器内拉取 Linux 客机工件时可加 <code>ESHINE_CONTAINER_NETWORK=bridge</code>。</div>
+                        </div>
+
+                        <div class="code-panel">
+                            <div class="code-panel-head">
+                                <span>方式 B &mdash; 本地 Linux（ARM64 交叉编译器 + QEMU）</span>
+                                <button class="copy-btn" type="button" data-copy="git clone https://gitee.com/eshine-os/eshine-os.git&#10;cd eshine-os&#10;make &amp;&amp; make verify-fast&#10;make run">复制</button>
+                            </div>
+                            <pre><code>git clone https://gitee.com/eshine-os/eshine-os.git
+cd eshine-os
+# 编译并跑冒烟门禁（1..18），再拉起 QEMU
+make &amp;&amp; make verify-fast
+make run</code></pre>
+                            <div class="code-panel-foot">执行 <code>make verify</code> 可跑完整绿套件，离线环境可通过 <code>scripts/bootstrap.sh --adopt</code> 复用既有工件。</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="architecture" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>系统架构</h2>
+                        <p class="section-sub">一芯三域混合临界度设计 &mdash; 沿功能安全（ISO 26262）与信息安全（ISO/SAE 21434）双轴划分隔离边界。</p>
+                    </div>
+
+                    <figure class="arch-figure">
+                        <img src="../assets/architecture.v2.svg" alt="eshine-os 系统架构图：Type-1 Hypervisor 运行于 EL2，隔离 VM0 管理域 RTOS、VM1 预留座舱域及 VM2 Linux 6.6 智驾域" />
+                    </figure>
+
+                    <div class="table-scroll">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>层级 / 域</th>
+                                    <th>设计目标等级</th>
+                                    <th>当前状态</th>
+                                    <th>已实现与规划能力</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Type-1 Hypervisor (EL2)</strong></td>
+                                    <td>ASIL-D / CAL-4</td>
+                                    <td><span class="pill pill-green">已实现</span></td>
+                                    <td>无宿主 OS 直驱硬件；per-VM Stage-2 地址隔离、vGICv3、vtimer、virtio-blk/net、DTB 注入、PSCI 生命周期状态机、CPU/内存配额、fail-closed 跨 VM 共享窗。</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>VM0 &middot; 管理域 RTOS</strong></td>
+                                    <td>ASIL-D / CAL-3</td>
+                                    <td><span class="pill pill-green">已实现</span></td>
+                                    <td>从零编写双核 SMP 实时内核：32 级抢占式位图调度、进程 Stage-1 MMU 与 ASID、三段同步消息 IPC、futex/signal、ramfs/procfs、HAM 健康监控与用户态 musl ELF 加载器。</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>VM1 &middot; 预留座舱域</strong></td>
+                                    <td>QM / CAL-2</td>
+                                    <td><span class="pill pill-muted">槽位预留</span></td>
+                                    <td>当前为裸机故障隔离对照客机，槽位预留给后续 Android 仪表/中控座舱域。</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>VM2 &middot; Linux 域</strong></td>
+                                    <td>ASIL-A/B / CAL-2</td>
+                                    <td><span class="pill pill-green">已实现</span></td>
+                                    <td>真实上游 Linux 6.6 SMP 内核 + busybox initramfs + musl 用户态，承载智驾感知、规划与富生态服务。</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="callout">
+                        <strong>诚实边界声明：</strong> 表中 ASIL（ISO 26262）与 CAL（ISO/SAE 21434）级别为<em>架构设计目标</em>，尚未启动正式第三方功能安全认证。当前全部自动化判据运行在 QEMU <code>virt</code>（ARM64）平台；已知缺陷、QEMU 10.2.1 兼容问题及当前安全边界详见 <a href="https://github.com/eshine-os/eshine-os/blob/master/docs/KNOWN-ISSUES.md">KNOWN-ISSUES.md</a>。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="engineering" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>AI 结对工程化与证据纪律</h2>
+                        <p class="section-sub">由 Julian Chu 发起并与 AI 模型（Claude Code、GLM-5.3、DeepSeek V4.1 等）协同开发 &mdash; AI 负责高速产出，自动化 QEMU 门禁决定一切真伪。</p>
+                    </div>
+
+                    <div class="three-grid">
+                        <div class="feature-card">
+                            <h3>68 站垂直切片</h3>
+                            <p>每站均按“设计规格 &rarr; 实现 &rarr; 可重放门禁 &rarr; 真实开发日志”闭环推进，明确记录被证伪的错误假设，防止后续会话重走弯路。</p>
+                            <a class="feature-link" href="https://github.com/eshine-os/eshine-os/blob/master/docs/STATION-PLAYBOOK.md">查看 STATION-PLAYBOOK.md &rarr;</a>
+                        </div>
+                        <div class="feature-card">
+                            <h3>173/173 独立门禁</h3>
+                            <p>普通门各自冷启独立 QEMU，状态家族使用自包含场景 fixture。GitHub Actions 3 分片 403 秒跑完 173 道绿门（4 道隔离门公开挂账跟踪）。</p>
+                            <a class="feature-link" href="https://github.com/eshine-os/eshine-os/blob/master/docs/CI.md">查看 CI.md &rarr;</a>
+                        </div>
+                        <div class="feature-card">
+                            <h3>真实模型署名</h3>
+                            <p>所有新提交通过 CI 校验 <code>Model:</code> / <code>Assisted-by:</code> 署名与独立评审归档，把强架构约束与高吞吐实现分层路由。</p>
+                            <a class="feature-link" href="https://github.com/eshine-os/eshine-os/blob/master/docs/MODEL-ROUTING.md">查看 MODEL-ROUTING.md &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="roadmap" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>研发路线图</h2>
+                        <p class="section-sub">严格遵循“缺陷预算优先于功能扩张”原则：先夯实底层硬件不变量与安全边界，再上真机与富生态。</p>
+                    </div>
+
+                    <ol class="roadmap-list">
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-coral">近期优先</span></div>
+                            <div>
+                                <span class="roadmap-title">开启 EL2 Stage-1 MMU、安全边界修真与隔离门清零</span>
+                                <span class="roadmap-desc">启用 EL2 MMU 与严格对齐（解决 QEMU 10.2+ 兼容），收紧 RTOS <code>access_ok</code> / W^X / 跨核 <code>tlbi vmalle1is</code>，统一 64 位自旋锁位宽，清零剩余 4 道隔离门至 177/177。</span>
+                            </div>
+                        </li>
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-amber">进行中</span></div>
+                            <div>
+                                <span class="roadmap-title">功能安全架构（ISO 26262）</span>
+                                <span class="roadmap-desc">在安静窗口双连绿闭环双核 SMP 历史残留问题，增强故障遏制与需求&ndash;门禁可追溯链条。</span>
+                            </div>
+                        </li>
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-amber">进行中</span></div>
+                            <div>
+                                <span class="roadmap-title">信息安全边界加固（ISO/SAE 21434）</span>
+                                <span class="roadmap-desc">对 EL2 虚拟化边界与 RTOS 系统调用面引入模糊测试（fuzzing）与跨 VM 越权负向门禁。</span>
+                            </div>
+                        </li>
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-blue">规划中</span></div>
+                            <div>
+                                <span class="roadmap-title">低成本 ARM64 开发板真机点亮（Board HAL &rarr; SoC）</span>
+                                <span class="roadmap-desc">抽离 QEMU <code>virt</code> 地址常量为板级 HAL，优先在树莓派 5 / RK3588 上点亮双域真机运行，继而对接车规 SoC（SMMU / GIC-ITS）。</span>
+                            </div>
+                        </li>
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-muted">规划中</span></div>
+                            <div>
+                                <span class="roadmap-title">亚拍高精实时与 VM1 座舱域</span>
+                                <span class="roadmap-desc">实现单发高精度定时器（oneshot hrtimer）与真机微秒级唤醒延迟实测，并在预留 VM1 槽位点亮 Android 座舱域。</span>
+                            </div>
+                        </li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <section id="releases" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>版本发布与镜像仓库</h2>
+                        <p class="section-sub">采用半年一次 YY.MM 稳定版节奏（每年 4 月 / 10 月），辅以每周 <code>-Nw</code> 开发周标签。</p>
+                    </div>
+
+                    <div class="two-col">
+                        <div class="table-scroll">
+                            <h3 class="sub-title">发行线</h3>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>分支线</th>
+                                        <th>版本</th>
+                                        <th>日期</th>
+                                        <th>产物</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>mainline</td>
+                                        <td><strong>27.04-dev</strong></td>
+                                        <td>活跃开发中</td>
+                                        <td><a href="https://github.com/eshine-os/eshine-os/tree/master">[浏览源码]</a></td>
+                                    </tr>
+                                    <tr>
+                                        <td>stable</td>
+                                        <td><strong>26.10</strong></td>
+                                        <td>2026-10-21</td>
+                                        <td>
+                                            <a href="https://github.com/eshine-os/eshine-os/archive/refs/tags/v26.10.tar.gz">[源码包]</a>
+                                            &middot;
+                                            <a href="https://github.com/eshine-os/eshine-os/releases/tag/v26.10">[发布说明]</a>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="table-scroll">
+                            <h3 class="sub-title">Git 仓库地址</h3>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>角色</th>
+                                        <th>仓库地址</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Gitee（国内镜像）</td>
+                                        <td><a href="https://gitee.com/eshine-os/eshine-os"><code>gitee.com/eshine-os/eshine-os.git</code></a></td>
+                                    </tr>
+                                    <tr>
+                                        <td>GitHub（主仓库）</td>
+                                        <td><a href="https://github.com/eshine-os/eshine-os"><code>github.com/eshine-os/eshine-os.git</code></a></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <div class="footer-card">
+                <p style="margin-top:0;">
+                    <strong>eshine-os</strong> 是面向车载自动驾驶、机器人、医疗等高可靠高安全场景的开源基础操作系统，构建于 ARM64 Type-1 虚拟化基座之上。
+                </p>
+                <div class="footer-links">
+                    <a href="https://gitee.com/eshine-os/eshine-os">Gitee 镜像</a>
+                    <a href="https://github.com/eshine-os/eshine-os">GitHub 主仓</a>
+                    <a href="https://github.com/eshine-os/eshine-os/blob/master/README.zh-CN.md">中文 README</a>
+                    <a href="https://github.com/eshine-os/eshine-os/blob/master/ARCHITECTURE.md">架构文档</a>
+                    <a href="https://github.com/eshine-os/eshine-os/blob/master/docs/KNOWN-ISSUES.md">已知问题</a>
+                    <a href="https://github.com/eshine-os/eshine-os/issues">交流与 Issue</a>
+                    <a href="https://github.com/eshine-os/eshine-os/blob/master/LICENSE">Apache-2.0 协议</a>
+                </div>
+                <p class="footer-tagline">底层之光，守护生命 &middot; The light beneath, guarding life.</p>
+                <p style="margin-bottom:0;">&copy; 2026 Julian Chu &amp; eshine-os contributors &middot; 基于 Apache-2.0 协议开源。</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+    document.querySelectorAll('.copy-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var text = btn.getAttribute('data-copy');
+            if (!text || !navigator.clipboard) return;
+            navigator.clipboard.writeText(text).then(function () {
+                var orig = btn.textContent;
+                btn.textContent = '已复制';
+                setTimeout(function () { btn.textContent = orig; }, 1600);
+            });
+        });
+    });
+    </script>
+</body>
+</html>

@@ -3,189 +3,365 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>The eshine-os Project Archives</title>
-    <meta name="description" content="eshine-os — an open-source foundational operating system for high-reliability, high-safety scenarios. 底层之光，守护生命。" />
+    <title>eshine-os — Open-Source ARM64 Type-1 Hypervisor &amp; Safety-Critical RTOS</title>
+    <meta name="description" content="An open-source ARM64 Type-1 hypervisor running a from-scratch SMP RTOS (VM0) and upstream Linux 6.6 (VM2) side-by-side with hardware Stage-2 isolation and 173+ automated QEMU gates." />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="eshine-os" />
-    <meta property="og:title" content="The eshine-os Project Archives" />
-    <meta property="og:description" content="eshine-os — an open-source foundational operating system for high-reliability, high-safety scenarios." />
+    <meta property="og:title" content="eshine-os — ARM64 Type-1 Hypervisor &amp; Safety-Critical RTOS" />
+    <meta property="og:description" content="From-scratch SMP RTOS (VM0) + upstream Linux 6.6 (VM2) running side-by-side under EL2 Stage-2 isolation. 24K LOC C/ASM, 173/173 CI Green, Apache-2.0." />
     <meta property="og:url" content="https://www.eshine-os.org/" />
-    <meta property="og:image" content="https://www.eshine-os.org/assets/eshine-logo.png" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="The eshine-os Project Archives" />
-    <meta name="twitter:description" content="eshine-os — an open-source foundational operating system for high-reliability, high-safety scenarios." />
-    <meta name="twitter:image" content="https://www.eshine-os.org/assets/eshine-logo.png" />
+    <meta property="og:image" content="https://www.eshine-os.org/assets/og-card.v1.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="eshine-os — ARM64 Type-1 Hypervisor &amp; Safety-Critical RTOS" />
+    <meta name="twitter:description" content="From-scratch SMP RTOS (VM0) + upstream Linux 6.6 (VM2) running side-by-side under EL2 Stage-2 isolation. 24K LOC C/ASM, 173/173 CI Green, Apache-2.0." />
+    <meta name="twitter:image" content="https://www.eshine-os.org/assets/og-card.v1.png" />
     <link rel="icon" type="image/svg+xml" href="assets/eshine-logo.v4.svg" />
-    <link rel="stylesheet" href="style.v6.css" type="text/css" />
+    <link rel="stylesheet" href="style.v8.css" type="text/css" />
 </head>
-
-<body id="index" class="home">
-    <header id="banner" class="body">
-        <div id="logo">
-            <img src="assets/eshine-logo.v4.svg" alt="eshine-os" />
+<body>
+    <header class="site-header">
+        <div class="container header-inner">
+            <a class="brand" href="/">
+                <img src="assets/eshine-logo.v4.svg" alt="eshine-os logo" />
+                <span class="brand-title">eshine-os</span>
+            </a>
+            <nav aria-label="Primary navigation">
+                <ul class="nav-links">
+                    <li><a href="#quickstart">Quick Start</a></li>
+                    <li><a href="#architecture">Architecture</a></li>
+                    <li><a href="#engineering">Engineering</a></li>
+                    <li><a href="#roadmap">Roadmap</a></li>
+                    <li><a href="#releases">Releases</a></li>
+                    <li><a href="https://github.com/eshine-os/eshine-os">GitHub</a></li>
+                    <li><a href="https://gitee.com/eshine-os/eshine-os">Gitee</a></li>
+                    <li><a class="lang-pill" href="/zh/">中文</a></li>
+                </ul>
+            </nav>
         </div>
-        <h1><a href="/">The eshine-os Project Archives</a></h1>
-        <p class="tagline">底层之光，守护生命 · The light beneath, guarding life.</p>
-        <nav><ul>
-            <li><a href="#architecture">Architecture</a></li>
-            <li><a href="#roadmap">Roadmap</a></li>
-            <li><a href="#featured">Sources</a></li>
-            <li><a href="#releases">Releases</a></li>
-            <li><a href="https://github.com/eshine-os/eshine-os">GitHub</a></li>
-            <li><a href="https://gitee.com/eshine-os/eshine-os">Gitee</a></li>
-            <li><a href="https://github.com/eshine-os/eshine-os/issues">Contact</a></li>
-        </ul></nav>
-    </header><!-- /#banner -->
+    </header>
 
-    <aside id="featured" class="body">
-        <article>
-            <table id="sources">
-                <tr>
-                    <th>Source</th>
-                    <th>Location</th>
-                </tr>
-                <tr>
-                    <td><a href="https://git-scm.com/">Git</a> &middot; primary</td>
-                    <td><a href="https://github.com/eshine-os/eshine-os.git">github.com/eshine-os/eshine-os.git</a></td>
-                </tr>
-                <tr>
-                    <td><a href="https://git-scm.com/">Git</a> &middot; mirror</td>
-                    <td><a href="https://gitee.com/eshine-os/eshine-os.git">gitee.com/eshine-os/eshine-os.git</a></td>
-                </tr>
-                <tr>
-                    <td><a href="https://www.ietf.org/rfc/rfc2616.txt">HTTP</a></td>
-                    <td><a href="https://www.eshine-os.org/">https://www.eshine-os.org/</a></td>
-                </tr>
-            </table>
+    <main>
+        <section class="hero">
+            <div class="container">
+                <div class="hero-card">
+                    <span class="eyebrow">ARM64 EL2 &middot; Apache-2.0 &middot; Mainline 27.04-dev</span>
+                    <h1>Open-Source ARM64 Type-1 Hypervisor &amp; RTOS Foundation</h1>
+                    <p class="hero-lead">
+                        Runs a from-scratch SMP RTOS (<strong>VM0</strong>) and upstream <strong>Linux 6.6</strong> (<strong>VM2</strong>) side-by-side on one machine &mdash; with hardware Stage-2 isolation, fail-closed cross-VM windows, and 173+ replayable QEMU verification gates.
+                    </p>
+                    <p class="hero-tagline">底层之光，守护生命 &middot; The light beneath, guarding life.</p>
 
-            <table id="latest">
-                <tr>
-                    <td id="latest_label">
-                        <strong>Latest Release</strong>
-                    </td>
-                </tr>
-                <tr>
-                    <td id="latest_link">
-                        <a href="https://github.com/eshine-os/eshine-os/releases/tag/v26.10">eshine-os 26.10</a>
-                        <span class="release-date">2026-10-21</span>
-                    </td>
-                </tr>
-            </table>
+                    <div class="cta-row">
+                        <a class="btn btn-primary" href="#quickstart">Run in 60s (Docker / QEMU)</a>
+                        <a class="btn btn-secondary" href="https://github.com/eshine-os/eshine-os">View on GitHub</a>
+                        <a class="btn btn-text" href="https://gitee.com/eshine-os/eshine-os">Gitee Mirror &rarr;</a>
+                    </div>
 
-            <table id="releases">
-                <tr align="left">
-                    <td>mainline:</td>
-                    <td><strong>27.04-dev</strong></td>
-                    <td>development</td>
-                    <td>&mdash;</td>
-                    <td><a href="https://github.com/eshine-os/eshine-os/tree/master">[browse]</a></td>
-                </tr>
-                <tr align="left">
-                    <td>stable:</td>
-                    <td><strong>26.10</strong></td>
-                    <td>2026-10-21</td>
-                    <td><a href="https://github.com/eshine-os/eshine-os/archive/refs/tags/v26.10.tar.gz">[tarball]</a></td>
-                    <td><a href="https://github.com/eshine-os/eshine-os/tree/v26.10">[browse]</a></td>
-                </tr>
-                <tr align="left">
-                    <td>longterm:</td>
-                    <td><strong>&mdash;</strong></td>
-                    <td>&mdash;</td>
-                    <td class="ph">[tarball]</td>
-                    <td class="ph">[browse]</td>
-                </tr>
-            </table>
-            <p class="note">🚧 Open-sourcing in progress &mdash; repositories are published under the
-                <a href="https://github.com/eshine-os/eshine-os">eshine-os organization on GitHub</a>
-                (primary) and mirrored on
-                <a href="https://gitee.com/eshine-os/eshine-os">Gitee</a>.
-                mainline <strong>27.04-dev</strong>: Type-1 hypervisor at EL2, the from-scratch RTOS
-                management domain, a real Linux 6.6 guest, a Yocto layer and a container/release
-                pipeline &mdash; 68 development stations, 183 replayable verification gates.
-                26.10 shipped the EL2 skeleton: direct-EL2 boot, exception vector table, mini-shell,
-                default-deny VM state machine and the true-green verify gate.</p>
-        </article>
-    </aside><!-- /#featured -->
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-val">~24K LOC</div>
+                            <div class="metric-lbl">Freestanding C &amp; AArch64 ASM built clean-room from public specs</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-val">RTOS + Linux 6.6</div>
+                            <div class="metric-lbl">Identical static musl ELF binaries verified across both worlds</div>
+                        </div>
+                        <div class="metric-card metric-green">
+                            <div class="metric-val">173 / 173 CI Green</div>
+                            <div class="metric-lbl">3-shard fixture suite on GitHub Actions in 6.7 min</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-val">Apache-2.0</div>
+                            <div class="metric-lbl">100% SPDX headers &amp; explicit GPL boundary isolation</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-    <section id="architecture" class="body">
-        <h2>System Architecture</h2>
-        <img class="arch-diagram" src="assets/architecture.svg?v=cal1"
-             alt="eshine-os system architecture: a Type-1 hypervisor (ASIL-D / CAL-4) running on hardware, with VM0 management domain running the self-developed RTOS (ASIL-D / CAL-3), VM1 reserved cockpit domain (QM / CAL-2, planned Android), and VM2 running Linux for intelligent driving (ASIL-A/B / CAL-2)" />
-        <p>One machine, three domains &mdash; designed on two axes: functional safety (<strong>ISO 26262</strong>) and cybersecurity (<strong>ISO/SAE 21434</strong>):</p>
-        <ul class="arch-list">
-            <li><strong>Type-1 hypervisor &middot; ASIL-D / CAL-4</strong> &mdash; direct hardware control at EL2,
-                no host OS; per-VM stage-2 address-space isolation, vGIC / vtimer / virtio device
-                models, CPU &amp; memory quotas, fail-closed cross-VM shared windows; the dual root of trust.</li>
-            <li><strong>VM0 &middot; management domain &middot; ASIL-D / CAL-3</strong> &mdash; the from-scratch RTOS:
-                deterministic scheduling, Send/Recv/Reply IPC, fault containment and health
-                monitoring. The safety and security management domain of the system.</li>
-            <li><strong>VM1 &middot; reserved domain &middot; QM / CAL-2</strong> &mdash; reserved for the cockpit:
-                planned to boot <strong>Android</strong> as the center-console / cluster domain.</li>
-            <li><strong>VM2 &middot; Linux domain &middot; ASIL-A/B / CAL-2</strong> &mdash; real upstream Linux 6.6
-                carrying <strong>intelligent-driving applications</strong> and the musl userland.</li>
-        </ul>
-        <p class="note">ASIL (ISO 26262) and CAL (ISO/SAE 21434) levels are architecture design targets; both certification
-            program is in progress &mdash; see the honest boundary statement in
-            <a href="https://github.com/eshine-os/eshine-os/blob/master/docs/KNOWN-ISSUES.md">KNOWN-ISSUES.md</a>.</p>
-    </section><!-- /#architecture -->
+        <section id="quickstart" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>60-Second Live Demo &amp; Quick Start</h2>
+                        <p class="section-sub">Captured from a single QEMU ARM64 session: EL2 hypervisor boot &rarr; VM0 SMP RTOS running musl <code>/bin/hello</code> &rarr; VM2 Linux 6.6 running the same ELF binary simultaneously.</p>
+                    </div>
 
-    <section id="roadmap" class="body">
-        <h2>Roadmap &mdash; in development, by priority</h2>
-        <ol class="roadmap">
-            <li><span class="prio">1</span>
-                <div class="rd-body"><strong>Functional Safety (ISO 26262)</strong>
-                <span class="rd-desc">ASIL-D hypervisor/RTOS architecture: fault containment,
-                fail-closed isolation, deterministic scheduling; latency determinism baselines
-                and the certification path.</span></div></li>
-            <li><span class="prio">2</span>
-                <div class="rd-body"><strong>Cybersecurity (ISO/SAE 21434)</strong>
-                <span class="rd-desc">Hardened VM isolation, cross-VM access control,
-                security audit and fuzzing of the virtualization boundary.</span></div></li>
-            <li><span class="prio">3</span>
-                <div class="rd-body"><strong>Real-hardware bring-up</strong>
-                <span class="rd-desc">From QEMU virt to an automotive SoC: SMMU, GIC ITS,
-                real timers and multi-core topologies.</span></div></li>
-            <li><span class="prio">4</span>
-                <div class="rd-body"><strong>Deterministic real-time</strong>
-                <span class="rd-desc">Sub-tick hrtimer wake-ups, partitioned CPU/memory budgets,
-                measured wake-up latency on real hardware.</span></div></li>
-            <li><span class="prio">5</span>
-                <div class="rd-body"><strong>Cockpit domain &amp; device ecosystem</strong>
-                <span class="rd-desc">Bring up Android in the reserved VM1 cockpit slot;
-                virtio net/rng devices; user-space service ecosystem.</span></div></li>
-        </ol>
-    </section><!-- /#roadmap -->
+                    <div class="demo-wrap">
+                        <img src="assets/demo.v1.gif" alt="Terminal demo showing eshine-os booting at EL2 on QEMU ARM64, launching VM0 RTOS and VM2 Linux 6.6, and running the same musl /bin/hello binary in both VMs" loading="eager" />
+                        <p class="demo-caption">Real serial output on QEMU <code>virt</code> (4&times; Cortex-A57): VM0 and VM2 remain simultaneously <code>VM_RUNNING</code> under EL2 Stage-2 isolation.</p>
+                    </div>
 
-    <section id="extras" class="body">
-        <div class="blogroll">
-            <h2>Other resources</h2>
-            <ul>
-                <li><a href="https://github.com/eshine-os">GitHub Organization</a></li>
-                <li><a href="https://gitee.com/eshine-os/eshine-os">Gitee Mirror</a></li>
-                <li><a href="https://github.com/eshine-os/eshine-os#readme">README</a></li>
-                <li><a href="https://github.com/eshine-os/eshine-os/issues">Issues</a></li>
-                <li><a href="https://github.com/eshine-os/eshine-os">Source Code</a></li>
-            </ul>
-        </div><!-- /.blogroll -->
-        <div class="social">
-            <h2>Community</h2>
-            <ul>
-                <li><a href="https://github.com/eshine-os/eshine-os">Git</a></li>
-                <li><a href="https://github.com/eshine-os/eshine-os/issues">Discussions</a></li>
-            </ul>
-        </div><!-- /.social -->
-    </section><!-- /#extras -->
+                    <div class="qs-grid">
+                        <div class="code-panel">
+                            <div class="code-panel-head">
+                                <span>Option A &mdash; Pinned Docker Image (No Local Toolchain)</span>
+                                <button class="copy-btn" type="button" data-copy="git clone https://github.com/eshine-os/eshine-os.git&#10;cd eshine-os&#10;scripts/container.sh build&#10;scripts/container.sh run">Copy</button>
+                            </div>
+                            <pre><code>git clone https://github.com/eshine-os/eshine-os.git
+cd eshine-os
+# Ubuntu 24.04 + cross-gcc + QEMU 8.2.2
+scripts/container.sh build
+scripts/container.sh run</code></pre>
+                            <div class="code-panel-foot">Supports Podman via <code>ESHINE_CONTAINER_ENGINE=podman</code>. Set <code>ESHINE_CONTAINER_NETWORK=bridge</code> to bootstrap Linux guest artifacts inside the container.</div>
+                        </div>
 
-    <footer id="contentinfo" class="body">
-        <p id="about" class="vcard body">
-            eshine-os is an open-source foundational operating system for high-reliability, high-safety scenarios
-            &mdash; autonomous driving, robotics, medical, and other safety-critical domains &mdash; built on a
-            dependable runtime base over ARM64 virtualization. Protecting human life is its highest goal.
-        </p>
-        <p id="tagline" class="vcard body">
-            底层之光，守护生命 · The light beneath, guarding life.
-        </p>
-        <p id="copyright">&copy; eshine-os</p>
-    </footer><!-- /#contentinfo -->
+                        <div class="code-panel">
+                            <div class="code-panel-head">
+                                <span>Option B &mdash; Native Linux Host (ARM64 Cross-Toolchain + QEMU)</span>
+                                <button class="copy-btn" type="button" data-copy="git clone https://github.com/eshine-os/eshine-os.git&#10;cd eshine-os&#10;make &amp;&amp; make verify-fast&#10;make run">Copy</button>
+                            </div>
+                            <pre><code>git clone https://github.com/eshine-os/eshine-os.git
+cd eshine-os
+# Build binaries &amp; run boot smoke gates (1..18)
+make &amp;&amp; make verify-fast
+make run</code></pre>
+                            <div class="code-panel-foot">Run <code>make verify</code> for the full non-heavy green suite, or <code>scripts/bootstrap.sh --adopt</code> for offline artifact reuse under <code>.work/</code>.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="architecture" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>System Architecture</h2>
+                        <p class="section-sub">One machine, three domains &mdash; structured along functional safety (ISO 26262) and cybersecurity (ISO/SAE 21434) isolation boundaries.</p>
+                    </div>
+
+                    <figure class="arch-figure">
+                        <img src="assets/architecture.v2.svg" alt="eshine-os system architecture: Type-1 hypervisor at EL2 isolating VM0 management RTOS, VM1 reserved cockpit domain, and VM2 Linux 6.6 guest" />
+                    </figure>
+
+                    <div class="table-scroll">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Layer / Domain</th>
+                                    <th>Design Targets</th>
+                                    <th>Status</th>
+                                    <th>Implemented &amp; Planned Capabilities</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Type-1 Hypervisor (EL2)</strong></td>
+                                    <td>ASIL-D / CAL-4</td>
+                                    <td><span class="pill pill-green">Implemented</span></td>
+                                    <td>Direct EL2 hardware control with no host OS; per-VM Stage-2 isolation, vGICv3, vtimer, virtio-blk/net, DTB injection, PSCI VM lifecycle, CPU/memory quotas, and fail-closed cross-VM shared windows.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>VM0 &middot; Management RTOS</strong></td>
+                                    <td>ASIL-D / CAL-3</td>
+                                    <td><span class="pill pill-green">Implemented</span></td>
+                                    <td>From-scratch 2-vCPU SMP RTOS with 32-priority preemptive bitmap scheduler, per-process Stage-1 MMU + ASID, Send/Recv/Reply IPC, futex/signals, ramfs/procfs, HAM health monitor, and musl ELF loader.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>VM1 &middot; Cockpit Slot</strong></td>
+                                    <td>QM / CAL-2</td>
+                                    <td><span class="pill pill-muted">Reserved</span></td>
+                                    <td>Currently runs a bare-metal fault-isolation test guest; slot reserved for a future Android cluster / center-console cockpit domain.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>VM2 &middot; Linux Domain</strong></td>
+                                    <td>ASIL-A/B / CAL-2</td>
+                                    <td><span class="pill pill-green">Implemented</span></td>
+                                    <td>Real upstream Linux 6.6 SMP kernel + busybox initramfs + musl userland for perception, planning, and intelligent-driving workloads.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="callout">
+                        <strong>Honest Boundary Statement:</strong> ASIL (ISO 26262) and CAL (ISO/SAE 21434) levels are <em>architectural design targets</em>; formal third-party safety certification has not yet started. All automated gates currently execute on QEMU <code>virt</code> (ARM64) &mdash; see <a href="https://github.com/eshine-os/eshine-os/blob/master/docs/KNOWN-ISSUES.md">KNOWN-ISSUES.md</a> for open defects, QEMU 10.2.1 compatibility tracking, and the current security boundary.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="engineering" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>AI-Pair Engineering &amp; Evidence Discipline</h2>
+                        <p class="section-sub">Initiated by Julian Chu and built in pair with AI models (Claude Code, GLM-5.3, DeepSeek V4.1) &mdash; where AI writes code, but deterministic QEMU gates decide truth.</p>
+                    </div>
+
+                    <div class="three-grid">
+                        <div class="feature-card">
+                            <h3>68-Station Playbook</h3>
+                            <p>Every feature lands as one vertical slice with a written design spec, replayable verification gates, clean SPDX headers, and an engineering devlog recording real pitfalls and refuted hypotheses.</p>
+                            <a class="feature-link" href="https://github.com/eshine-os/eshine-os/blob/master/docs/STATION-PLAYBOOK.md">Read STATION-PLAYBOOK.md &rarr;</a>
+                        </div>
+                        <div class="feature-card">
+                            <h3>173/173 Fixture Gates</h3>
+                            <p>Ordinary gates boot a fresh QEMU session; stateful families run isolated scenario fixtures. Currently 173 green gates pass across 3 GitHub Actions shards in 403 s (4 quarantined gates openly tracked).</p>
+                            <a class="feature-link" href="https://github.com/eshine-os/eshine-os/blob/master/docs/CI.md">Read CI.md &rarr;</a>
+                        </div>
+                        <div class="feature-card">
+                            <h3>Transparent Attribution</h3>
+                            <p>Commits declare actual participating models via <code>Model:</code> / <code>Assisted-by:</code> trailers enforced in CI, separating high-invariant architecture review from implementation throughput.</p>
+                            <a class="feature-link" href="https://github.com/eshine-os/eshine-os/blob/master/docs/MODEL-ROUTING.md">Read MODEL-ROUTING.md &rarr;</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="roadmap" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>Roadmap</h2>
+                        <p class="section-sub">Ordered strictly by engineering risk and defect-budget rules: hardware invariants and security boundaries before new surface area.</p>
+                    </div>
+
+                    <ol class="roadmap-list">
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-coral">Next</span></div>
+                            <div>
+                                <span class="roadmap-title">EL2 Stage-1 MMU, Security Boundary Hardening &amp; Quarantine Zero</span>
+                                <span class="roadmap-desc">Enable EL2 MMU &amp; alignment safety (unblocking QEMU 10.2+), enforce strict RTOS <code>access_ok</code> / W^X / SMP TLB invalidation, align 64-bit spinlock widths, and close the 4 quarantined gates (177/177).</span>
+                            </div>
+                        </li>
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-amber">In Progress</span></div>
+                            <div>
+                                <span class="roadmap-title">Functional Safety Architecture (ISO 26262)</span>
+                                <span class="roadmap-desc">Close remaining SMP dual-core fault families under quiet-window double-green criteria, strengthen fault containment, and formalize traceability from safety requirements to gates.</span>
+                            </div>
+                        </li>
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-amber">In Progress</span></div>
+                            <div>
+                                <span class="roadmap-title">Cybersecurity Hardening (ISO/SAE 21434)</span>
+                                <span class="roadmap-desc">Fuzz the EL2 virtualization and RTOS syscall boundaries, add negative Stage-2 ACL tests, and enforce strict user-copy exception fixups.</span>
+                            </div>
+                        </li>
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-blue">Planned</span></div>
+                            <div>
+                                <span class="roadmap-title">Real-Hardware Bring-up (Board HAL &rarr; SoC)</span>
+                                <span class="roadmap-desc">Extract QEMU <code>virt</code> constants into a Board HAL and bring up low-cost ARM64 hardware (Raspberry Pi 5 / RK3588) en route to automotive SoCs with SMMU and GIC-ITS.</span>
+                            </div>
+                        </li>
+                        <li class="roadmap-item">
+                            <div class="roadmap-status"><span class="pill pill-muted">Planned</span></div>
+                            <div>
+                                <span class="roadmap-title">Sub-Tick Deterministic Real-Time &amp; VM1 Cockpit Domain</span>
+                                <span class="roadmap-desc">Add oneshot hrtimer wake-ups with real-hardware wake-up latency histograms, and bring up Android in the reserved VM1 cockpit slot.</span>
+                            </div>
+                        </li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <section id="releases" class="section">
+            <div class="container">
+                <div class="card">
+                    <div class="section-head">
+                        <h2>Releases &amp; Source Mirrors</h2>
+                        <p class="section-sub">Semi-annual YY.MM release cadence (April &amp; October) with weekly <code>-Nw</code> development tags.</p>
+                    </div>
+
+                    <div class="two-col">
+                        <div class="table-scroll">
+                            <h3 class="sub-title">Versions</h3>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Track</th>
+                                        <th>Version</th>
+                                        <th>Date</th>
+                                        <th>Artifacts</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>mainline</td>
+                                        <td><strong>27.04-dev</strong></td>
+                                        <td>Active</td>
+                                        <td><a href="https://github.com/eshine-os/eshine-os/tree/master">[browse master]</a></td>
+                                    </tr>
+                                    <tr>
+                                        <td>stable</td>
+                                        <td><strong>26.10</strong></td>
+                                        <td>2026-10-21</td>
+                                        <td>
+                                            <a href="https://github.com/eshine-os/eshine-os/archive/refs/tags/v26.10.tar.gz">[tarball]</a>
+                                            &middot;
+                                            <a href="https://github.com/eshine-os/eshine-os/releases/tag/v26.10">[notes]</a>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="table-scroll">
+                            <h3 class="sub-title">Git Repositories</h3>
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Role</th>
+                                        <th>Clone URL</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>GitHub (Primary)</td>
+                                        <td><a href="https://github.com/eshine-os/eshine-os"><code>github.com/eshine-os/eshine-os.git</code></a></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Gitee (China Mirror)</td>
+                                        <td><a href="https://gitee.com/eshine-os/eshine-os"><code>gitee.com/eshine-os/eshine-os.git</code></a></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <div class="footer-card">
+                <p style="margin-top:0;">
+                    <strong>eshine-os</strong> is an open-source foundational operating system for high-reliability, safety-critical domains (autonomous driving, robotics, medical), built on an ARM64 Type-1 hypervisor foundation.
+                </p>
+                <div class="footer-links">
+                    <a href="https://github.com/eshine-os/eshine-os">GitHub</a>
+                    <a href="https://gitee.com/eshine-os/eshine-os">Gitee</a>
+                    <a href="https://github.com/eshine-os/eshine-os/blob/master/README.md">README</a>
+                    <a href="https://github.com/eshine-os/eshine-os/blob/master/ARCHITECTURE.md">ARCHITECTURE.md</a>
+                    <a href="https://github.com/eshine-os/eshine-os/blob/master/docs/KNOWN-ISSUES.md">KNOWN-ISSUES.md</a>
+                    <a href="https://github.com/eshine-os/eshine-os/issues">Issues &amp; Discussions</a>
+                    <a href="https://github.com/eshine-os/eshine-os/blob/master/LICENSE">Apache-2.0 License</a>
+                </div>
+                <p class="footer-tagline">底层之光，守护生命 &middot; The light beneath, guarding life.</p>
+                <p style="margin-bottom:0;">&copy; 2026 Julian Chu &amp; eshine-os contributors &middot; Licensed under Apache-2.0.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+    document.querySelectorAll('.copy-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var text = btn.getAttribute('data-copy');
+            if (!text || !navigator.clipboard) return;
+            navigator.clipboard.writeText(text).then(function () {
+                var orig = btn.textContent;
+                btn.textContent = 'Copied';
+                setTimeout(function () { btn.textContent = orig; }, 1600);
+            });
+        });
+    });
+    </script>
 </body>
 </html>
