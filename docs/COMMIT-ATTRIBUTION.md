@@ -40,7 +40,8 @@ From 2026-11-10, trailers record real participation:
 - `Co-Authored-By:` is for human co-authors only.
 - Allowed model ids: `Claude Code`, `Claude`, `claude-opus-5.5`,
   `claude-fable-5.1`, `claude-sonnet-5.5`, `claude-haiku-5.5`, `glm-5.3`,
-  `deepseek-v4.1-flash`, `deepseek-v4`, `qwen3.8-max`.
+  `deepseek-v4.1-flash`, `deepseek-v4`, `qwen3.8-max`, `gemini-4-neon`,
+  `gemini-4-flash`, `antigravity`.
 - Messages are English, ASCII only; subjects are `subsystem: summary`,
   at most 72 bytes.
 

@@ -39,7 +39,7 @@ MODELS = {
     'claude code', 'claude',
     'claude-opus-5.5', 'claude-fable-5.1', 'claude-sonnet-5.5',
     'claude-haiku-5.5', 'glm-5.3', 'deepseek-v4.1-flash', 'deepseek-v4',
-    'qwen3.8-max',
+    'qwen3.8-max', 'gemini-4-neon', 'gemini-4-flash', 'antigravity',
 }
 BANNED_VALUES = {'', 'tbd', 'n/a', 'na', 'unknown', 'none'}
 
